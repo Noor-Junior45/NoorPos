@@ -296,11 +296,43 @@ export const Warehouse: React.FC = () => {
   const groupedProducts = useMemo(() => {
     const groups: { [key: string]: Product[] } = {};
     baseFilteredProducts.forEach(p => {
-        if (!groups[p.name]) groups[p.name] = [];
-        groups[p.name].push(p);
+        // Group by Name, Capacity, and Unit to separate variations (e.g., 500ml vs 1L)
+        // while keeping same-spec batches together.
+        const uniqueGroupKey = `${p.name}|${p.capacity || ''}|${p.unit}`;
+        
+        if (!groups[uniqueGroupKey]) groups[uniqueGroupKey] = [];
+        groups[uniqueGroupKey].push(p);
     });
     return Object.keys(groups).map(key => ({ key, items: groups[key] }));
   }, [baseFilteredProducts]);
+
+  const variantCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    groupedProducts.forEach(g => {
+        const name = g.items[0].name;
+        counts[name] = (counts[name] || 0) + 1;
+    });
+    return counts;
+  }, [groupedProducts]);
+
+  const getUnitBadgeStyle = (unitString: string, isMultiVariant: boolean) => {
+      if (!isMultiVariant) return "bg-gray-100 text-gray-600 border-gray-200"; // Default Grey
+      
+      const colors = [
+        'bg-orange-100 text-orange-800 border-orange-200',
+        'bg-blue-100 text-blue-800 border-blue-200',
+        'bg-purple-100 text-purple-800 border-purple-200',
+        'bg-rose-100 text-rose-800 border-rose-200',
+        'bg-emerald-100 text-emerald-800 border-emerald-200',
+        'bg-indigo-100 text-indigo-800 border-indigo-200',
+        'bg-cyan-100 text-cyan-800 border-cyan-200',
+    ];
+    let hash = 0;
+    for (let i = 0; i < unitString.length; i++) {
+        hash = unitString.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
 
   const stockValueByCategory = useMemo(() => {
     if (!tags || !products) return [];
@@ -321,6 +353,10 @@ export const Warehouse: React.FC = () => {
       const isExpanded = expandedGroups.has(groupKey);
       const isLow = totalStock < p.lowStockThreshold;
       const anyExpiring = items.some(i => isAboutToExpire(i.expiryDate));
+
+      const unitString = `${p.capacity || '1'} ${p.unit}`;
+      const isMultiVariant = (variantCounts[p.name] || 0) > 1;
+      const unitBadgeClass = getUnitBadgeStyle(unitString, isMultiVariant);
 
       // Determine Earliest Expiry
       const validExpiries = items
@@ -382,13 +418,16 @@ export const Warehouse: React.FC = () => {
                 </div>
 
                 {/* Line 4: Info Line (Loc, Unit, Tax, Qty) - Reverted to Row, Added Tax Logic */}
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-gray-600 mt-2">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-gray-600 mt-2">
                     <span className="flex items-center gap-1">
-                        <MapPin size={14} className="text-gray-900"/> Loc: {p.location || 'N/A'}
+                        <MapPin size={14} className="text-gray-900"/> {p.location || 'N/A'}
                     </span>
                     
                     <span className="flex items-center gap-1">
-                        Unit: {p.capacity || '1'} {p.unit}
+                        Unit: 
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${unitBadgeClass}`}>
+                            {unitString}
+                        </span>
                     </span>
 
                     {/* Tax Always Visible */}
