@@ -3,7 +3,7 @@ import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, AlertOctagon, Book, Upload, FileUp, Loader2, Save } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, AlertOctagon, Book, Upload, FileUp, Loader2, Save, Eye } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -139,6 +139,7 @@ export const Warehouse: React.FC = () => {
   const [isParsingInvoice, setIsParsingInvoice] = useState(false);
   const [parsedProducts, setParsedProducts] = useState<Partial<Product>[]>([]);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [invoiceImage, setInvoiceImage] = useState<string | null>(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -161,9 +162,22 @@ export const Warehouse: React.FC = () => {
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
     if (showScanner) {
+        // Wait for modal transition to complete to ensure DOM element exists
         const timeoutId = setTimeout(() => {
+            if (!document.getElementById("reader")) return;
+            
             html5QrCode = new Html5Qrcode("reader");
-            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            
+            // Configuration optimized to prevent "zoomed in" effect
+            const config = { 
+                fps: 10,
+                // Do NOT set aspectRatio here, let it adapt to the video feed.
+                // Using a rectangular qrbox matches barcode shape better and avoids cropping.
+                qrbox: { width: 280, height: 180 }, 
+                experimentalFeatures: {
+                    useBarCodeDetectorIfSupported: true
+                }
+            };
             
             html5QrCode.start(
                 { facingMode: "environment" },
@@ -181,13 +195,14 @@ export const Warehouse: React.FC = () => {
                         setActiveTab(SubTab.PRODUCTS);
                     }
                     setShowScanner(false);
-                    html5QrCode?.stop().then(() => html5QrCode?.clear());
                 },
-                (errorMessage) => {}
+                (errorMessage) => {
+                    // console.log(errorMessage);
+                }
             ).catch(err => {
                 console.error("Error starting scanner", err);
             });
-        }, 100);
+        }, 300);
 
         return () => {
             clearTimeout(timeoutId);
@@ -336,6 +351,10 @@ export const Warehouse: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file);
+    setInvoiceImage(previewUrl);
+
     setIsParsingInvoice(true);
     try {
         const products = await GeminiService.parseInvoice(file);
@@ -350,10 +369,18 @@ export const Warehouse: React.FC = () => {
     }
   };
 
+  const handleCloseReview = () => {
+    setShowReviewModal(false);
+    if (invoiceImage) {
+        URL.revokeObjectURL(invoiceImage);
+        setInvoiceImage(null);
+    }
+    setParsedProducts([]);
+  };
+
   const handleImportParsedProducts = async () => {
     await StoreService.batchAddProducts(parsedProducts);
-    setShowReviewModal(false);
-    setParsedProducts([]);
+    handleCloseReview();
     loadData();
   };
 
@@ -1577,9 +1604,9 @@ export const Warehouse: React.FC = () => {
       </Modal>
 
       <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode">
-        <div className="relative w-full aspect-square bg-black rounded-lg overflow-hidden flex flex-col items-center justify-center">
-             <div id="reader" className="w-full h-full"></div>
-             <p className="absolute bottom-4 text-white text-xs bg-black/50 px-2 py-1 rounded">Point camera at barcode</p>
+        <div className="relative w-full bg-black rounded-lg overflow-hidden flex flex-col items-center justify-center min-h-[300px]">
+             <div id="reader" className="w-full"></div>
+             <p className="absolute bottom-4 text-white text-xs bg-black/50 px-2 py-1 rounded z-10">Point camera at barcode</p>
         </div>
       </Modal>
       
@@ -1607,91 +1634,120 @@ export const Warehouse: React.FC = () => {
       {/* Invoice Review Modal */}
       <Modal 
         isOpen={showReviewModal} 
-        onClose={() => setShowReviewModal(false)} 
+        onClose={handleCloseReview} 
         title="Review Invoice Items"
-        className="!max-w-4xl"
+        className="!max-w-6xl !w-full !p-0 overflow-hidden"
       >
-        <div className="max-h-[60vh] overflow-y-auto mb-6 border border-gray-200 rounded-lg">
-            <table className="w-full text-sm">
-                <thead className="bg-gray-100 text-gray-700 font-bold sticky top-0 z-10">
-                    <tr>
-                        <th className="px-3 py-2 text-left">Product Name</th>
-                        <th className="px-3 py-2 w-24">Qty</th>
-                        <th className="px-3 py-2 w-24">Unit</th>
-                        <th className="px-3 py-2 w-28 text-right">Buy Price</th>
-                        <th className="px-3 py-2 w-28 text-right">Sell Price</th>
-                        <th className="px-3 py-2 w-32">Category</th>
-                        <th className="px-3 py-2 w-10"></th>
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                    {parsedProducts.map((p, idx) => (
-                        <tr key={idx} className="hover:bg-blue-50/30 group">
-                            <td className="p-2">
-                                <input 
-                                    className="w-full bg-transparent border-none focus:ring-0 font-medium text-gray-800"
-                                    value={p.name}
-                                    onChange={(e) => updateParsedProduct(idx, 'name', e.target.value)}
-                                />
-                            </td>
-                            <td className="p-2">
-                                <input 
-                                    type="number"
-                                    className="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-blue-300 rounded px-1 py-1 text-center"
-                                    value={p.stock}
-                                    onChange={(e) => updateParsedProduct(idx, 'stock', parseFloat(e.target.value))}
-                                />
-                            </td>
-                            <td className="p-2">
-                                <select 
-                                    className="w-full bg-transparent border-none focus:ring-0 text-gray-600 text-xs"
-                                    value={p.unit}
-                                    onChange={(e) => updateParsedProduct(idx, 'unit', e.target.value)}
-                                >
-                                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                                </select>
-                            </td>
-                            <td className="p-2 text-right">
-                                <input 
-                                    type="number"
-                                    className="w-full bg-transparent border-none focus:ring-0 text-right"
-                                    value={p.buyPrice}
-                                    onChange={(e) => updateParsedProduct(idx, 'buyPrice', parseFloat(e.target.value))}
-                                />
-                            </td>
-                            <td className="p-2 text-right">
-                                <input 
-                                    type="number"
-                                    className="w-full bg-transparent border-none focus:ring-0 text-right font-bold text-green-700"
-                                    value={p.sellPrice}
-                                    onChange={(e) => updateParsedProduct(idx, 'sellPrice', parseFloat(e.target.value))}
-                                />
-                            </td>
-                             <td className="p-2">
-                                <input 
-                                    className="w-full bg-transparent border-none focus:ring-0 text-xs text-gray-500"
-                                    value={p.category || ''}
-                                    placeholder="Uncategorized"
-                                    onChange={(e) => updateParsedProduct(idx, 'category', e.target.value)}
-                                />
-                            </td>
-                            <td className="p-2 text-center">
-                                <button onClick={() => removeParsedProduct(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
-                                    <X size={16} />
-                                </button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-        <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-500 font-medium">{parsedProducts.length} items detected</span>
-            <div className="flex gap-3">
-                <Button variant="neutral" onClick={() => setShowReviewModal(false)}>Discard</Button>
-                <Button onClick={handleImportParsedProducts} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200">
-                    <Save size={18} className="mr-2 inline"/> Import to Inventory
-                </Button>
+        <div className="flex flex-col md:flex-row h-[80vh] md:h-[70vh]">
+            {/* Left Side: Image Preview */}
+            <div className="w-full md:w-1/2 bg-gray-900 flex flex-col items-center justify-center relative overflow-hidden group">
+                {invoiceImage ? (
+                    <img src={invoiceImage} className="max-w-full max-h-full object-contain" alt="Invoice Preview" />
+                ) : (
+                    <div className="text-gray-500 flex flex-col items-center">
+                        <Eye size={48} className="mb-2 opacity-50"/>
+                        <span>No image preview</span>
+                    </div>
+                )}
+                <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
+                    Original Invoice
+                </div>
+            </div>
+
+            {/* Right Side: Data Table */}
+            <div className="w-full md:w-1/2 flex flex-col bg-white">
+                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                    <div>
+                        <h3 className="font-bold text-gray-800">Detected Items</h3>
+                        <p className="text-xs text-gray-500">Please verify details against the image.</p>
+                    </div>
+                    <Badge color="bg-blue-100 text-blue-700">{parsedProducts.length} Found</Badge>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4">
+                    <table className="w-full text-sm">
+                        <thead className="bg-white text-gray-500 font-bold text-xs uppercase sticky top-0 z-10">
+                            <tr>
+                                <th className="pb-3 text-left w-1/3">Product Name</th>
+                                <th className="pb-3 text-center w-16">Qty</th>
+                                <th className="pb-3 text-right w-20">Buy</th>
+                                <th className="pb-3 text-right w-20">Sell</th>
+                                <th className="pb-3 text-center w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {parsedProducts.map((p, idx) => (
+                                <tr key={idx} className="group hover:bg-blue-50/30 transition-colors">
+                                    <td className="py-2 pr-2 align-top">
+                                        <input 
+                                            className="w-full bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none font-medium text-gray-900 py-1 transition-colors"
+                                            value={p.name}
+                                            onChange={(e) => updateParsedProduct(idx, 'name', e.target.value)}
+                                            placeholder="Product Name"
+                                        />
+                                        <div className="flex gap-2 mt-1">
+                                            <input 
+                                                className="bg-gray-100 rounded px-2 py-0.5 text-xs text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200 w-24"
+                                                value={p.category || ''}
+                                                placeholder="Category"
+                                                onChange={(e) => updateParsedProduct(idx, 'category', e.target.value)}
+                                            />
+                                            <select 
+                                                className="bg-gray-100 rounded px-1 py-0.5 text-xs text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200"
+                                                value={p.unit}
+                                                onChange={(e) => updateParsedProduct(idx, 'unit', e.target.value)}
+                                            >
+                                                {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                            </select>
+                                        </div>
+                                    </td>
+                                    <td className="py-2 px-1 align-top">
+                                        <input 
+                                            type="number"
+                                            className="w-full bg-gray-50 border border-gray-200 rounded px-1 py-1 text-center font-bold text-gray-700 focus:border-blue-500 focus:bg-white transition-all"
+                                            value={p.stock}
+                                            onChange={(e) => updateParsedProduct(idx, 'stock', parseFloat(e.target.value))}
+                                        />
+                                    </td>
+                                    <td className="py-2 px-1 align-top">
+                                        <div className="relative">
+                                            <span className="absolute left-1.5 top-1.5 text-gray-400 text-xs">₹</span>
+                                            <input 
+                                                type="number"
+                                                className="w-full pl-4 bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none text-right text-gray-600"
+                                                value={p.buyPrice}
+                                                onChange={(e) => updateParsedProduct(idx, 'buyPrice', parseFloat(e.target.value))}
+                                            />
+                                        </div>
+                                    </td>
+                                    <td className="py-2 px-1 align-top">
+                                        <div className="relative">
+                                            <span className="absolute left-1.5 top-1.5 text-gray-400 text-xs">₹</span>
+                                            <input 
+                                                type="number"
+                                                className="w-full pl-4 bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none text-right font-bold text-green-700"
+                                                value={p.sellPrice}
+                                                onChange={(e) => updateParsedProduct(idx, 'sellPrice', parseFloat(e.target.value))}
+                                            />
+                                        </div>
+                                    </td>
+                                    <td className="py-2 pl-2 text-center align-top pt-3">
+                                        <button onClick={() => removeParsedProduct(idx)} className="text-gray-300 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded">
+                                            <X size={16} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                    <Button variant="neutral" onClick={handleCloseReview}>Discard</Button>
+                    <Button onClick={handleImportParsedProducts} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200">
+                        <Save size={18} className="mr-2 inline"/> Import All
+                    </Button>
+                </div>
             </div>
         </div>
       </Modal>

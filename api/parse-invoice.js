@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -27,42 +27,54 @@ export default async function handler(req, res) {
     const base64Data = image.replace(/^data:.+;base64,/, '');
 
     const prompt = `
-      You are an automated inventory data entry assistant. 
-      Analyze this invoice or inventory list image and extract all product line items.
+      Analyze this inventory invoice or list. Extract product details accurately.
       
-      For each item, extract or infer the following:
-      1. name: The product name.
-      2. stock: The quantity listed. If only 1 is implied, use 1.
-      3. unit: The unit of measure (e.g., pcs, kg, box). Infer 'pcs' if not specified.
-      4. buyPrice: The unit price listed on the invoice. If missing, estimate based on total or set to 0.
-      5. sellPrice: Estimate a retail selling price (buyPrice * 1.3). If buyPrice is 0, set to 0.
-      6. category: Infer a short category name (e.g., 'Dairy', 'Fruits', 'Electronics') based on the product name.
-      
-      Return ONLY a raw JSON array of objects. Do not include markdown formatting like \`\`\`json.
-      
-      Example output format:
-      [
-        { "name": "Apple", "stock": 10, "unit": "kg", "buyPrice": 2.5, "sellPrice": 3.25, "category": "Fruits" },
-        { "name": "Milk", "stock": 5, "unit": "l", "buyPrice": 1.0, "sellPrice": 1.3, "category": "Dairy" }
-      ]
+      Rules for Extraction:
+      - Name: Keep it concise.
+      - Stock: Integer only. Default to 1 if unspecified.
+      - Unit: e.g., 'pcs', 'kg', 'box'. Default to 'pcs'.
+      - Buy Price: The unit cost. Default to 0 if not found.
+      - Sell Price: The retail price. If missing, estimate it as Buy Price * 1.3 (30% margin).
+      - Category: Infer a general category (e.g., 'Dairy', 'Vegetables', 'Beverages') based on the name.
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview', // Using a model capable of vision tasks
+      model: 'gemini-2.5-flash-preview',
       contents: {
         parts: [
           { inlineData: { mimeType: mimeType, data: base64Data } },
           { text: prompt }
         ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            products: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  stock: { type: Type.NUMBER },
+                  unit: { type: Type.STRING },
+                  buyPrice: { type: Type.NUMBER },
+                  sellPrice: { type: Type.NUMBER },
+                  category: { type: Type.STRING }
+                },
+                required: ["name", "stock", "unit", "buyPrice", "sellPrice", "category"]
+              }
+            }
+          }
+        }
       }
     });
 
-    let rawText = response.text;
+    const result = JSON.parse(response.text);
     
-    // Clean up markdown if present
-    rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-    
-    const products = JSON.parse(rawText);
+    // Ensure we return an array even if the model acts uniquely
+    const products = result.products || [];
 
     res.status(200).json({ products });
   } catch (error) {
