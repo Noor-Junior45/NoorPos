@@ -1,0 +1,7 @@
+{
+  "name": "GlassStore AI POS",
+  "description": "A full-stack style store management system featuring Inventory, POS with PDF billing, Customer CRM, and Gemini AI insights. Built with a modern glassmorphism aesthetic.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
