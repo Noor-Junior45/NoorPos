@@ -21,5 +21,33 @@ export const GeminiService = {
       console.error("Gemini API Error:", error);
       return "Unable to generate AI insights. Please ensure the server is running and the API key is configured.";
     }
+  },
+
+  async parseInvoice(file: File): Promise<Partial<Product>[]> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = async () => {
+        try {
+          const base64String = reader.result as string;
+          const response = await fetch('/api/parse-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              image: base64String,
+              mimeType: file.type
+            }),
+          });
+
+          if (!response.ok) throw new Error("Failed to parse invoice");
+          
+          const data = await response.json();
+          resolve(data.products);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = (error) => reject(error);
+    });
   }
 };

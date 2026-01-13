@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import dotenv from 'dotenv';
 import analyzeHandler from './api/analyze.js';
+import parseInvoiceHandler from './api/parse-invoice.js';
 
 dotenv.config();
 
@@ -12,10 +13,11 @@ const PORT = process.env.PORT || 3000;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increased limit for image uploads
 
 // API Routes
 app.post('/api/analyze', analyzeHandler);
+app.post('/api/parse-invoice', parseInvoiceHandler);
 
 // Serve Static Files (Production)
 app.use(express.static(join(__dirname, 'dist')));

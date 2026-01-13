@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
+import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, AlertOctagon, Book } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, AlertOctagon, Book, Upload, FileUp, Loader2, Save } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -132,6 +133,12 @@ export const Warehouse: React.FC = () => {
   const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
   const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
   const minSwipeDistance = 50;
+
+  // Invoice Parsing State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isParsingInvoice, setIsParsingInvoice] = useState(false);
+  const [parsedProducts, setParsedProducts] = useState<Partial<Product>[]>([]);
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -318,6 +325,47 @@ export const Warehouse: React.FC = () => {
     
     setItemToDelete(null); 
     loadData(); 
+  };
+
+  // Invoice Parsing Handlers
+  const handleInvoiceClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsingInvoice(true);
+    try {
+        const products = await GeminiService.parseInvoice(file);
+        setParsedProducts(products);
+        setShowReviewModal(true);
+    } catch (err) {
+        console.error(err);
+        alert("Failed to process invoice. Please try again.");
+    } finally {
+        setIsParsingInvoice(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImportParsedProducts = async () => {
+    await StoreService.batchAddProducts(parsedProducts);
+    setShowReviewModal(false);
+    setParsedProducts([]);
+    loadData();
+  };
+
+  const updateParsedProduct = (index: number, field: keyof Product, value: any) => {
+    const updated = [...parsedProducts];
+    updated[index] = { ...updated[index], [field]: value };
+    setParsedProducts(updated);
+  };
+
+  const removeParsedProduct = (index: number) => {
+    const updated = parsedProducts.filter((_, i) => i !== index);
+    setParsedProducts(updated);
   };
   
   // 1. Base List of Products (Affected by Low Stock/Filters, but NOT search term)
@@ -1119,6 +1167,15 @@ export const Warehouse: React.FC = () => {
 
     return (
     <div className="space-y-6 animate-in fade-in pb-24">
+        {/* Hidden File Input for Invoice Upload */}
+        <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            className="hidden" 
+            accept="image/*"
+        />
+
         <div className="flex flex-col items-center gap-4 pt-2">
             <div className="relative w-full max-w-2xl mx-auto group">
                 <div className="absolute inset-0 bg-blue-100/50 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
@@ -1152,10 +1209,22 @@ export const Warehouse: React.FC = () => {
                 </div>
             </div>
 
-            <div className="w-full md:hidden px-1">
-                 <Button onClick={handleOpenAdd} className="w-full rounded-full flex items-center justify-center py-3 shadow-md bg-blue-600 text-white">
-                    <Plus size={18} className="mr-2"/> Add Product
-                 </Button>
+            {/* Mobile Action Buttons */}
+            <div className="w-full md:hidden px-1 flex gap-2">
+                <button 
+                    onClick={handleOpenAdd} 
+                    className="flex-1 rounded-lg flex items-center justify-center py-3 shadow-md bg-blue-600 text-white font-medium"
+                >
+                    <Plus size={18} className="mr-2"/> Manual Add
+                </button>
+                <button 
+                    onClick={handleInvoiceClick}
+                    disabled={isParsingInvoice}
+                    className="flex-1 rounded-lg flex items-center justify-center py-3 shadow-md bg-indigo-600 text-white font-medium"
+                >
+                    {isParsingInvoice ? <Loader2 size={18} className="animate-spin mr-2"/> : <Sparkles size={18} className="mr-2"/>} 
+                    AI Invoice
+                </button>
             </div>
 
             <div className="w-full flex flex-col md:flex-row justify-between items-center gap-4 px-1">
@@ -1181,9 +1250,16 @@ export const Warehouse: React.FC = () => {
                 </div>
 
                 <div className="hidden md:flex items-center gap-3 shrink-0">
-                    <Button onClick={handleOpenAdd} className="rounded-full flex items-center px-6 py-2 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 transition-all hover:-translate-y-0.5">
-                        <Plus size={18} className="mr-2"/> Add Product
-                    </Button>
+                    <div className="flex items-center gap-0 bg-white rounded-full shadow-lg shadow-blue-500/10 border border-blue-100 p-1">
+                        <button onClick={handleOpenAdd} className="px-5 py-2 text-blue-600 font-bold flex items-center gap-2 hover:bg-blue-50 rounded-full transition-colors text-sm">
+                            <Plus size={18} /> Add Manual
+                        </button>
+                        <div className="w-px h-6 bg-gray-200"></div>
+                        <button onClick={handleInvoiceClick} disabled={isParsingInvoice} className="px-5 py-2 text-indigo-600 font-bold flex items-center gap-2 hover:bg-indigo-50 rounded-full transition-colors text-sm">
+                            {isParsingInvoice ? <Loader2 size={18} className="animate-spin text-indigo-500"/> : <Sparkles size={18} className="text-indigo-500"/>}
+                            Upload Invoice
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1526,6 +1602,98 @@ export const Warehouse: React.FC = () => {
               <Button variant="neutral" onClick={() => setItemToDelete(null)}>Cancel</Button>
               <Button variant="danger" onClick={confirmDelete}>Delete</Button>
           </div>
+      </Modal>
+
+      {/* Invoice Review Modal */}
+      <Modal 
+        isOpen={showReviewModal} 
+        onClose={() => setShowReviewModal(false)} 
+        title="Review Invoice Items"
+        className="!max-w-4xl"
+      >
+        <div className="max-h-[60vh] overflow-y-auto mb-6 border border-gray-200 rounded-lg">
+            <table className="w-full text-sm">
+                <thead className="bg-gray-100 text-gray-700 font-bold sticky top-0 z-10">
+                    <tr>
+                        <th className="px-3 py-2 text-left">Product Name</th>
+                        <th className="px-3 py-2 w-24">Qty</th>
+                        <th className="px-3 py-2 w-24">Unit</th>
+                        <th className="px-3 py-2 w-28 text-right">Buy Price</th>
+                        <th className="px-3 py-2 w-28 text-right">Sell Price</th>
+                        <th className="px-3 py-2 w-32">Category</th>
+                        <th className="px-3 py-2 w-10"></th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {parsedProducts.map((p, idx) => (
+                        <tr key={idx} className="hover:bg-blue-50/30 group">
+                            <td className="p-2">
+                                <input 
+                                    className="w-full bg-transparent border-none focus:ring-0 font-medium text-gray-800"
+                                    value={p.name}
+                                    onChange={(e) => updateParsedProduct(idx, 'name', e.target.value)}
+                                />
+                            </td>
+                            <td className="p-2">
+                                <input 
+                                    type="number"
+                                    className="w-full bg-gray-50 border border-transparent focus:bg-white focus:border-blue-300 rounded px-1 py-1 text-center"
+                                    value={p.stock}
+                                    onChange={(e) => updateParsedProduct(idx, 'stock', parseFloat(e.target.value))}
+                                />
+                            </td>
+                            <td className="p-2">
+                                <select 
+                                    className="w-full bg-transparent border-none focus:ring-0 text-gray-600 text-xs"
+                                    value={p.unit}
+                                    onChange={(e) => updateParsedProduct(idx, 'unit', e.target.value)}
+                                >
+                                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                            </td>
+                            <td className="p-2 text-right">
+                                <input 
+                                    type="number"
+                                    className="w-full bg-transparent border-none focus:ring-0 text-right"
+                                    value={p.buyPrice}
+                                    onChange={(e) => updateParsedProduct(idx, 'buyPrice', parseFloat(e.target.value))}
+                                />
+                            </td>
+                            <td className="p-2 text-right">
+                                <input 
+                                    type="number"
+                                    className="w-full bg-transparent border-none focus:ring-0 text-right font-bold text-green-700"
+                                    value={p.sellPrice}
+                                    onChange={(e) => updateParsedProduct(idx, 'sellPrice', parseFloat(e.target.value))}
+                                />
+                            </td>
+                             <td className="p-2">
+                                <input 
+                                    className="w-full bg-transparent border-none focus:ring-0 text-xs text-gray-500"
+                                    value={p.category || ''}
+                                    placeholder="Uncategorized"
+                                    onChange={(e) => updateParsedProduct(idx, 'category', e.target.value)}
+                                />
+                            </td>
+                            <td className="p-2 text-center">
+                                <button onClick={() => removeParsedProduct(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
+                                    <X size={16} />
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+        <div className="flex justify-between items-center">
+            <span className="text-sm text-gray-500 font-medium">{parsedProducts.length} items detected</span>
+            <div className="flex gap-3">
+                <Button variant="neutral" onClick={() => setShowReviewModal(false)}>Discard</Button>
+                <Button onClick={handleImportParsedProducts} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200">
+                    <Save size={18} className="mr-2 inline"/> Import to Inventory
+                </Button>
+            </div>
+        </div>
       </Modal>
     </div>
   );

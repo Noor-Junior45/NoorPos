@@ -70,6 +70,36 @@ export const StoreService = {
     return newProduct;
   },
 
+  async batchAddProducts(productsToAdd: Partial<Product>[]): Promise<void> {
+    await delay(500);
+    const products = await this.getInventory();
+    const settings = await this.getSettings();
+    const tags = await this.getTags();
+    
+    productsToAdd.forEach(p => {
+        // Try to match category name to existing tag ID, or leave blank (Uncategorized)
+        const matchedTag = tags.find(t => t.name.toLowerCase() === (p.category || '').toLowerCase());
+
+        const newProduct: Product = {
+            id: generateId(),
+            name: p.name || 'Unknown Product',
+            sku: p.sku || generateId().slice(0, 6),
+            stock: p.stock || 0,
+            unit: p.unit || 'pcs',
+            lowStockThreshold: settings.lowStockDefault,
+            buyPrice: p.buyPrice || 0,
+            sellPrice: p.sellPrice || 0,
+            wholesalePrice: p.wholesalePrice || 0,
+            location: 'Warehouse',
+            tagId: matchedTag ? matchedTag.id : undefined,
+            createdAt: new Date().toISOString(),
+            ...p
+        } as Product;
+        products.push(newProduct);
+    });
+    localStorage.setItem(INV_KEY, JSON.stringify(products));
+  },
+
   async updateProduct(id: string, updates: Partial<Product>): Promise<void> {
     await delay(200);
     const products = await this.getInventory();
