@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -32,6 +32,70 @@ const TAG_COLORS = [
     '#ec4899', '#f43f5e', '#64748b', '#1f2937'
 ];
 
+// Helper Component for Settings Rows to prevent re-renders losing focus
+const ProductSettingRow: React.FC<{ 
+    product: Product; 
+    type: 'stock' | 'expiry'; 
+    onUpdate: (id: string, updates: Partial<Product>) => void 
+}> = ({ product, type, onUpdate }) => {
+    const [val, setVal] = useState(type === 'stock' ? product.lowStockThreshold : (product.expiryDate || ''));
+
+    useEffect(() => {
+        setVal(type === 'stock' ? product.lowStockThreshold : (product.expiryDate || ''));
+    }, [product.lowStockThreshold, product.expiryDate, type]);
+
+    const handleBlur = () => {
+        if (type === 'stock') {
+            const numVal = parseInt(val as string) || 0;
+            if (numVal !== product.lowStockThreshold) {
+                onUpdate(product.id, { lowStockThreshold: numVal });
+            }
+        } else {
+            if (val !== product.expiryDate) {
+                onUpdate(product.id, { expiryDate: val as string });
+            }
+        }
+    };
+
+    return (
+        <div className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 group">
+            <div className="min-w-0 flex-1 pr-4">
+                <div className="font-medium text-sm text-gray-700 truncate">{product.name}</div>
+                <div className="text-xs text-gray-400 flex items-center gap-2">
+                    {type === 'stock' ? (
+                        <>
+                            <span className={product.stock < product.lowStockThreshold ? "text-red-500 font-bold" : ""}>
+                                {product.stock} {product.unit} in stock
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            <span>Manuf: {product.manufacturingDate ? new Date(product.manufacturingDate).toLocaleDateString() : '-'}</span>
+                        </>
+                    )}
+                </div>
+            </div>
+            <div className="shrink-0">
+                <div className={`flex items-center bg-white border border-gray-200 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 transition-all ${type === 'expiry' ? 'w-36' : 'w-24'}`}>
+                    <input 
+                        type={type === 'stock' ? "number" : "date"}
+                        className="w-full px-2 py-1.5 text-sm bg-transparent outline-none text-gray-700 font-medium"
+                        value={val}
+                        onChange={(e) => setVal(e.target.value)}
+                        onBlur={handleBlur}
+                        placeholder={type === 'stock' ? "0" : "YYYY-MM-DD"}
+                    />
+                    {type === 'stock' && (
+                        <span className="bg-gray-50 border-l border-gray-200 px-2 py-1.5 text-xs text-gray-500 select-none">
+                            limit
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const Warehouse: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTab>(SubTab.DASHBOARD);
   const [products, setProducts] = useState<Product[]>([]);
@@ -59,6 +123,7 @@ export const Warehouse: React.FC = () => {
   const [itemToDelete, setItemToDelete] = useState<{ id: string, type: 'product' | 'tag' | 'bulk_products', name: string } | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ProductFilter>(ProductFilter.ALL);
+  const [settingsSearch, setSettingsSearch] = useState('');
 
   useEffect(() => { loadData(); }, []);
 
@@ -121,6 +186,12 @@ export const Warehouse: React.FC = () => {
   const handleUpdateSettings = async (newSettings: StoreSettings) => {
       setSettings(newSettings);
       await StoreService.saveSettings(newSettings);
+  };
+
+  const handleInlineProductUpdate = async (id: string, updates: Partial<Product>) => {
+      // Optimistic update
+      setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+      await StoreService.updateProduct(id, updates);
   };
   
   const getTag = (id?: string) => tags.find(t => t.id === id);
@@ -251,102 +322,118 @@ export const Warehouse: React.FC = () => {
       const isLow = totalStock < p.lowStockThreshold;
       const anyExpiring = items.some(i => isAboutToExpire(i.expiryDate));
 
+      // Determine Earliest Expiry
+      const validExpiries = items
+        .map(i => i.expiryDate)
+        .filter((d): d is string => !!d && d !== '');
+      
+      let earliestExpiryDisplay: string | null = null;
+      let isEarliestLow = false;
+
+      if (validExpiries.length > 0) {
+        // Sort to find the earliest date. ISO format sorts naturally.
+        validExpiries.sort();
+        earliestExpiryDisplay = validExpiries[0];
+        isEarliestLow = isAboutToExpire(earliestExpiryDisplay);
+      }
+
       return (
         <Card 
             key={groupKey} 
-            className="flex flex-col !p-0 overflow-hidden hover:shadow-xl transition-all duration-300 border-0 shadow-sm bg-white"
+            className="flex flex-col !p-0 overflow-hidden hover:shadow-xl transition-all duration-300 shadow-sm bg-white"
             style={{ 
-                borderLeft: `3px solid ${borderColor}`,
+                border: `2px solid ${borderColor}`,
                 boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
             }}
         >
-            <div className="p-4 flex flex-col gap-3">
-                {/* Line 1: Name & Actions */}
+            <div className="p-3 flex flex-col gap-1">
+                {/* Line 1: Name & Actions (ALWAYS VISIBLE) */}
                 <div className="flex justify-between items-start gap-2">
-                    <h4 className="font-bold text-gray-800 text-lg leading-tight line-clamp-2" title={p.name}>{p.name}</h4>
-                    <div className="flex gap-1 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onClick={() => handleEditProduct(p)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
-                            <Edit2 size={16} />
+                    <h4 className="font-bold text-gray-900 text-2xl leading-tight line-clamp-2" title={p.name}>{p.name}</h4>
+                    <div className="flex gap-2 shrink-0">
+                         <button onClick={() => handleEditProduct(p)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors bg-gray-50 border border-gray-100">
+                            <Edit2 size={18} />
                          </button>
-                         <button onClick={() => setItemToDelete({ id: p.id, type: 'product', name: p.name })} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors">
-                            <Trash2 size={16} />
+                         <button onClick={() => setItemToDelete({ id: p.id, type: 'product', name: p.name })} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors bg-gray-50 border border-gray-100">
+                            <Trash2 size={18} />
                          </button>
                     </div>
                 </div>
 
-                {/* Line 2: Prices (Minimal text based) */}
-                <div className="grid grid-cols-3 gap-2 border-b border-dashed border-gray-100 pb-3">
+                {/* Line 2: SKU (Black, Bold) */}
+                <div className="text-sm font-mono font-bold text-black mt-1 mb-3">
+                    SKU: {p.sku || 'N/A'}
+                </div>
+
+                {/* Line 3: Prices (Compact Grid - Reverted to Row Layout) */}
+                <div className="grid grid-cols-3 gap-2 border-b border-dashed border-gray-200 pb-2 mb-1">
                     <div className="flex flex-col">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Buy</span>
-                        <span className="font-bold text-red-500">{settings.currencySymbol}{p.buyPrice}</span>
+                        <span className="text-xs uppercase font-bold text-gray-500">Buy</span>
+                        <span className="font-bold text-lg text-gray-700">{settings.currencySymbol}{p.buyPrice}</span>
                     </div>
-                    <div className="flex flex-col border-l border-gray-100 pl-2">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Wholesale</span>
-                        <span className="font-bold text-blue-500">{settings.currencySymbol}{p.wholesalePrice || '-'}</span>
+                    <div className="flex flex-col border-l border-gray-200 pl-2">
+                        <span className="text-xs uppercase font-bold text-gray-500">Wholesale</span>
+                        <span className="font-bold text-lg text-blue-600">{settings.currencySymbol}{p.wholesalePrice || '-'}</span>
                     </div>
-                    <div className="flex flex-col border-l border-gray-100 pl-2">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Sell</span>
-                        <span className="font-bold text-green-600 text-lg leading-none">{settings.currencySymbol}{p.sellPrice}</span>
+                    <div className="flex flex-col border-l border-gray-200 pl-2">
+                        <span className="text-xs uppercase font-bold text-gray-500">Sell</span>
+                        <span className="font-extrabold text-3xl text-green-700 leading-none">{settings.currencySymbol}{p.sellPrice}</span>
                     </div>
                 </div>
 
-                {/* Line 3: SKU & Total Stock */}
-                <div className="flex justify-between items-center text-sm pt-1">
-                     <div className="flex items-center gap-1.5 text-gray-600">
-                        <Hash size={14} className="text-gray-400"/>
-                        <span className="font-medium font-mono text-gray-500">{p.sku || 'N/A'}</span>
-                     </div>
-                     <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Stock</span>
-                        <span className={`font-bold text-base ${isLow ? 'text-red-500' : 'text-gray-800'}`}>
-                            {totalStock}
-                        </span>
-                     </div>
+                {/* Line 4: Info Line (Loc, Unit, Tax, Qty) - Reverted to Row, Added Tax Logic */}
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-gray-600 mt-2">
+                    <span className="flex items-center gap-1">
+                        <MapPin size={14} className="text-gray-900"/> Loc: {p.location || 'N/A'}
+                    </span>
+                    
+                    <span className="flex items-center gap-1">
+                        Unit: {p.capacity || '1'} {p.unit}
+                    </span>
+
+                    {/* Tax Always Visible */}
+                    <span className="flex items-center gap-1">
+                        Tax: {p.taxRate ? `${p.taxRate}%` : 'N/A'}
+                    </span>
+
+                    <span className={`flex items-center gap-1 ${isLow ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
+                        <Box size={14} className={isLow ? 'text-red-600' : 'text-gray-500'}/> Qty: {totalStock}
+                    </span>
                 </div>
 
-                {/* Line 4: Location, Units, Tax */}
-                <div className="flex justify-between items-center text-xs text-gray-500">
-                    <div className="flex items-center gap-3">
-                        {p.location && (
-                            <span className="flex items-center gap-1">
-                                <MapPin size={12}/> {p.location}
-                            </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                            <Scale size={12}/> {p.capacity || '1'} {p.unit}
-                        </span>
-                    </div>
-                    {p.taxRate ? (
-                        <span className="flex items-center gap-1 text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
-                            <Percent size={10}/> {p.taxRate}%
-                        </span>
-                    ) : null}
-                </div>
+                 {/* Line 5: Earliest Expiry Date */}
+                 <div className="flex items-center gap-2 mt-2 text-sm">
+                     <Clock size={14} className={isEarliestLow ? "text-amber-600" : "text-gray-400"} />
+                     <span className="text-gray-500 font-medium">Expiry:</span>
+                     <span className={`font-bold ${isEarliestLow ? "text-amber-700" : "text-gray-800"}`}>
+                        {earliestExpiryDisplay ? formatDate(earliestExpiryDisplay) : 'N/A'}
+                     </span>
+                 </div>
 
-                {/* Line 5: Badges & Dropdown Toggle */}
-                <div className="flex justify-between items-center mt-1 pt-2 border-t border-gray-50">
-                    <div className="flex gap-2">
+                {/* Line 6: Badges & Toggle */}
+                <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100">
+                    <div className="flex gap-2 flex-wrap">
                         {isLow && (
-                            <div className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
-                                <AlertTriangle size={10}/> Low Stock
+                            <div className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-100">
+                                <AlertTriangle size={12}/> Low Stock
                             </div>
                         )}
                         {anyExpiring && (
-                            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
-                                <Clock size={10}/> Expiring
+                            <div className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">
+                                <Clock size={12}/> Expiring
                             </div>
                         )}
                     </div>
                     
-                    <div className="flex items-center gap-1">
-                         <Button size="sm" variant="neutral" onClick={() => handleCloneProduct(p)} className="text-[10px] !px-2 !py-0.5 h-6 mr-1" title="Add Batch">
-                            <Plus size={12}/>
+                    <div className="flex items-center gap-1 ml-auto">
+                         <Button size="sm" variant="neutral" onClick={() => handleCloneProduct(p)} className="!px-2 !py-1 h-8 bg-gray-100 hover:bg-gray-200 border-gray-200" title="Add Batch">
+                            <Plus size={16}/>
                          </Button>
                          <button 
                             onClick={() => toggleGroup(groupKey)} 
-                            className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                            className="text-gray-400 hover:text-gray-600 transition-colors p-1 bg-gray-50 rounded-md border border-gray-100 h-8 w-8 flex items-center justify-center"
                         >
-                            {isExpanded ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+                            {isExpanded ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
                         </button>
                     </div>
                 </div>
@@ -354,9 +441,9 @@ export const Warehouse: React.FC = () => {
 
             {/* Dropdown Content */}
             {isExpanded && (
-                <div className="bg-gray-50 border-t border-gray-100 p-3 text-xs animate-in slide-in-from-top-1 duration-200">
+                <div className="bg-gray-50 border-t border-gray-200 p-2 text-xs animate-in slide-in-from-top-1 duration-200">
                      {/* Batches Header */}
-                     <div className="grid grid-cols-4 text-gray-400 font-bold uppercase mb-2 px-1 text-[10px] tracking-wide">
+                     <div className="grid grid-cols-4 text-gray-500 font-bold uppercase mb-2 px-1 text-[10px] tracking-wide">
                         <span>Added</span>
                         <span className="text-center">Expiry</span>
                         <span className="text-center">Qty</span>
@@ -367,15 +454,15 @@ export const Warehouse: React.FC = () => {
                             const expiring = isAboutToExpire(item.expiryDate);
                             return (
                                 <div key={item.id} className="grid grid-cols-4 items-center bg-white border border-gray-200 p-2 rounded-md shadow-sm">
-                                    <div className="text-gray-600 truncate">{new Date(item.createdAt || '').toLocaleDateString('en-GB', {day: '2-digit', month: 'short'})}</div>
-                                    <div className={`text-center font-medium ${expiring ? 'text-amber-600' : 'text-gray-600'}`}>
+                                    <div className="text-gray-700 font-medium truncate">{new Date(item.createdAt || '').toLocaleDateString('en-GB', {day: '2-digit', month: 'short'})}</div>
+                                    <div className={`text-center font-bold ${expiring ? 'text-amber-600' : 'text-gray-600'}`}>
                                         {item.expiryDate ? formatDate(item.expiryDate) : '-'}
-                                        {expiring && <span className="block text-[8px] uppercase font-bold text-amber-500 leading-tight mt-0.5">Sell First</span>}
+                                        {expiring && <span className="block text-[8px] uppercase font-extrabold text-amber-600 leading-tight mt-0.5">Sell First</span>}
                                     </div>
-                                    <div className="text-center font-bold text-gray-800">{item.stock}</div>
+                                    <div className="text-center font-extrabold text-gray-900 text-sm">{item.stock}</div>
                                     <div className="flex justify-end gap-1">
-                                        <button onClick={() => handleEditProduct(item)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded transition-colors"><Edit2 size={12}/></button>
-                                        <button onClick={() => setItemToDelete({ id: item.id, type: 'product', name: `${item.name} (Batch)` })} className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"><Trash2 size={12}/></button>
+                                        <button onClick={() => handleEditProduct(item)} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-100 transition-colors"><Edit2 size={14}/></button>
+                                        <button onClick={() => setItemToDelete({ id: item.id, type: 'product', name: `${item.name} (Batch)` })} className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded border border-red-100 transition-colors"><Trash2 size={14}/></button>
                                     </div>
                                 </div>
                             );
@@ -451,7 +538,7 @@ export const Warehouse: React.FC = () => {
                     <Input 
                         type="number" 
                         placeholder="0.00" 
-                        value={newProduct.buyPrice} 
+                        value={newProduct.buyPrice || ''} 
                         onChange={e => setNewProduct({...newProduct, buyPrice: parseFloat(e.target.value) || 0})}
                         className="w-full border-2 border-green-200 focus:border-green-500 bg-green-50/10 rounded-lg !py-3 !px-6"
                     />
@@ -464,7 +551,7 @@ export const Warehouse: React.FC = () => {
                     <Input 
                         type="number" 
                         placeholder="0.00" 
-                        value={newProduct.sellPrice} 
+                        value={newProduct.sellPrice || ''} 
                         onChange={e => setNewProduct({...newProduct, sellPrice: parseFloat(e.target.value) || 0})}
                         className="w-full border-2 border-green-200 focus:border-green-500 font-bold text-green-700 bg-green-50/10 rounded-lg !py-3 !px-6"
                     />
@@ -477,7 +564,7 @@ export const Warehouse: React.FC = () => {
                     <Input 
                         type="number" 
                         placeholder="0.00" 
-                        value={newProduct.wholesalePrice} 
+                        value={newProduct.wholesalePrice || ''} 
                         onChange={e => setNewProduct({...newProduct, wholesalePrice: parseFloat(e.target.value) || 0})}
                         className="w-full border-2 border-green-200 focus:border-green-500 bg-green-50/10 rounded-lg !py-3 !px-6"
                     />
@@ -490,7 +577,7 @@ export const Warehouse: React.FC = () => {
                     <Input 
                         type="number" 
                         placeholder="0" 
-                        value={newProduct.taxRate} 
+                        value={newProduct.taxRate || ''} 
                         onChange={e => setNewProduct({...newProduct, taxRate: parseFloat(e.target.value) || 0})}
                         className="w-full border-2 border-green-200 focus:border-green-500 bg-green-50/10 rounded-lg !py-3 !px-6"
                     />
@@ -537,7 +624,7 @@ export const Warehouse: React.FC = () => {
                     <Input 
                         type="number" 
                         placeholder="0" 
-                        value={newProduct.stock} 
+                        value={newProduct.stock || ''} 
                         onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})}
                         className="w-full border-2 border-purple-200 focus:border-purple-500 bg-purple-50/10 rounded-lg !py-3 !px-6"
                     />
@@ -550,7 +637,7 @@ export const Warehouse: React.FC = () => {
                     <Input 
                         type="number" 
                         placeholder="10" 
-                        value={newProduct.lowStockThreshold} 
+                        value={newProduct.lowStockThreshold || ''} 
                         onChange={e => setNewProduct({...newProduct, lowStockThreshold: parseInt(e.target.value) || 0})}
                         className="w-full border-2 border-purple-200 focus:border-purple-500 bg-purple-50/10 rounded-lg !py-3 !px-6"
                     />
@@ -909,22 +996,36 @@ export const Warehouse: React.FC = () => {
         </Card>
 
         <Card className="overflow-hidden border-0 shadow-lg shadow-gray-200/50">
-            <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100">
+            <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex justify-between items-center sticky top-0 z-10">
                 <h3 className="font-bold text-gray-800 flex items-center gap-2">
                     <Bell size={18} className="text-amber-500"/> Alert Configuration
                 </h3>
+                {/* Search for filtering the lists below */}
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-1.5 text-gray-400" size={14}/>
+                    <input 
+                        placeholder="Search products..." 
+                        className="pl-8 pr-3 py-1 text-sm bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all w-48"
+                        value={settingsSearch}
+                        onChange={(e) => setSettingsSearch(e.target.value)}
+                    />
+                </div>
             </div>
             
             <div className="divide-y divide-gray-50">
+                {/* Low Stock Section */}
                 <div className="p-4 sm:p-6 hover:bg-gray-50/30 transition-colors">
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 mb-6">
                         <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0 mt-1">
                             <AlertTriangle size={20} />
                         </div>
                         <div className="flex-1">
                             <div className="flex justify-between items-start gap-4">
                                 <div>
-                                    <h4 className="font-bold text-gray-800 text-sm sm:text-base">Low Stock Threshold</h4>
+                                    <h4 className="font-bold text-gray-800 text-sm sm:text-base">Low Stock Threshold (Global)</h4>
+                                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                                        Default limit for new products.
+                                    </p>
                                 </div>
                                 <div className="flex items-center gap-2 bg-white border-2 border-gray-300 rounded-lg p-1 px-2 focus-within:border-red-500 focus-within:ring-1 focus-within:ring-red-200 transition-all shadow-sm shrink-0">
                                     <Input 
@@ -936,25 +1037,47 @@ export const Warehouse: React.FC = () => {
                                     <span className="text-xs sm:text-sm font-medium text-gray-500 select-none">units</span>
                                 </div>
                             </div>
-                            <p className="text-xs sm:text-sm text-gray-500 mt-2">
-                                Set default quantity for "Low Stock" flag.
-                            </p>
-                            <span className="mt-2 text-[10px] sm:text-xs text-red-500 font-medium bg-red-50 inline-block px-2 py-0.5 rounded border border-red-100">
-                                Triggers red alert
-                            </span>
+                        </div>
+                    </div>
+
+                    {/* Product Specific Low Stock List */}
+                    <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="px-4 py-2 bg-gray-100/50 border-b border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-wide">
+                             <span>Individual Product Thresholds</span>
+                             <span>Limit</span>
+                        </div>
+                        <div className="max-h-60 overflow-y-auto bg-white">
+                             {products
+                                .filter(p => p.name.toLowerCase().includes(settingsSearch.toLowerCase()))
+                                .map(p => (
+                                    <ProductSettingRow 
+                                        key={p.id} 
+                                        product={p} 
+                                        type="stock" 
+                                        onUpdate={handleInlineProductUpdate} 
+                                    />
+                                ))
+                             }
+                             {products.filter(p => p.name.toLowerCase().includes(settingsSearch.toLowerCase())).length === 0 && (
+                                 <div className="p-6 text-center text-gray-400 text-sm">No products found matching "{settingsSearch}"</div>
+                             )}
                         </div>
                     </div>
                 </div>
 
+                {/* Expiry Section */}
                 <div className="p-4 sm:p-6 hover:bg-gray-50/30 transition-colors">
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 mb-6">
                         <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-1">
                             <Clock size={20} />
                         </div>
                         <div className="flex-1">
                              <div className="flex justify-between items-start gap-4">
                                 <div>
-                                    <h4 className="font-bold text-gray-800 text-sm sm:text-base">Expiry Notice</h4>
+                                    <h4 className="font-bold text-gray-800 text-sm sm:text-base">Expiry Notice Period</h4>
+                                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                                        Days in advance to warn about expiry.
+                                    </p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1 shrink-0">
                                     <div className="flex items-center gap-2 bg-white border-2 border-gray-300 rounded-lg p-1 px-2 focus-within:border-amber-500 focus-within:ring-1 focus-within:ring-amber-200 transition-all shadow-sm">
@@ -968,9 +1091,6 @@ export const Warehouse: React.FC = () => {
                                     </div>
                                 </div>
                             </div>
-                            <p className="text-xs sm:text-sm text-gray-500 mt-2">
-                                Days in advance to warn about expiry.
-                            </p>
                              <div className="flex flex-wrap gap-2 mt-3">
                                 {[
                                     { label: '15 Days', value: 15 },
@@ -990,6 +1110,30 @@ export const Warehouse: React.FC = () => {
                                     </button>
                                 ))}
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Product Specific Expiry List */}
+                    <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+                        <div className="px-4 py-2 bg-gray-100/50 border-b border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-wide">
+                             <span>Product Expiry Dates</span>
+                             <span>Date</span>
+                        </div>
+                        <div className="max-h-60 overflow-y-auto bg-white">
+                             {products
+                                .filter(p => p.name.toLowerCase().includes(settingsSearch.toLowerCase()))
+                                .map(p => (
+                                    <ProductSettingRow 
+                                        key={p.id} 
+                                        product={p} 
+                                        type="expiry" 
+                                        onUpdate={handleInlineProductUpdate} 
+                                    />
+                                ))
+                             }
+                             {products.filter(p => p.name.toLowerCase().includes(settingsSearch.toLowerCase())).length === 0 && (
+                                 <div className="p-6 text-center text-gray-400 text-sm">No products found matching "{settingsSearch}"</div>
+                             )}
                         </div>
                     </div>
                 </div>
