@@ -128,6 +128,11 @@ export const Warehouse: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<ProductFilter>(ProductFilter.ALL);
   const [settingsSearch, setSettingsSearch] = useState('');
 
+  // Swipe State
+  const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
+  const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
+  const minSwipeDistance = 50;
+
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
@@ -404,6 +409,41 @@ export const Warehouse: React.FC = () => {
     });
     return Object.values(valueByTag).filter(d => d.value > 0);
   }, [products, tags]);
+
+  // Swipe Handlers
+  const onTouchStart = (e: React.TouchEvent) => {
+      setTouchEnd(null);
+      setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+      setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+  };
+
+  const onTouchEnd = () => {
+      if (!touchStart || !touchEnd) return;
+      
+      const distanceX = touchStart.x - touchEnd.x;
+      const distanceY = touchStart.y - touchEnd.y;
+      
+      // If vertical scroll is dominant, ignore swipe
+      if (Math.abs(distanceY) > Math.abs(distanceX)) return;
+
+      const isLeftSwipe = distanceX > minSwipeDistance;
+      const isRightSwipe = distanceX < -minSwipeDistance;
+      
+      if (isLeftSwipe || isRightSwipe) {
+          const tabs = [SubTab.DASHBOARD, SubTab.PRODUCTS, SubTab.TAGS, SubTab.SETTINGS];
+          const currentIndex = tabs.indexOf(activeTab);
+          
+          if (isLeftSwipe && currentIndex < tabs.length - 1) {
+              setActiveTab(tabs[currentIndex + 1]);
+          }
+          if (isRightSwipe && currentIndex > 0) {
+              setActiveTab(tabs[currentIndex - 1]);
+          }
+      }
+  };
 
   const renderProductGroup = (groupKey: string, items: Product[]) => {
       const p = items[0]; 
@@ -1406,7 +1446,12 @@ export const Warehouse: React.FC = () => {
   );
 
   return (
-    <div className="pb-32">
+    <div 
+        className="pb-32 min-h-[80vh]" 
+        onTouchStart={onTouchStart} 
+        onTouchMove={onTouchMove} 
+        onTouchEnd={onTouchEnd}
+    >
       {!isEditorOpen && (
         <div className="flex justify-center mb-6 sticky top-4 z-30">
             <nav className="glass-panel rounded-full px-2 py-1.5 flex items-center gap-1 shadow-md ring-1 ring-black/5">
