@@ -1,4 +1,4 @@
-import { Sale } from "../types";
+import { Sale, Customer } from "../types";
 
 // Define interface for the library since we are using a global CDN in index.html
 interface JsPDFInstance {
@@ -26,7 +26,7 @@ export const generateInvoicePDF = (sale: Sale) => {
 
     // Header / Logo Placeholder
     doc.setFontSize(22);
-    doc.text("GlassStore POS", 14, 20);
+    doc.text("Noor POS", 14, 20);
     
     doc.setFontSize(10);
     doc.text("1234 Future Street, Tech City", 14, 26);
@@ -77,4 +77,57 @@ export const generateInvoicePDF = (sale: Sale) => {
     doc.text("Thank you for your business!", 105, 280, { align: 'center' });
 
     doc.save(`invoice_${sale.id.slice(0, 8)}.pdf`);
+};
+
+export const generateCustomerStatementPDF = (customer: Customer, sales: Sale[]) => {
+    // @ts-ignore
+    const jspdf = window.jspdf;
+    if (typeof jspdf === 'undefined') {
+        alert("PDF Library not loaded yet.");
+        return;
+    }
+
+    const { jsPDF } = jspdf;
+    // @ts-ignore
+    const doc = new jsPDF();
+    const pageWidth = 210;
+
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(33, 150, 243); // Blue
+    doc.text("Noor Store", 14, 20);
+    doc.setTextColor(0, 0, 0);
+
+    doc.setFontSize(16);
+    doc.text("Customer Statement", 14, 30);
+
+    // Customer Details
+    doc.setFontSize(10);
+    doc.text(`Customer: ${customer.name}`, 14, 40);
+    doc.text(`Phone: ${customer.phone}`, 14, 45);
+    doc.text(`Location: ${customer.location || 'N/A'}`, 14, 50);
+    
+    doc.text(`Statement Date: ${new Date().toLocaleDateString()}`, pageWidth - 60, 40);
+    doc.text(`Total Visits: ${customer.visitCount}`, pageWidth - 60, 45);
+    doc.text(`Total Spent: Rs. ${customer.totalSpent.toFixed(2)}`, pageWidth - 60, 50);
+
+    // Table
+    const tableColumn = ["Date", "Invoice ID", "Items", "Total"];
+    const tableRows = sales.map(sale => [
+        new Date(sale.timestamp).toLocaleDateString(),
+        sale.id.slice(0, 8).toUpperCase(),
+        sale.items.length.toString(),
+        `Rs. ${sale.total.toFixed(2)}`
+    ]);
+
+    // @ts-ignore
+    doc.autoTable({
+        startY: 60,
+        head: [tableColumn],
+        body: tableRows,
+        theme: 'striped',
+        headStyles: { fillColor: [33, 150, 243] },
+    });
+
+    doc.save(`statement_${customer.name.replace(/\s+/g, '_')}.pdf`);
 };

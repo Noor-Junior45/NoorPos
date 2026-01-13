@@ -1,42 +1,29 @@
-import { Product, Sale, Customer, CartItem, Tag, StoreSettings } from '../types';
+import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User } from '../types';
 
-// Keys for LocalStorage
-const INV_KEY = 'glassstore_inventory';
-const SALES_KEY = 'glassstore_sales';
-const CUST_KEY = 'glassstore_customers';
-const TAGS_KEY = 'glassstore_tags';
-const SETTINGS_KEY = 'glassstore_settings';
+interface StoreData {
+  products: Product[];
+  tags: Tag[];
+  sales: Sale[];
+  customers: Customer[];
+  users: User[];
+  settings: StoreSettings;
+}
 
-// Helper for UUID generation with polyfill
-const generateId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  // Fallback for environments where crypto is restricted (e.g. non-localhost HTTP)
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
-
-// Seed data
+// Initial Data for fresh starts
 const initialTags: Tag[] = [
-  { id: 't1', name: 'Fruits', color: '#fbbf24' }, // Amber
-  { id: 't2', name: 'Dairy', color: '#3b82f6' },  // Blue
-  { id: 't3', name: 'Bakery', color: '#d97706' }, // Orange
-  { id: 't4', name: 'Beverage', color: '#8b5cf6' }, // Violet
+  { id: 't1', name: 'Fruits', color: '#fbbf24' },
+  { id: 't2', name: 'Dairy', color: '#3b82f6' },
+  { id: 't3', name: 'Bakery', color: '#d97706' },
+  { id: 't4', name: 'Beverage', color: '#8b5cf6' },
 ];
 
 const initialProducts: Product[] = [
-  { id: '1', name: 'Organic Bananas', sku: '12345', stock: 150, unit: 'kg', lowStockThreshold: 20, buyPrice: 0.5, sellPrice: 1.2, wholesalePrice: 0.8, location: 'Aisle 1', tagId: 't1', expiryDate: '2024-12-30', createdAt: new Date(Date.now() - 86400000).toISOString() },
+  { id: '1', name: 'Organic Bananas', sku: '12345', stock: 150, unit: 'kg', lowStockThreshold: 20, buyPrice: 0.5, sellPrice: 1.2, wholesalePrice: 0.8, location: 'Aisle 1', tagId: 't1', expiryDate: '2024-12-30', createdAt: new Date().toISOString() },
   { id: '2', name: 'Almond Milk', sku: '67890', stock: 8, unit: 'l', lowStockThreshold: 10, buyPrice: 2.0, sellPrice: 4.5, wholesalePrice: 3.5, location: 'Fridge 2', expiryDate: '2024-10-15', tagId: 't2', createdAt: new Date().toISOString() },
-  { id: '3', name: 'Whole Wheat Bread', sku: '54321', stock: 25, unit: 'pcs', lowStockThreshold: 5, buyPrice: 1.5, sellPrice: 3.0, wholesalePrice: 2.2, location: 'Aisle 3', tagId: 't3', manufacturingDate: '2024-10-01', expiryDate: '2024-10-08', createdAt: new Date().toISOString() },
-  { id: '4', name: 'Premium Coffee', sku: '99887', stock: 5, unit: 'pack', lowStockThreshold: 8, buyPrice: 8.0, sellPrice: 15.0, wholesalePrice: 12.0, location: 'Aisle 4', tagId: 't4', createdAt: new Date().toISOString() },
 ];
 
-const initialCustomers: Customer[] = [
-  { id: 'c1', name: 'John Doe', phone: '555-0123', location: 'New York', totalSpent: 0, visitCount: 0, history: [] },
-];
+const initialCustomers: Customer[] = [];
+const initialUsers: User[] = [];
 
 const defaultSettings: StoreSettings = {
   expiryAlertDays: 7,
@@ -45,48 +32,234 @@ const defaultSettings: StoreSettings = {
   currencySymbol: '₹'
 };
 
-// Helper to simulate network delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const defaultData: StoreData = {
+  products: initialProducts,
+  tags: initialTags,
+  sales: [],
+  customers: initialCustomers,
+  users: initialUsers,
+  settings: defaultSettings
+};
 
-export const StoreService = {
+// LocalStorage Keys
+const LS_BACKUP_KEY = 'glassstore_offline_backup';
+const LS_CLOUD_CONFIG = 'noor_cloud_config'; // { email: string, key: string }
+
+// In-memory cache
+let cache: StoreData | null = null;
+let loadPromise: Promise<StoreData> | null = null;
+let saveTimeout: any = null;
+
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+const StoreService = {
+  // --- Cloud Configuration Methods ---
+  getCloudConfig() {
+      const stored = localStorage.getItem(LS_CLOUD_CONFIG);
+      return stored ? JSON.parse(stored) : null;
+  },
+
+  setCloudConfig(email: string, key: string) {
+      localStorage.setItem(LS_CLOUD_CONFIG, JSON.stringify({ email, key }));
+      // Clear cache to force reload with new creds on next call
+      cache = null; 
+      loadPromise = null;
+  },
+
+  disconnectCloud() {
+      localStorage.removeItem(LS_CLOUD_CONFIG);
+      cache = null;
+      loadPromise = null;
+  },
+
+  // Core: Load data
+  async loadData(): Promise<StoreData> {
+    if (cache) return cache;
+    if (loadPromise) return loadPromise;
+
+    const cloudConfig = this.getCloudConfig();
+
+    // CRITICAL: If NO cloud config is present, DO NOT call the API.
+    // This prevents the popup/loading delay on startup for unconfigured users.
+    if (!cloudConfig) {
+        console.log("No cloud config found. Using local storage.");
+        const local = localStorage.getItem(LS_BACKUP_KEY);
+        cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
+        return cache as StoreData;
+    }
+
+    // If Cloud Config exists, try to fetch with headers
+    loadPromise = fetch('/api/storage', {
+        headers: {
+            'x-google-email': cloudConfig.email,
+            'x-google-key': cloudConfig.key
+        }
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
+        
+        const data = await res.json();
+        
+        if (!data) {
+          // Cloud connected but empty, or auth passed but file missing
+          console.log("Cloud connected but empty. Merging with local.");
+          const local = localStorage.getItem(LS_BACKUP_KEY);
+          if (local) {
+             cache = { ...defaultData, ...JSON.parse(local) };
+          } else {
+             cache = JSON.parse(JSON.stringify(defaultData));
+          }
+        } else {
+          console.log("Cloud storage loaded.");
+          cache = { ...defaultData, ...data, users: data.users || [] };
+          // Update local backup with fresh cloud data
+          localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
+        }
+        return cache as StoreData;
+      })
+      .catch(err => {
+        console.warn("Cloud load failed (falling back to local):", err.message);
+        const local = localStorage.getItem(LS_BACKUP_KEY);
+        cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
+        return cache as StoreData;
+      })
+      .finally(() => {
+        loadPromise = null;
+      });
+
+    return loadPromise as Promise<StoreData>;
+  },
+
+  // Core: Save data
+  async saveData(): Promise<void> {
+    if (!cache) return;
+    
+    // 1. Always save to LocalStorage immediately
+    localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
+
+    // 2. Cloud Save (ONLY if configured)
+    const cloudConfig = this.getCloudConfig();
+    if (!cloudConfig) return;
+
+    if (saveTimeout) clearTimeout(saveTimeout);
+    
+    saveTimeout = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/storage', {
+          method: 'POST',
+          headers: { 
+              'Content-Type': 'application/json',
+              'x-google-email': cloudConfig.email,
+              'x-google-key': cloudConfig.key
+          },
+          body: JSON.stringify(cache)
+        });
+        if (res.ok) {
+            console.log("Data synced to Cloud");
+        } else {
+            console.warn("Cloud sync failed");
+        }
+      } catch (err) {
+        console.error("Cloud save error:", err);
+      }
+    }, 1000); 
+  },
+
+  // --- Data Management ---
+  async getRawData(): Promise<StoreData> {
+    return await this.loadData();
+  },
+
+  async importData(newData: any): Promise<void> {
+    if (!newData.products || !Array.isArray(newData.products)) {
+        throw new Error("Invalid backup file: missing products data");
+    }
+    cache = { ...defaultData, ...newData };
+    await this.saveData();
+    window.location.reload();
+  },
+
+  async factoryReset(): Promise<void> {
+    cache = JSON.parse(JSON.stringify(defaultData));
+    await this.saveData();
+    window.location.reload();
+  },
+
+  // --- Auth & Users ---
+  async authenticate(username: string, pin: string): Promise<User | null> {
+    const data = await this.loadData();
+    const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.pin === pin);
+    if (user) {
+        user.lastLogin = new Date().toISOString();
+        this.saveData();
+        return user;
+    }
+    return null;
+  },
+
+  async registerUser(userData: { username: string, pin: string, name: string, role: 'admin' | 'staff' }): Promise<User> {
+    const data = await this.loadData();
+    if (data.users.find(u => u.username.toLowerCase() === userData.username.toLowerCase())) {
+        throw new Error("Username already taken");
+    }
+    const newUser: User = {
+        id: generateId(),
+        ...userData,
+        lastLogin: new Date().toISOString()
+    };
+    data.users.push(newUser);
+    this.saveData();
+    return newUser;
+  },
+
+  async hasUsers(): Promise<boolean> {
+      const data = await this.loadData();
+      return data.users.length > 0;
+  },
+
+  async getUsers(): Promise<User[]> {
+      const data = await this.loadData();
+      return data.users;
+  },
+
   // --- Inventory ---
   async getInventory(): Promise<Product[]> {
-    await delay(300);
-    const data = localStorage.getItem(INV_KEY);
-    return data ? JSON.parse(data) : initialProducts;
+    const data = await this.loadData();
+    return data.products;
   },
 
   async addProduct(product: Omit<Product, 'id'>): Promise<Product> {
-    await delay(300);
-    const products = await this.getInventory();
-    // Add createdAt automatically
+    const data = await this.loadData();
     const newProduct = { 
         ...product, 
         id: generateId(),
         createdAt: new Date().toISOString()
     };
-    products.push(newProduct);
-    localStorage.setItem(INV_KEY, JSON.stringify(products));
+    data.products.push(newProduct);
+    this.saveData();
     return newProduct;
   },
 
   async batchAddProducts(productsToAdd: Partial<Product>[]): Promise<void> {
-    await delay(500);
-    const products = await this.getInventory();
-    const settings = await this.getSettings();
-    const tags = await this.getTags();
+    const data = await this.loadData();
     
     productsToAdd.forEach(p => {
-        // Try to match category name to existing tag ID, or leave blank (Uncategorized)
-        const matchedTag = tags.find(t => t.name.toLowerCase() === (p.category || '').toLowerCase());
-
+        const matchedTag = data.tags.find(t => t.name.toLowerCase() === (p.category || '').toLowerCase());
         const newProduct: Product = {
             id: generateId(),
             name: p.name || 'Unknown Product',
             sku: p.sku || generateId().slice(0, 6),
             stock: p.stock || 0,
             unit: p.unit || 'pcs',
-            lowStockThreshold: settings.lowStockDefault,
+            lowStockThreshold: data.settings.lowStockDefault,
             buyPrice: p.buyPrice || 0,
             sellPrice: p.sellPrice || 0,
             wholesalePrice: p.wholesalePrice || 0,
@@ -95,130 +268,99 @@ export const StoreService = {
             createdAt: new Date().toISOString(),
             ...p
         } as Product;
-        products.push(newProduct);
+        data.products.push(newProduct);
     });
-    localStorage.setItem(INV_KEY, JSON.stringify(products));
+    this.saveData();
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<void> {
-    await delay(200);
-    const products = await this.getInventory();
-    const index = products.findIndex(p => p.id === id);
+    const data = await this.loadData();
+    const index = data.products.findIndex(p => p.id === id);
     if (index !== -1) {
-      products[index] = { ...products[index], ...updates };
-      localStorage.setItem(INV_KEY, JSON.stringify(products));
+      data.products[index] = { ...data.products[index], ...updates };
+      this.saveData();
     }
   },
 
   async deleteProduct(id: string): Promise<void> {
-    await delay(200);
-    const products = await this.getInventory();
-    const filtered = products.filter(p => p.id !== id);
-    localStorage.setItem(INV_KEY, JSON.stringify(filtered));
+    const data = await this.loadData();
+    data.products = data.products.filter(p => p.id !== id);
+    this.saveData();
   },
 
   // --- Tags ---
   async getTags(): Promise<Tag[]> {
-    await delay(100);
-    const data = localStorage.getItem(TAGS_KEY);
-    return data ? JSON.parse(data) : initialTags;
+    const data = await this.loadData();
+    return data.tags;
   },
 
   async addTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
-    const tags = await this.getTags();
+    const data = await this.loadData();
     const newTag = { ...tag, id: generateId() };
-    tags.push(newTag);
-    localStorage.setItem(TAGS_KEY, JSON.stringify(tags));
+    data.tags.push(newTag);
+    this.saveData();
     return newTag;
   },
 
   async deleteTag(id: string): Promise<void> {
-    // 1. Untag products first (don't delete them)
-    const products = await this.getInventory();
-    let inventoryUpdated = false;
-    
-    // Explicitly update products to remove the tag association
-    const updatedProducts = products.map(p => {
-        if (p.tagId === id) {
-            inventoryUpdated = true;
-            // Create copy and remove tagId property
-            const newProduct = { ...p };
-            delete newProduct.tagId;
-            return newProduct;
-        }
-        return p;
+    const data = await this.loadData();
+    data.products.forEach(p => {
+        if (p.tagId === id) delete p.tagId;
     });
-
-    if (inventoryUpdated) {
-        localStorage.setItem(INV_KEY, JSON.stringify(updatedProducts));
-    }
-
-    // 2. Delete the tag itself
-    const tags = await this.getTags();
-    const filtered = tags.filter(t => t.id !== id);
-    localStorage.setItem(TAGS_KEY, JSON.stringify(filtered));
+    data.tags = data.tags.filter(t => t.id !== id);
+    this.saveData();
   },
 
   // --- Sales ---
   async getSales(): Promise<Sale[]> {
-    await delay(300);
-    const data = localStorage.getItem(SALES_KEY);
-    return data ? JSON.parse(data) : [];
+    const data = await this.loadData();
+    return data.sales;
   },
 
-  async createSale(saleData: { items: CartItem[], customerId?: string, customerName: string, subtotal: number, tax: number, total: number }): Promise<Sale> {
-    await delay(500);
-    const sales = await this.getSales();
+  async createSale(saleData: { items: CartItem[], customerId?: string, customerName: string, subtotal: number, tax: number, total: number, servedBy?: string }): Promise<Sale> {
+    const data = await this.loadData();
     const newSale: Sale = {
       id: generateId(),
       timestamp: new Date().toISOString(),
       ...saleData
     };
-    sales.push(newSale);
-    localStorage.setItem(SALES_KEY, JSON.stringify(sales));
+    data.sales.push(newSale);
 
-    // Update Inventory
-    const products = await this.getInventory();
     for (const soldItem of saleData.items) {
-      const productIndex = products.findIndex(p => p.id === soldItem.id);
+      const productIndex = data.products.findIndex(p => p.id === soldItem.id);
       if (productIndex !== -1) {
-        products[productIndex].stock = Math.max(0, products[productIndex].stock - soldItem.quantity);
+        data.products[productIndex].stock = Math.max(0, data.products[productIndex].stock - soldItem.quantity);
       }
     }
-    localStorage.setItem(INV_KEY, JSON.stringify(products));
 
-    // Update Customer if exists
     if (saleData.customerId) {
-      const customers = await this.getCustomers();
-      const custIndex = customers.findIndex(c => c.id === saleData.customerId);
+      const custIndex = data.customers.findIndex(c => c.id === saleData.customerId);
       if (custIndex !== -1) {
-        customers[custIndex].visitCount += 1;
-        customers[custIndex].totalSpent += saleData.total;
-        customers[custIndex].history.push(newSale.id);
-        localStorage.setItem(CUST_KEY, JSON.stringify(customers));
+        data.customers[custIndex].visitCount += 1;
+        data.customers[custIndex].totalSpent += saleData.total;
+        data.customers[custIndex].history.push(newSale.id);
       }
     }
 
+    this.saveData();
     return newSale;
   },
 
   // --- Customers ---
   async getCustomers(): Promise<Customer[]> {
-    await delay(300);
-    const data = localStorage.getItem(CUST_KEY);
-    return data ? JSON.parse(data) : initialCustomers;
+    const data = await this.loadData();
+    return data.customers;
   },
 
   async upsertCustomer(customer: Partial<Customer>): Promise<Customer> {
-    await delay(300);
-    const customers = await this.getCustomers();
+    const data = await this.loadData();
     
     if (customer.id) {
-      const index = customers.findIndex(c => c.id === customer.id);
+      const index = data.customers.findIndex(c => c.id === customer.id);
       if (index !== -1) {
-        customers[index] = { ...customers[index], ...customer } as Customer;
-        localStorage.setItem(CUST_KEY, JSON.stringify(customers));
-        return customers[index];
+        data.customers[index] = { ...data.customers[index], ...customer } as Customer;
+        this.saveData();
+        return data.customers[index];
       }
     }
 
@@ -232,26 +374,28 @@ export const StoreService = {
       visitCount: 0,
       history: []
     };
-    customers.push(newCustomer);
-    localStorage.setItem(CUST_KEY, JSON.stringify(customers));
+    data.customers.push(newCustomer);
+    this.saveData();
     return newCustomer;
   },
 
   async deleteCustomer(id: string): Promise<void> {
-    const customers = await this.getCustomers();
-    const filtered = customers.filter(c => c.id !== id);
-    localStorage.setItem(CUST_KEY, JSON.stringify(filtered));
+    const data = await this.loadData();
+    data.customers = data.customers.filter(c => c.id !== id);
+    this.saveData();
   },
 
   // --- Settings ---
   async getSettings(): Promise<StoreSettings> {
-    await delay(100);
-    const data = localStorage.getItem(SETTINGS_KEY);
-    return data ? JSON.parse(data) : defaultSettings;
+    const data = await this.loadData();
+    return data.settings;
   },
 
   async saveSettings(settings: StoreSettings): Promise<void> {
-    await delay(200);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    const data = await this.loadData();
+    data.settings = settings;
+    this.saveData();
   }
 };
+
+export { StoreService };

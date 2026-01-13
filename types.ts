@@ -46,6 +46,15 @@ export interface Customer {
   history: string[]; // Sale IDs
 }
 
+export interface User {
+  id: string;
+  username: string;
+  pin: string; // Simple PIN for POS access
+  role: 'admin' | 'staff';
+  name: string;
+  lastLogin?: string;
+}
+
 export interface Sale {
   id: string;
   customerId?: string; // Optional if guest
@@ -55,12 +64,14 @@ export interface Sale {
   tax: number;
   total: number;
   timestamp: string; // ISO string
+  servedBy?: string; // User Name
 }
 
 export enum Tab {
   WAREHOUSE = 'WAREHOUSE',
   POS = 'POS',
-  CUSTOMERS = 'CUSTOMERS'
+  CUSTOMERS = 'CUSTOMERS',
+  PROFILE = 'PROFILE'
 }
 
 export interface Alert {
