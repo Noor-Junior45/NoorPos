@@ -315,29 +315,56 @@ export const Warehouse: React.FC = () => {
     loadData(); 
   };
   
-  const baseFilteredProducts = useMemo(() => {
-    let processed = products.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    if (activeFilter === ProductFilter.LOW_STOCK) processed = processed.filter(p => p.stock > 0 && p.stock < p.lowStockThreshold);
-    if (activeFilter === ProductFilter.OUT_OF_STOCK) processed = processed.filter(p => p.stock === 0);
-    if (activeFilter === ProductFilter.EXPIRING_SOON) processed = processed.filter(p => isAboutToExpire(p.expiryDate));
-    return processed;
-  }, [products, searchTerm, activeFilter, settings.expiryAlertDays]);
-
-  const groupedProducts = useMemo(() => {
-    const groups: { [key: string]: Product[] } = {};
-    baseFilteredProducts.forEach(p => {
-        // Group by Name, Capacity, and Unit to separate variations (e.g., 500ml vs 1L)
-        // while keeping same-spec batches together.
-        const uniqueGroupKey = `${p.name}|${p.capacity || ''}|${p.unit}`;
-        
-        if (!groups[uniqueGroupKey]) groups[uniqueGroupKey] = [];
-        groups[uniqueGroupKey].push(p);
+  // 1. Base List of Products (Affected by Low Stock/Filters, but NOT search term)
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+        if (activeFilter === ProductFilter.LOW_STOCK) return p.stock > 0 && p.stock < p.lowStockThreshold;
+        if (activeFilter === ProductFilter.OUT_OF_STOCK) return p.stock === 0;
+        if (activeFilter === ProductFilter.EXPIRING_SOON) return isAboutToExpire(p.expiryDate);
+        return true;
     });
-    return Object.keys(groups).map(key => ({ key, items: groups[key] }));
-  }, [baseFilteredProducts]);
+  }, [products, activeFilter, settings.expiryAlertDays]); // Removed searchTerm dependency
+
+  // 2. Search Results (Specific matches based on search term)
+  const searchResults = useMemo(() => {
+    if (!searchTerm.trim()) return [];
+    const term = searchTerm.toLowerCase();
+    
+    // Sort matches by relevance (Exact -> StartsWith -> Contains)
+    const matches = filteredProducts.filter(p => 
+        p.name.toLowerCase().includes(term) || 
+        p.sku.toLowerCase().includes(term)
+    );
+
+    const getMatchScore = (p: Product) => {
+        const name = p.name.toLowerCase();
+        const sku = p.sku.toLowerCase();
+        if (name === term || sku === term) return 4;
+        if (name.startsWith(term) || sku.startsWith(term)) return 3;
+        if (name.includes(term) || sku.includes(term)) return 2;
+        return 1;
+    };
+
+    return matches.sort((a, b) => getMatchScore(b) - getMatchScore(a));
+  }, [filteredProducts, searchTerm]);
+
+  // Helper to group products (reused for both main list and search results)
+  const groupProductList = (list: Product[]) => {
+      const groups: { [key: string]: Product[] } = {};
+      const order: string[] = [];
+      list.forEach(p => {
+          const uniqueGroupKey = `${p.name}|${p.capacity || ''}|${p.unit}`;
+          if (!groups[uniqueGroupKey]) {
+              groups[uniqueGroupKey] = [];
+              order.push(uniqueGroupKey);
+          }
+          groups[uniqueGroupKey].push(p);
+      });
+      return order.map(key => ({ key, items: groups[key] }));
+  };
+
+  const groupedProducts = useMemo(() => groupProductList(filteredProducts), [filteredProducts]);
+  const groupedSearchResults = useMemo(() => groupProductList(searchResults), [searchResults]);
 
   const variantCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -1066,9 +1093,18 @@ export const Warehouse: React.FC = () => {
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
+                    {searchTerm && (
+                        <button 
+                            onClick={() => setSearchTerm('')}
+                            className="p-2 mr-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                            title="Clear search"
+                        >
+                            <X size={20} />
+                        </button>
+                    )}
                     <button 
                         onClick={() => setShowScanner(true)}
-                        className="pr-6 pl-3 text-gray-400 hover:text-blue-600 transition-colors tooltip"
+                        className="pr-6 pl-2 text-gray-400 hover:text-blue-600 transition-colors tooltip"
                         title="Scan Barcode"
                     >
                         <Scan size={22} />
@@ -1111,6 +1147,18 @@ export const Warehouse: React.FC = () => {
                 </div>
             </div>
         </div>
+
+        {/* SEARCH RESULT SECTION (Dedicated Top Area) */}
+        {isSearching && groupedSearchResults.length > 0 && (
+             <div className="animate-in fade-in slide-in-from-top-4 duration-300 mb-8 p-6 bg-blue-50/50 border border-blue-100 rounded-2xl shadow-sm">
+                <h3 className="text-sm font-bold text-blue-600 mb-4 uppercase tracking-wider flex items-center gap-2">
+                    <Search size={16} /> Top Match
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {groupedSearchResults.map(({ key, items }) => renderProductGroup(key, items))}
+                </div>
+            </div>
+        )}
         
         {groupedProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
@@ -1125,29 +1173,16 @@ export const Warehouse: React.FC = () => {
                     </Button>
                 )}
             </div>
-        ) : isSearching ? (
-             /* Search Result View (Flat Grid) */
-            <div className="animate-in fade-in">
-                <h3 className="text-lg font-bold text-gray-700 mb-4 px-1 flex items-center gap-2">
-                    <Search size={18}/> Search Results ({groupedProducts.length})
-                </h3>
-                {/* UPDATED GRID for laptop screens: lg:grid-cols-4 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {groupedProducts.map(({ key, items }) => renderProductGroup(key, items))}
-                </div>
-            </div>
         ) : (
-             /* Categorized View */
-             <div className="space-y-12 animate-in fade-in">
-                {/* 1. Recently Added - Removed to avoid duplicates in category view, keeping distinct category sections */}
-                
-                {/* 2. Tag Groups */}
+             /* Categorized View (Always visible, pushed down by search results) */
+             <div className="space-y-12 animate-in fade-in transition-all duration-300">
+                {/* Tag Groups */}
                 {tags.map(t => {
                     const groupItems = groupedProducts.filter(g => g.items[0].tagId === t.id);
                     return renderGroupedSection(t.name, null, groupItems, t.color);
                 })}
 
-                {/* 3. Uncategorized */}
+                {/* Uncategorized */}
                 {(() => {
                     const uncategorizedItems = groupedProducts.filter(g => !g.items[0].tagId);
                     return renderGroupedSection("Uncategorized", <Layers size={20} className="text-gray-400"/>, uncategorizedItems);
