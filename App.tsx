@@ -11,7 +11,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#fdfdfc] text-gray-800 selection:bg-yellow-500/30">
       {/* Main Content Area */}
-      <main className="p-4 md:p-6 max-w-7xl mx-auto min-h-screen">
+      <main className="p-4 md:p-6 w-full max-w-[1920px] mx-auto min-h-screen">
         {activeTab === Tab.WAREHOUSE && <Warehouse />}
         {activeTab === Tab.POS && <POS />}
         {activeTab === Tab.CUSTOMERS && <Customers />}

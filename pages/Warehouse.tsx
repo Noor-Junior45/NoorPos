@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, AlertOctagon, Book } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -118,6 +118,9 @@ export const Warehouse: React.FC = () => {
     expiryDate: '', manufacturingDate: ''
   });
 
+  // Batch Calculator State
+  const [batchConfig, setBatchConfig] = useState({ packs: '', perPack: '' });
+
   const [showTagModal, setShowTagModal] = useState(false);
   const [newTag, setNewTag] = useState<Partial<Tag>>({ name: '', color: '#3b82f6' });
   const [itemToDelete, setItemToDelete] = useState<{ id: string, type: 'product' | 'tag' | 'bulk_products', name: string } | null>(null);
@@ -193,15 +196,38 @@ export const Warehouse: React.FC = () => {
       setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
       await StoreService.updateProduct(id, updates);
   };
+
+  const handleBatchChange = (field: 'packs' | 'perPack', value: string) => {
+      const newConfig = { ...batchConfig, [field]: value };
+      setBatchConfig(newConfig);
+      
+      const packs = parseFloat(newConfig.packs);
+      const perPack = parseFloat(newConfig.perPack);
+      
+      if (!isNaN(packs) && !isNaN(perPack) && packs >= 0 && perPack >= 0) {
+          setNewProduct(prev => ({ ...prev, stock: Math.floor(packs * perPack) }));
+      }
+  };
   
   const getTag = (id?: string) => tags.find(t => t.id === id);
 
+  // Updated Expiry Logic
+  const getDaysUntilExpiry = (dateStr?: string) => {
+    if (!dateStr) return Infinity;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const exp = new Date(dateStr);
+    exp.setHours(0,0,0,0);
+    const diffTime = exp.getTime() - today.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
   const isAboutToExpire = (dateStr?: string) => {
     if (!dateStr) return false;
-    const diffDays = (new Date(dateStr).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24);
+    const diffDays = getDaysUntilExpiry(dateStr);
     return diffDays >= 0 && diffDays <= (settings.expiryAlertDays || 7);
   };
-  const isExpired = (dateStr?: string) => !dateStr ? false : new Date(dateStr) < new Date();
+
   const formatDate = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleDateString('en-GB') : '-';
   const formatDateTime = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
 
@@ -228,6 +254,7 @@ export const Warehouse: React.FC = () => {
         lowStockThreshold: settings.lowStockDefault, location: '', taxRate: 0,
         expiryDate: '', manufacturingDate: ''
     });
+    setBatchConfig({ packs: '', perPack: '' });
   };
 
   const toggleGroup = (groupId: string) => {
@@ -256,7 +283,12 @@ export const Warehouse: React.FC = () => {
     }
   };
 
-  const handleEditProduct = (p: Product) => { setNewProduct({ ...p }); setIsEditing(true); setIsEditorOpen(true); };
+  const handleEditProduct = (p: Product) => { 
+      setNewProduct({ ...p }); 
+      setBatchConfig({ packs: '', perPack: '' });
+      setIsEditing(true); 
+      setIsEditorOpen(true); 
+  };
   
   const handleCloneProduct = (p: Product) => {
       setNewProduct({
@@ -267,6 +299,7 @@ export const Warehouse: React.FC = () => {
           manufacturingDate: '',
           sku: p.sku
       });
+      setBatchConfig({ packs: '', perPack: '' });
       setIsEditing(false);
       setIsEditorOpen(true);
   };
@@ -667,6 +700,28 @@ export const Warehouse: React.FC = () => {
                         onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})}
                         className="w-full border-2 border-purple-200 focus:border-purple-500 bg-purple-50/10 rounded-lg !py-3 !px-6"
                     />
+                    
+                    {/* Batch Calculator */}
+                    <div className="flex items-center gap-2 bg-purple-50/50 p-2 rounded-lg border border-purple-100 mt-1">
+                        <Calculator size={14} className="text-purple-400" />
+                        <div className="flex items-center gap-2 flex-1">
+                             <input 
+                                type="number" 
+                                placeholder="Boxes" 
+                                className="w-full bg-white border border-purple-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-purple-400"
+                                value={batchConfig.packs}
+                                onChange={(e) => handleBatchChange('packs', e.target.value)}
+                             />
+                             <span className="text-gray-400 font-bold text-xs">×</span>
+                             <input 
+                                type="number" 
+                                placeholder="Qty/Box" 
+                                className="w-full bg-white border border-purple-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-purple-400"
+                                value={batchConfig.perPack}
+                                onChange={(e) => handleBatchChange('perPack', e.target.value)}
+                             />
+                        </div>
+                    </div>
                 </div>
 
                 <div className="space-y-2">
@@ -721,93 +776,249 @@ export const Warehouse: React.FC = () => {
     const totalUnits = products.reduce((acc, p) => acc + p.stock, 0);
     const lowStockItems = products.filter(p => p.stock < p.lowStockThreshold);
     const outOfStockItems = products.filter(p => p.stock === 0);
-    const expiringItems = products.filter(p => isAboutToExpire(p.expiryDate));
     
+    // Separate expired vs expiring logic using the helper
+    const { expiredItems, expiringItems } = products.reduce((acc, p) => {
+        const days = getDaysUntilExpiry(p.expiryDate);
+        if (days < 0) {
+            acc.expiredItems.push({ ...p, days });
+        } else if (days <= (settings.expiryAlertDays || 7) && days >= 0) {
+            // Ensure we don't catch products with no expiry (Infinity)
+            if (p.expiryDate) {
+                acc.expiringItems.push({ ...p, days });
+            }
+        }
+        return acc;
+    }, { expiredItems: [] as (Product & {days: number})[], expiringItems: [] as (Product & {days: number})[] });
+
+    // Sort alerts: expired first (most recent expiry at top?), expiring (soonest first)
+    expiredItems.sort((a, b) => b.days - a.days); // Sort by days (e.g. -1 (yesterday) before -10)
+    expiringItems.sort((a, b) => a.days - b.days);
+
+    // Sorted Full Product List for Directory
+    const allProductsSorted = [...products].sort((a, b) => a.name.localeCompare(b.name));
+
+    // Date formatter for "12 Oct" style
+    const formatDateShort = (dateStr: string) => {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`;
+    };
+
     return (
       <div className="space-y-6 animate-in fade-in">
+        {/* Top Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="border-l-4 border-blue-400">
-             <div className="text-blue-600 text-xs uppercase font-bold tracking-wider">Total Products</div>
-             <div className="text-2xl font-bold mt-1 text-gray-800">{products.length}</div>
+          <Card className="border-2 border-sky-600 shadow-sm hover:shadow-md transition-shadow">
+             <div className="text-sky-700 text-xs uppercase font-bold tracking-wider">Total Products</div>
+             <div className="text-3xl font-bold mt-1 text-gray-900">{products.length}</div>
           </Card>
-          <Card className="border-l-4 border-green-400">
+          <Card className="border-2 border-green-500 shadow-sm hover:shadow-md transition-shadow">
              <div className="text-green-600 text-xs uppercase font-bold tracking-wider">Total Value</div>
-             <div className="text-2xl font-bold mt-1 text-gray-800">{settings.currencySymbol}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+             <div className="text-3xl font-bold mt-1 text-gray-900">{settings.currencySymbol}{totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
           </Card>
-          <Card className="border-l-4 border-red-400">
+          <Card className="border-2 border-red-400 shadow-sm hover:shadow-md transition-shadow">
              <div className="text-red-600 text-xs uppercase font-bold tracking-wider">Low Stock</div>
-             <div className="text-2xl font-bold mt-1 text-gray-800">{lowStockItems.length}</div>
+             <div className="text-3xl font-bold mt-1 text-gray-900">{lowStockItems.length}</div>
           </Card>
-          <Card className="border-l-4 border-gray-400">
-             <div className="text-gray-600 text-xs uppercase font-bold tracking-wider">Stock Units</div>
-             <div className="text-2xl font-bold mt-1 text-gray-800">{totalUnits.toLocaleString()}</div>
+          <Card className="border-2 border-violet-400 shadow-sm hover:shadow-md transition-shadow">
+             <div className="text-violet-600 text-xs uppercase font-bold tracking-wider">Stock Units</div>
+             <div className="text-3xl font-bold mt-1 text-gray-900">{totalUnits.toLocaleString()}</div>
           </Card>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="border-t-4 border-red-500 flex flex-col h-full">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+        {/* Main 3-Column Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+            
+            {/* 1. Low Stock Alerts */}
+            <Card className="border-2 border-red-500 bg-red-50/40 flex flex-col shadow-sm h-full">
+                <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-red-100 pb-2">
                     <AlertTriangle size={20} className="text-red-500"/> Low Stock Alerts
                 </h3>
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[250px] pr-2">
+                <div className="p-1">
                     {lowStockItems.length === 0 && outOfStockItems.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-24 text-gray-400">
-                             <CheckSquare size={24} className="mb-1 opacity-50"/>
-                             <span className="text-sm">Stock levels are healthy</span>
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                             <CheckSquare size={32} className="mb-2 opacity-30"/>
+                             <span className="text-sm">Stock levels healthy</span>
                         </div>
                     ) : (
-                        <>
+                        <div className="space-y-1">
                             {outOfStockItems.map(p => (
-                                <div key={p.id} className="flex justify-between items-center text-sm p-3 bg-red-50 rounded-lg border border-red-100 text-red-700">
-                                    <span className="font-medium truncate">{p.name}</span>
-                                    <span className="font-bold bg-white px-2 py-1 rounded shadow-sm text-xs">Out of Stock</span>
+                                <div key={p.id} className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border border-red-100 shadow-sm hover:shadow-md transition-shadow">
+                                    <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
+                                    <Badge color="bg-red-100 text-red-700">Out of Stock</Badge>
                                 </div>
                             ))}
                             {lowStockItems.filter(p => p.stock > 0).map(p => (
-                                <div key={p.id} className="flex justify-between items-center text-sm p-3 bg-orange-50 rounded-lg border border-orange-100 text-orange-800">
-                                    <span className="font-medium truncate">{p.name}</span>
-                                    <span className="font-bold bg-white px-2 py-1 rounded shadow-sm text-xs">{p.stock} {p.unit} left</span>
+                                <div key={p.id} className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border border-orange-100 shadow-sm hover:shadow-md transition-shadow">
+                                    <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
+                                    <span className="font-bold text-xs text-orange-600">{p.stock} {p.unit} left</span>
                                 </div>
                             ))}
-                        </>
+                        </div>
                     )}
                 </div>
             </Card>
 
-            <Card className="border-t-4 border-amber-500 flex flex-col h-full">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+            {/* 2. Expiry Alerts */}
+            <Card className="border-2 border-amber-500 bg-amber-50/40 flex flex-col shadow-sm h-full">
+                <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-amber-100 pb-2">
                     <Clock size={20} className="text-amber-500"/> Expiry Alerts
                 </h3>
-                <div className="space-y-3 flex-1 overflow-y-auto max-h-[250px] pr-2">
-                    {expiringItems.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-24 text-gray-400">
-                             <CheckSquare size={24} className="mb-1 opacity-50"/>
-                             <span className="text-sm">No items expiring soon</span>
+                <div className="p-1">
+                    {expiredItems.length === 0 && expiringItems.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+                             <Sparkles size={32} className="mb-2 opacity-30"/>
+                             <span className="text-sm">Everything fresh</span>
                         </div>
                     ) : (
-                        expiringItems.map(p => (
-                            <div key={p.id} className="flex justify-between items-center text-sm p-3 bg-amber-50 rounded-lg border border-amber-100 text-amber-800">
-                                <span className="font-medium truncate">{p.name}</span>
-                                <span className="font-bold bg-white px-2 py-1 rounded shadow-sm text-xs">{formatDate(p.expiryDate)}</span>
-                            </div>
-                        ))
+                        <div className="space-y-1">
+                            {/* Expired Items */}
+                            {expiredItems.map(p => (
+                                <div 
+                                    key={p.id} 
+                                    onClick={() => {
+                                        setSearchTerm(p.name);
+                                        setActiveTab(SubTab.PRODUCTS);
+                                    }}
+                                    className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border-l-4 border-l-red-500 border-y border-r border-gray-100 shadow-sm cursor-pointer hover:bg-red-50 transition-colors group"
+                                >
+                                    <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
+                                    <div className="text-right flex flex-col items-end">
+                                        <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-1.5 rounded-sm">Expired</span>
+                                        <span className="text-xs font-bold text-gray-500 mt-0.5">{formatDateShort(p.expiryDate || '')}</span>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {/* Expiring Soon Items */}
+                            {expiringItems.map(p => (
+                                <div 
+                                    key={p.id} 
+                                    onClick={() => {
+                                        setSearchTerm(p.name);
+                                        setActiveTab(SubTab.PRODUCTS);
+                                    }}
+                                    className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border-l-4 border-l-amber-500 border-y border-r border-gray-100 shadow-sm cursor-pointer hover:bg-amber-50 transition-colors group"
+                                >
+                                    <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
+                                    <div className="text-right flex flex-col items-end">
+                                        <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-100 px-1.5 rounded-sm">Expiring</span>
+                                        <span className="text-xs font-bold text-gray-500 mt-0.5">{formatDateShort(p.expiryDate || '')}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     )}
                 </div>
             </Card>
+
+            {/* 3. Stock Value Chart (Small Shape) */}
+            <Card className="flex flex-col border-2 border-gray-100 shadow-sm relative overflow-hidden h-[320px]">
+                <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-gray-100 pb-2 z-10 relative">
+                    <DollarSign size={20} className="text-green-500"/> Stock Value
+                </h3>
+                <div className="w-full h-full relative z-10">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart margin={{ top: 0, right: 0, bottom: 20, left: 0 }}>
+                            <Pie 
+                                data={stockValueByCategory} 
+                                dataKey="value" 
+                                nameKey="name" 
+                                cx="50%" 
+                                cy="50%" 
+                                innerRadius={60} 
+                                outerRadius={80} 
+                                paddingAngle={5}
+                                label={false}
+                            >
+                                {stockValueByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />)}
+                            </Pie>
+                            <Tooltip 
+                                formatter={(value) => `${settings.currencySymbol}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                            />
+                            <Legend 
+                                verticalAlign="bottom" 
+                                height={36} 
+                                iconType="circle" 
+                                iconSize={8}
+                                wrapperStyle={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}
+                            />
+                        </PieChart>
+                    </ResponsiveContainer>
+                    {/* Center Text for Value */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4">
+                        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Total</span>
+                        <span className="text-xl font-bold text-gray-800">
+                             {settings.currencySymbol}{(totalValue / 1000).toFixed(1)}k
+                        </span>
+                    </div>
+                </div>
+            </Card>
         </div>
-        
-        <Card>
-            <h3 className="font-bold text-gray-800 mb-4">Stock Value by Category</h3>
-            <div style={{ width: '100%', height: 300 }}>
-                <ResponsiveContainer>
-                    <PieChart>
-                        <Pie data={stockValueByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} labelLine={false} label={({ percent }) => `${(percent * 100).toFixed(0)}%`}>
-                            {stockValueByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                        </Pie>
-                        <Tooltip formatter={(value) => `${settings.currencySymbol}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
-                        <Legend />
-                    </PieChart>
-                </ResponsiveContainer>
+
+        {/* Product Directory Card - Renamed to Catalogs */}
+        <Card className="border-t-4 border-t-gray-800 shadow-md">
+            <h3 className="font-bold text-xl text-gray-900 mb-4 flex items-center gap-2">
+                <Book size={24} className="text-gray-700"/> Catalogs
+            </h3>
+            <div className="overflow-x-auto">
+                <div className="max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-gray-100 text-gray-700 font-bold uppercase sticky top-0 z-10">
+                            <tr>
+                                <th className="px-4 py-3 border-b border-gray-200">Product Name</th>
+                                <th className="px-4 py-3 border-b border-gray-200 text-right">Selling Price</th>
+                                <th className="px-4 py-3 border-b border-gray-200">Category</th>
+                                <th className="px-4 py-3 border-b border-gray-200 text-center">Quantity</th>
+                                <th className="px-4 py-3 border-b border-gray-200 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {allProductsSorted.map((p, idx) => {
+                                const tag = getTag(p.tagId);
+                                return (
+                                    <tr 
+                                        key={p.id} 
+                                        onClick={() => {
+                                            setSearchTerm(p.name);
+                                            setActiveTab(SubTab.PRODUCTS);
+                                        }}
+                                        className={`
+                                            cursor-pointer transition-colors hover:bg-blue-50/50 group
+                                            ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}
+                                        `}
+                                    >
+                                        <td className="px-4 py-3 font-semibold text-gray-800 group-hover:text-blue-700">
+                                            {p.name}
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono font-bold text-green-700">
+                                            {settings.currencySymbol}{p.sellPrice.toFixed(2)}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            {tag ? (
+                                                <span className="text-[10px] font-bold px-2 py-1 rounded-full border" style={{ backgroundColor: `${tag.color}15`, color: tag.color, borderColor: `${tag.color}30` }}>
+                                                    {tag.name}
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">Uncategorized</span>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${p.stock < p.lowStockThreshold ? 'bg-red-100 text-red-700 border-red-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                                {p.stock} {p.unit}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center text-gray-300 group-hover:text-blue-400">
+                                            <ArrowRight size={16} />
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </Card>
       </div>
@@ -831,7 +1042,8 @@ export const Warehouse: React.FC = () => {
                         <span className="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-bold">{items.length} Products</span>
                     </div>
                 )}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {/* UPDATED GRID for laptop screens: lg:grid-cols-4 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {items.map(({ key, items }) => renderProductGroup(key, items))}
                 </div>
             </section>
@@ -919,7 +1131,8 @@ export const Warehouse: React.FC = () => {
                 <h3 className="text-lg font-bold text-gray-700 mb-4 px-1 flex items-center gap-2">
                     <Search size={18}/> Search Results ({groupedProducts.length})
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {/* UPDATED GRID for laptop screens: lg:grid-cols-4 */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {groupedProducts.map(({ key, items }) => renderProductGroup(key, items))}
                 </div>
             </div>
@@ -1151,30 +1364,6 @@ export const Warehouse: React.FC = () => {
                             </div>
                         </div>
                     </div>
-
-                    {/* Product Specific Expiry List */}
-                    <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
-                        <div className="px-4 py-2 bg-gray-100/50 border-b border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-wide">
-                             <span>Product Expiry Dates</span>
-                             <span>Date</span>
-                        </div>
-                        <div className="max-h-60 overflow-y-auto bg-white">
-                             {products
-                                .filter(p => p.name.toLowerCase().includes(settingsSearch.toLowerCase()))
-                                .map(p => (
-                                    <ProductSettingRow 
-                                        key={p.id} 
-                                        product={p} 
-                                        type="expiry" 
-                                        onUpdate={handleInlineProductUpdate} 
-                                    />
-                                ))
-                             }
-                             {products.filter(p => p.name.toLowerCase().includes(settingsSearch.toLowerCase())).length === 0 && (
-                                 <div className="p-6 text-center text-gray-400 text-sm">No products found matching "{settingsSearch}"</div>
-                             )}
-                        </div>
-                    </div>
                 </div>
             </div>
         </Card>
@@ -1214,7 +1403,7 @@ export const Warehouse: React.FC = () => {
       )}
 
       {isEditorOpen ? renderEditor() : (
-          <main className="max-w-6xl mx-auto px-2">
+          <main className="w-full mx-auto px-2">
             {activeTab === SubTab.DASHBOARD && renderDashboard()}
             {activeTab === SubTab.PRODUCTS && renderProducts()}
             {activeTab === SubTab.TAGS && renderTags()}
