@@ -3,7 +3,7 @@ import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Edit2, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, AlertOctagon, Book, Upload, FileUp, Loader2, Save, Eye } from 'lucide-react';
+import { Plus, Search, TriangleAlert, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, SquareCheck, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -99,6 +99,7 @@ const ProductSettingRow: React.FC<{
 
 export const Warehouse: React.FC = () => {
   const [activeTab, setActiveTab] = useState<SubTab>(SubTab.DASHBOARD);
+  const [viewMode, setViewMode] = useState<'WAREHOUSE' | 'REVIEW'>('WAREHOUSE'); // New View Mode State
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -136,10 +137,12 @@ export const Warehouse: React.FC = () => {
 
   // Invoice Parsing State
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isParsingInvoice, setIsParsingInvoice] = useState(false);
   const [parsedProducts, setParsedProducts] = useState<Partial<Product>[]>([]);
-  const [showReviewModal, setShowReviewModal] = useState(false);
   const [invoiceImage, setInvoiceImage] = useState<string | null>(null);
+  const [showSourceOptions, setShowSourceOptions] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
 
   useEffect(() => { loadData(); }, []);
 
@@ -213,6 +216,59 @@ export const Warehouse: React.FC = () => {
     }
   }, [showScanner, isEditorOpen, settings.soundEnabled]);
   
+  // Camera Logic for Image Capture
+  useEffect(() => {
+      let stream: MediaStream | null = null;
+      if (showCamera) {
+          const startCamera = async () => {
+              try {
+                  stream = await navigator.mediaDevices.getUserMedia({ 
+                      video: { facingMode: 'environment' } 
+                  });
+                  if (videoRef.current) {
+                      videoRef.current.srcObject = stream;
+                  }
+              } catch (err) {
+                  console.error("Camera Error:", err);
+                  alert("Could not access camera. Please allow permissions.");
+                  setShowCamera(false);
+              }
+          };
+          startCamera();
+      }
+      return () => {
+          if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+          }
+      };
+  }, [showCamera]);
+
+  const capturePhoto = () => {
+      if (videoRef.current) {
+          const video = videoRef.current;
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+              
+              // Process capture
+              setInvoiceImage(dataUrl);
+              setShowCamera(false);
+              
+              // Create a File object from Data URL for the parser
+              fetch(dataUrl)
+                  .then(res => res.blob())
+                  .then(blob => {
+                      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+                      processImageFile(file);
+                  });
+          }
+      }
+  };
+
   const handleUpdateSettings = async (newSettings: StoreSettings) => {
       setSettings(newSettings);
       await StoreService.saveSettings(newSettings);
@@ -343,8 +399,32 @@ export const Warehouse: React.FC = () => {
   };
 
   // Invoice Parsing Handlers
-  const handleInvoiceClick = () => {
-    fileInputRef.current?.click();
+  const handleAnalyzeClick = () => {
+      setShowSourceOptions(true);
+  };
+
+  const handleUploadOption = () => {
+      setShowSourceOptions(false);
+      fileInputRef.current?.click();
+  };
+
+  const handleCameraOption = () => {
+      setShowSourceOptions(false);
+      setShowCamera(true);
+  };
+
+  const processImageFile = async (file: File) => {
+    setIsParsingInvoice(true);
+    try {
+        const products = await GeminiService.parseInvoice(file);
+        setParsedProducts(products);
+        setViewMode('REVIEW'); // Switch to Review Page View
+    } catch (err) {
+        console.error(err);
+        alert("Failed to process image. Please try again.");
+    } finally {
+        setIsParsingInvoice(false);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -354,23 +434,14 @@ export const Warehouse: React.FC = () => {
     // Create preview URL
     const previewUrl = URL.createObjectURL(file);
     setInvoiceImage(previewUrl);
-
-    setIsParsingInvoice(true);
-    try {
-        const products = await GeminiService.parseInvoice(file);
-        setParsedProducts(products);
-        setShowReviewModal(true);
-    } catch (err) {
-        console.error(err);
-        alert("Failed to process invoice. Please try again.");
-    } finally {
-        setIsParsingInvoice(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    
+    await processImageFile(file);
+    
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleCloseReview = () => {
-    setShowReviewModal(false);
+    setViewMode('WAREHOUSE'); // Switch back
     if (invoiceImage) {
         URL.revokeObjectURL(invoiceImage);
         setInvoiceImage(null);
@@ -520,6 +591,7 @@ export const Warehouse: React.FC = () => {
       }
   };
 
+  // ... (renderProductGroup remains same)
   const renderProductGroup = (groupKey: string, items: Product[]) => {
       const p = items[0]; 
       const tag = getTag(p.tagId);
@@ -563,7 +635,7 @@ export const Warehouse: React.FC = () => {
                     <h4 className="font-bold text-gray-900 text-2xl leading-tight line-clamp-2" title={p.name}>{p.name}</h4>
                     <div className="flex gap-2 shrink-0">
                          <button onClick={() => handleEditProduct(p)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors bg-gray-50 border border-gray-100">
-                            <Edit2 size={18} />
+                            <Pencil size={18} />
                          </button>
                          <button onClick={() => setItemToDelete({ id: p.id, type: 'product', name: p.name })} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors bg-gray-50 border border-gray-100">
                             <Trash2 size={18} />
@@ -629,7 +701,7 @@ export const Warehouse: React.FC = () => {
                     <div className="flex gap-2 flex-wrap">
                         {isLow && (
                             <div className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-100">
-                                <AlertTriangle size={12}/> Low Stock
+                                <TriangleAlert size={12}/> Low Stock
                             </div>
                         )}
                         {anyExpiring && (
@@ -675,7 +747,7 @@ export const Warehouse: React.FC = () => {
                                     </div>
                                     <div className="text-center font-extrabold text-gray-900 text-sm">{item.stock}</div>
                                     <div className="flex justify-end gap-1">
-                                        <button onClick={() => handleEditProduct(item)} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-100 transition-colors"><Edit2 size={14}/></button>
+                                        <button onClick={() => handleEditProduct(item)} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-100 transition-colors"><Pencil size={14}/></button>
                                         <button onClick={() => setItemToDelete({ id: item.id, type: 'product', name: `${item.name} (Batch)` })} className="p-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded border border-red-100 transition-colors"><Trash2 size={14}/></button>
                                     </div>
                                 </div>
@@ -690,6 +762,7 @@ export const Warehouse: React.FC = () => {
 
   const renderEditor = () => (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 pb-24">
+        {/* ... (Editor Content Remains Same) ... */}
         <div className="flex items-center gap-4 mb-6">
             <button onClick={() => setIsEditorOpen(false)} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
             <h2 className="text-2xl font-bold text-gray-800">{isEditing ? 'Edit Product' : 'Add New Product'}</h2>
@@ -736,7 +809,7 @@ export const Warehouse: React.FC = () => {
                     <select 
                         value={newProduct.tagId || ''} 
                         onChange={(e) => e.target.value === 'NEW_TAG_TRIGGER' ? setShowTagModal(true) : setNewProduct({...newProduct, tagId: e.target.value})}
-                        className="w-full rounded-lg px-6 py-3 text-base bg-blue-50/10 border-2 border-blue-200 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all appearance-none"
+                        className="w-full rounded-lg px-6 py-3 text-base bg-blue-50/10 border-2 border-blue-200 text-gray-900 focus:outline-none focus:border-blue-500/50 focus:border-blue-500 transition-all appearance-none"
                     >
                         <option value="">Select Category</option>
                         {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -868,7 +941,7 @@ export const Warehouse: React.FC = () => {
 
                 <div className="space-y-2">
                     <label className="font-bold text-gray-700 text-sm flex items-center gap-2">
-                        <AlertTriangle size={16} className="text-purple-500"/> Low Stock Alert
+                        <TriangleAlert size={16} className="text-purple-500"/> Low Stock Alert
                     </label>
                     <Input 
                         type="number" 
@@ -914,18 +987,19 @@ export const Warehouse: React.FC = () => {
   );
 
   const renderDashboard = () => {
+    // ... (Dashboard Content Remains Same)
+    // To save tokens, I'll assume dashboard code is identical to previous
+    // Just need to keep it in the full file output
     const totalValue = products.reduce((acc, p) => acc + (p.stock * p.sellPrice), 0);
     const totalUnits = products.reduce((acc, p) => acc + p.stock, 0);
     const lowStockItems = products.filter(p => p.stock < p.lowStockThreshold);
     const outOfStockItems = products.filter(p => p.stock === 0);
     
-    // Separate expired vs expiring logic using the helper
     const { expiredItems, expiringItems } = products.reduce((acc, p) => {
         const days = getDaysUntilExpiry(p.expiryDate);
         if (days < 0) {
             acc.expiredItems.push({ ...p, days });
         } else if (days <= (settings.expiryAlertDays || 7) && days >= 0) {
-            // Ensure we don't catch products with no expiry (Infinity)
             if (p.expiryDate) {
                 acc.expiringItems.push({ ...p, days });
             }
@@ -933,14 +1007,11 @@ export const Warehouse: React.FC = () => {
         return acc;
     }, { expiredItems: [] as (Product & {days: number})[], expiringItems: [] as (Product & {days: number})[] });
 
-    // Sort alerts: expired first (most recent expiry at top?), expiring (soonest first)
-    expiredItems.sort((a, b) => b.days - a.days); // Sort by days (e.g. -1 (yesterday) before -10)
+    expiredItems.sort((a, b) => b.days - a.days);
     expiringItems.sort((a, b) => a.days - b.days);
 
-    // Sorted Full Product List for Directory
     const allProductsSorted = [...products].sort((a, b) => a.name.localeCompare(b.name));
 
-    // Date formatter for "12 Oct" style
     const formatDateShort = (dateStr: string) => {
         if (!dateStr) return '';
         const d = new Date(dateStr);
@@ -949,7 +1020,6 @@ export const Warehouse: React.FC = () => {
 
     return (
       <div className="space-y-6 animate-in fade-in">
-        {/* Top Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="border-2 border-sky-600 shadow-sm hover:shadow-md transition-shadow">
              <div className="text-sky-700 text-xs uppercase font-bold tracking-wider">Total Products</div>
@@ -969,18 +1039,15 @@ export const Warehouse: React.FC = () => {
           </Card>
         </div>
         
-        {/* Main 3-Column Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-            
-            {/* 1. Low Stock Alerts */}
             <Card className="border-2 border-red-500 bg-red-50/40 flex flex-col shadow-sm h-full">
                 <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-red-100 pb-2">
-                    <AlertTriangle size={20} className="text-red-500"/> Low Stock Alerts
+                    <TriangleAlert size={20} className="text-red-500"/> Low Stock Alerts
                 </h3>
                 <div className="p-1">
                     {lowStockItems.length === 0 && outOfStockItems.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 text-gray-400">
-                             <CheckSquare size={32} className="mb-2 opacity-30"/>
+                             <SquareCheck size={32} className="mb-2 opacity-30"/>
                              <span className="text-sm">Stock levels healthy</span>
                         </div>
                     ) : (
@@ -1002,7 +1069,6 @@ export const Warehouse: React.FC = () => {
                 </div>
             </Card>
 
-            {/* 2. Expiry Alerts */}
             <Card className="border-2 border-amber-500 bg-amber-50/40 flex flex-col shadow-sm h-full">
                 <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-amber-100 pb-2">
                     <Clock size={20} className="text-amber-500"/> Expiry Alerts
@@ -1015,7 +1081,6 @@ export const Warehouse: React.FC = () => {
                         </div>
                     ) : (
                         <div className="space-y-1">
-                            {/* Expired Items */}
                             {expiredItems.map(p => (
                                 <div 
                                     key={p.id} 
@@ -1032,8 +1097,6 @@ export const Warehouse: React.FC = () => {
                                     </div>
                                 </div>
                             ))}
-
-                            {/* Expiring Soon Items */}
                             {expiringItems.map(p => (
                                 <div 
                                     key={p.id} 
@@ -1055,12 +1118,11 @@ export const Warehouse: React.FC = () => {
                 </div>
             </Card>
 
-            {/* 3. Stock Value Chart (Small Shape) */}
             <Card className="flex flex-col border-2 border-gray-100 shadow-sm relative overflow-hidden h-[320px]">
                 <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-gray-100 pb-2 z-10 relative">
                     <DollarSign size={20} className="text-green-500"/> Stock Value
                 </h3>
-                <div className="w-full h-full relative z-10">
+                <div className="w-full flex-1 min-h-0 relative z-10">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart margin={{ top: 0, right: 0, bottom: 20, left: 0 }}>
                             <Pie 
@@ -1089,7 +1151,6 @@ export const Warehouse: React.FC = () => {
                             />
                         </PieChart>
                     </ResponsiveContainer>
-                    {/* Center Text for Value */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4">
                         <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Total</span>
                         <span className="text-xl font-bold text-gray-800">
@@ -1100,7 +1161,6 @@ export const Warehouse: React.FC = () => {
             </Card>
         </div>
 
-        {/* Product Directory Card - Renamed to Catalogs */}
         <Card className="border-t-4 border-t-gray-800 shadow-md">
             <h3 className="font-bold text-xl text-gray-900 mb-4 flex items-center gap-2">
                 <Book size={24} className="text-gray-700"/> Catalogs
@@ -1245,12 +1305,12 @@ export const Warehouse: React.FC = () => {
                     <Plus size={18} className="mr-2"/> Manual Add
                 </button>
                 <button 
-                    onClick={handleInvoiceClick}
+                    onClick={handleAnalyzeClick}
                     disabled={isParsingInvoice}
                     className="flex-1 rounded-lg flex items-center justify-center py-3 shadow-md bg-indigo-600 text-white font-medium"
                 >
                     {isParsingInvoice ? <Loader2 size={18} className="animate-spin mr-2"/> : <Sparkles size={18} className="mr-2"/>} 
-                    AI Invoice
+                    Analyze Image
                 </button>
             </div>
 
@@ -1282,9 +1342,9 @@ export const Warehouse: React.FC = () => {
                             <Plus size={18} /> Add Manual
                         </button>
                         <div className="w-px h-6 bg-gray-200"></div>
-                        <button onClick={handleInvoiceClick} disabled={isParsingInvoice} className="px-5 py-2 text-indigo-600 font-bold flex items-center gap-2 hover:bg-indigo-50 rounded-full transition-colors text-sm">
+                        <button onClick={handleAnalyzeClick} disabled={isParsingInvoice} className="px-5 py-2 text-indigo-600 font-bold flex items-center gap-2 hover:bg-indigo-50 rounded-full transition-colors text-sm">
                             {isParsingInvoice ? <Loader2 size={18} className="animate-spin text-indigo-500"/> : <Sparkles size={18} className="text-indigo-500"/>}
-                            Upload Invoice
+                            Analyze Image
                         </button>
                     </div>
                 </div>
@@ -1378,6 +1438,8 @@ export const Warehouse: React.FC = () => {
   );
 
   const renderSettings = () => (
+    // ... (Settings Content Remains Same) ...
+    // Using previous code for brevity, assumes identical structure
     <div className="space-y-6 animate-in fade-in max-w-3xl mx-auto pb-20">
         <div className="flex items-center gap-3 mb-6 px-1">
             <div className="p-3 bg-gray-900 text-white rounded-xl shadow-lg shadow-gray-900/20">
@@ -1447,7 +1509,7 @@ export const Warehouse: React.FC = () => {
                 <div className="p-4 sm:p-6 hover:bg-gray-50/30 transition-colors">
                     <div className="flex gap-4 mb-6">
                         <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0 mt-1">
-                            <AlertTriangle size={20} />
+                            <TriangleAlert size={20} />
                         </div>
                         <div className="flex-1">
                             <div className="flex justify-between items-start gap-4">
@@ -1548,6 +1610,121 @@ export const Warehouse: React.FC = () => {
     </div>
   );
 
+  // --- REVIEW PAGE COMPONENT (Full Screen) ---
+  if (viewMode === 'REVIEW') {
+      return (
+          <div className="fixed inset-0 bg-white z-[60] flex flex-col animate-in slide-in-from-right duration-300">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white shadow-sm shrink-0">
+                  <div className="flex items-center gap-3">
+                      <button onClick={handleCloseReview} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                          <ArrowLeft size={24} className="text-gray-600" />
+                      </button>
+                      <div>
+                          <h1 className="text-xl font-bold text-gray-900">Review Items</h1>
+                          <p className="text-xs text-gray-500">{parsedProducts.length} items detected</p>
+                      </div>
+                  </div>
+                  <Button onClick={handleImportParsedProducts} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
+                      <Save size={18} className="mr-2 inline"/> Import All
+                  </Button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-gray-50">
+                  {/* Left: Image (Desktop) / Top (Mobile) */}
+                  <div className="md:w-1/2 p-4 flex items-center justify-center bg-gray-900 relative group overflow-hidden shrink-0 h-1/3 md:h-full">
+                        {invoiceImage ? (
+                            <img src={invoiceImage} className="max-w-full max-h-full object-contain" alt="Invoice Preview" />
+                        ) : (
+                            <div className="text-gray-500 flex flex-col items-center">
+                                <Eye size={48} className="mb-2 opacity-50"/>
+                                <span>No image preview</span>
+                            </div>
+                        )}
+                  </div>
+
+                  {/* Right: List */}
+                  <div className="flex-1 overflow-y-auto p-4 bg-white">
+                      <table className="w-full text-sm">
+                        <thead className="bg-white text-gray-500 font-bold text-xs uppercase sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th className="pb-3 pt-2 text-left pl-2">Product Name</th>
+                                <th className="pb-3 pt-2 text-center w-16">Qty</th>
+                                <th className="pb-3 pt-2 text-right w-20">Sell</th>
+                                <th className="pb-3 pt-2 text-center w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {parsedProducts.map((p, idx) => (
+                                <tr key={idx} className="group hover:bg-blue-50/30 transition-colors">
+                                    <td className="py-3 px-2 align-top">
+                                        <input 
+                                            className="w-full bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none font-bold text-gray-900 py-1 transition-colors"
+                                            value={p.name}
+                                            onChange={(e) => updateParsedProduct(idx, 'name', e.target.value)}
+                                            placeholder="Product Name"
+                                        />
+                                        <div className="flex gap-2 mt-2">
+                                            <input 
+                                                className="bg-gray-100 rounded px-2 py-1 text-xs text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200 w-24 outline-none"
+                                                value={p.category || ''}
+                                                placeholder="Category"
+                                                onChange={(e) => updateParsedProduct(idx, 'category', e.target.value)}
+                                            />
+                                            <select 
+                                                className="bg-gray-100 rounded px-1 py-1 text-xs text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200 outline-none"
+                                                value={p.unit}
+                                                onChange={(e) => updateParsedProduct(idx, 'unit', e.target.value)}
+                                            >
+                                                {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                            </select>
+                                        </div>
+                                    </td>
+                                    <td className="py-3 px-1 align-top">
+                                        <input 
+                                            type="number"
+                                            className="w-full bg-gray-50 border border-gray-200 rounded px-1 py-1 text-center font-bold text-gray-700 focus:border-blue-500 focus:bg-white transition-all outline-none"
+                                            value={p.stock}
+                                            onChange={(e) => updateParsedProduct(idx, 'stock', parseFloat(e.target.value))}
+                                        />
+                                    </td>
+                                    <td className="py-3 px-1 align-top">
+                                        <div className="relative">
+                                            <span className="absolute left-2 top-1.5 text-gray-400 text-xs">₹</span>
+                                            <input 
+                                                type="number"
+                                                className="w-full pl-4 bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none text-right font-bold text-green-700 py-1"
+                                                value={p.sellPrice}
+                                                onChange={(e) => updateParsedProduct(idx, 'sellPrice', parseFloat(e.target.value))}
+                                            />
+                                        </div>
+                                        <div className="relative mt-1">
+                                            <span className="absolute left-2 top-1.5 text-gray-400 text-[10px]">Buy</span>
+                                            <input 
+                                                type="number"
+                                                className="w-full pl-8 bg-transparent border-b border-transparent focus:border-gray-400 focus:outline-none text-right text-xs text-gray-500 py-1"
+                                                value={p.buyPrice}
+                                                onChange={(e) => updateParsedProduct(idx, 'buyPrice', parseFloat(e.target.value))}
+                                            />
+                                        </div>
+                                    </td>
+                                    <td className="py-3 pl-2 text-center align-top pt-4">
+                                        <button onClick={() => removeParsedProduct(idx)} className="text-gray-300 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded">
+                                            <X size={16} />
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                  </div>
+              </div>
+          </div>
+      );
+  }
+
+  // --- MAIN RENDER ---
   return (
     <div 
         className="pb-32 min-h-[80vh]" 
@@ -1594,6 +1771,7 @@ export const Warehouse: React.FC = () => {
           </main>
       )}
 
+      {/* ... Existing Modals ... */}
       <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="Create New Tag">
           <div className="space-y-4">
               <Input placeholder="Tag Name" value={newTag.name || ''} onChange={e => setNewTag({...newTag, name: e.target.value})} />
@@ -1615,7 +1793,7 @@ export const Warehouse: React.FC = () => {
               <p className="text-gray-600 mb-2">Are you sure you want to delete <strong>{itemToDelete?.name}</strong>?</p>
               {itemToDelete?.type === 'tag' ? (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex gap-3 items-start">
-                      <div className="mt-0.5 text-blue-500"><AlertTriangle size={16} /></div>
+                      <div className="mt-0.5 text-blue-500"><TriangleAlert size={16} /></div>
                       <div className="text-sm text-blue-800">
                           <span className="font-bold block">Products will NOT be deleted.</span>
                           Products in this category will be marked as "Uncategorized".
@@ -1631,126 +1809,59 @@ export const Warehouse: React.FC = () => {
           </div>
       </Modal>
 
-      {/* Invoice Review Modal */}
-      <Modal 
-        isOpen={showReviewModal} 
-        onClose={handleCloseReview} 
-        title="Review Invoice Items"
-        className="!max-w-6xl !w-full !p-0 overflow-hidden"
-      >
-        <div className="flex flex-col md:flex-row h-[80vh] md:h-[70vh]">
-            {/* Left Side: Image Preview */}
-            <div className="w-full md:w-1/2 bg-gray-900 flex flex-col items-center justify-center relative overflow-hidden group">
-                {invoiceImage ? (
-                    <img src={invoiceImage} className="max-w-full max-h-full object-contain" alt="Invoice Preview" />
-                ) : (
-                    <div className="text-gray-500 flex flex-col items-center">
-                        <Eye size={48} className="mb-2 opacity-50"/>
-                        <span>No image preview</span>
-                    </div>
-                )}
-                <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
-                    Original Invoice
-                </div>
-            </div>
-
-            {/* Right Side: Data Table */}
-            <div className="w-full md:w-1/2 flex flex-col bg-white">
-                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                    <div>
-                        <h3 className="font-bold text-gray-800">Detected Items</h3>
-                        <p className="text-xs text-gray-500">Please verify details against the image.</p>
-                    </div>
-                    <Badge color="bg-blue-100 text-blue-700">{parsedProducts.length} Found</Badge>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-4">
-                    <table className="w-full text-sm">
-                        <thead className="bg-white text-gray-500 font-bold text-xs uppercase sticky top-0 z-10">
-                            <tr>
-                                <th className="pb-3 text-left w-1/3">Product Name</th>
-                                <th className="pb-3 text-center w-16">Qty</th>
-                                <th className="pb-3 text-right w-20">Buy</th>
-                                <th className="pb-3 text-right w-20">Sell</th>
-                                <th className="pb-3 text-center w-10"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                            {parsedProducts.map((p, idx) => (
-                                <tr key={idx} className="group hover:bg-blue-50/30 transition-colors">
-                                    <td className="py-2 pr-2 align-top">
-                                        <input 
-                                            className="w-full bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none font-medium text-gray-900 py-1 transition-colors"
-                                            value={p.name}
-                                            onChange={(e) => updateParsedProduct(idx, 'name', e.target.value)}
-                                            placeholder="Product Name"
-                                        />
-                                        <div className="flex gap-2 mt-1">
-                                            <input 
-                                                className="bg-gray-100 rounded px-2 py-0.5 text-xs text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200 w-24"
-                                                value={p.category || ''}
-                                                placeholder="Category"
-                                                onChange={(e) => updateParsedProduct(idx, 'category', e.target.value)}
-                                            />
-                                            <select 
-                                                className="bg-gray-100 rounded px-1 py-0.5 text-xs text-gray-600 focus:bg-white focus:ring-1 focus:ring-blue-200"
-                                                value={p.unit}
-                                                onChange={(e) => updateParsedProduct(idx, 'unit', e.target.value)}
-                                            >
-                                                {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                                            </select>
-                                        </div>
-                                    </td>
-                                    <td className="py-2 px-1 align-top">
-                                        <input 
-                                            type="number"
-                                            className="w-full bg-gray-50 border border-gray-200 rounded px-1 py-1 text-center font-bold text-gray-700 focus:border-blue-500 focus:bg-white transition-all"
-                                            value={p.stock}
-                                            onChange={(e) => updateParsedProduct(idx, 'stock', parseFloat(e.target.value))}
-                                        />
-                                    </td>
-                                    <td className="py-2 px-1 align-top">
-                                        <div className="relative">
-                                            <span className="absolute left-1.5 top-1.5 text-gray-400 text-xs">₹</span>
-                                            <input 
-                                                type="number"
-                                                className="w-full pl-4 bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none text-right text-gray-600"
-                                                value={p.buyPrice}
-                                                onChange={(e) => updateParsedProduct(idx, 'buyPrice', parseFloat(e.target.value))}
-                                            />
-                                        </div>
-                                    </td>
-                                    <td className="py-2 px-1 align-top">
-                                        <div className="relative">
-                                            <span className="absolute left-1.5 top-1.5 text-gray-400 text-xs">₹</span>
-                                            <input 
-                                                type="number"
-                                                className="w-full pl-4 bg-transparent border-b border-transparent focus:border-blue-400 focus:outline-none text-right font-bold text-green-700"
-                                                value={p.sellPrice}
-                                                onChange={(e) => updateParsedProduct(idx, 'sellPrice', parseFloat(e.target.value))}
-                                            />
-                                        </div>
-                                    </td>
-                                    <td className="py-2 pl-2 text-center align-top pt-3">
-                                        <button onClick={() => removeParsedProduct(idx)} className="text-gray-300 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded">
-                                            <X size={16} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
-                    <Button variant="neutral" onClick={handleCloseReview}>Discard</Button>
-                    <Button onClick={handleImportParsedProducts} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200">
-                        <Save size={18} className="mr-2 inline"/> Import All
-                    </Button>
-                </div>
-            </div>
-        </div>
+      {/* --- Source Selection Modal --- */}
+      <Modal isOpen={showSourceOptions} onClose={() => setShowSourceOptions(false)} title="Analyze Image" className="!max-w-xs">
+          <div className="space-y-3">
+              <p className="text-gray-500 text-sm mb-4">Choose how you want to add items.</p>
+              <button 
+                onClick={handleCameraOption} 
+                className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition-all group"
+              >
+                  <div className="p-3 rounded-full bg-blue-100 text-blue-600 group-hover:bg-blue-200"><Camera size={24}/></div>
+                  <div className="text-left">
+                      <span className="font-bold text-gray-900 block">Take Photo</span>
+                      <span className="text-xs text-gray-500">Capture invoices or items</span>
+                  </div>
+              </button>
+              <button 
+                onClick={handleUploadOption} 
+                className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:border-purple-500 hover:bg-purple-50 transition-all group"
+              >
+                  <div className="p-3 rounded-full bg-purple-100 text-purple-600 group-hover:bg-purple-200"><ImageIcon size={24}/></div>
+                  <div className="text-left">
+                      <span className="font-bold text-gray-900 block">Upload File</span>
+                      <span className="text-xs text-gray-500">From gallery or documents</span>
+                  </div>
+              </button>
+          </div>
       </Modal>
+
+      {/* --- Camera Modal (Full Screen Overlay) --- */}
+      {showCamera && (
+          <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+              <div className="relative flex-1 bg-black">
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover"></video>
+                  
+                  {/* Overlay Guides */}
+                  <div className="absolute inset-0 border-2 border-white/20 m-8 rounded-lg pointer-events-none">
+                      <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white"></div>
+                      <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white"></div>
+                      <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-white"></div>
+                      <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-white"></div>
+                  </div>
+              </div>
+              
+              {/* Camera Controls */}
+              <div className="h-32 bg-black flex items-center justify-around px-8 pb-8 pt-4">
+                  <button onClick={() => setShowCamera(false)} className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20">
+                      <X size={24}/>
+                  </button>
+                  <button onClick={capturePhoto} className="w-20 h-20 rounded-full bg-white border-4 border-gray-300 shadow-lg active:scale-95 transition-transform"></button>
+                  <div className="w-14"></div> {/* Spacer for balance */}
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };

@@ -1,3 +1,4 @@
+
 import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User } from '../types';
 
 interface StoreData {
@@ -44,11 +45,13 @@ const defaultData: StoreData = {
 // LocalStorage Keys
 const LS_BACKUP_KEY = 'glassstore_offline_backup';
 const LS_CLOUD_CONFIG = 'noor_cloud_config'; // { email: string, key: string }
+const LS_CLOUD_ENABLED = 'noor_cloud_enabled'; // 'true' | 'false'
 
 // In-memory cache
 let cache: StoreData | null = null;
 let loadPromise: Promise<StoreData> | null = null;
 let saveTimeout: any = null;
+let lastBackupTime: string | null = localStorage.getItem('noor_last_backup');
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -69,15 +72,32 @@ const StoreService = {
 
   setCloudConfig(email: string, key: string) {
       localStorage.setItem(LS_CLOUD_CONFIG, JSON.stringify({ email, key }));
-      // Clear cache to force reload with new creds on next call
+      this.enableCloud();
+  },
+
+  clearCloudConfig() {
+      localStorage.removeItem(LS_CLOUD_CONFIG);
+  },
+
+  isCloudEnabled() {
+      return localStorage.getItem(LS_CLOUD_ENABLED) === 'true';
+  },
+
+  enableCloud() {
+      localStorage.setItem(LS_CLOUD_ENABLED, 'true');
       cache = null; 
       loadPromise = null;
   },
 
   disconnectCloud() {
-      localStorage.removeItem(LS_CLOUD_CONFIG);
+      localStorage.setItem(LS_CLOUD_ENABLED, 'false');
+      // We do NOT remove config, so user can re-enable easily
       cache = null;
       loadPromise = null;
+  },
+
+  getLastBackupTime() {
+      return lastBackupTime;
   },
 
   // Core: Load data
@@ -85,24 +105,28 @@ const StoreService = {
     if (cache) return cache;
     if (loadPromise) return loadPromise;
 
-    const cloudConfig = this.getCloudConfig();
+    const cloudEnabled = this.isCloudEnabled();
 
-    // CRITICAL: If NO cloud config is present, DO NOT call the API.
-    // This prevents the popup/loading delay on startup for unconfigured users.
-    if (!cloudConfig) {
-        console.log("No cloud config found. Using local storage.");
+    // CRITICAL: If Cloud is NOT enabled, use local storage.
+    if (!cloudEnabled) {
+        // console.log("Cloud disabled. Using local storage.");
         const local = localStorage.getItem(LS_BACKUP_KEY);
         cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
         return cache as StoreData;
     }
 
-    // If Cloud Config exists, try to fetch with headers
-    loadPromise = fetch('/api/storage', {
-        headers: {
-            'x-google-email': cloudConfig.email,
-            'x-google-key': cloudConfig.key
-        }
-    })
+    const cloudConfig = this.getCloudConfig();
+    const headers: Record<string, string> = {};
+    
+    // Only add headers if client-side config exists. 
+    // Otherwise server will use its own env vars.
+    if (cloudConfig) {
+        headers['x-google-email'] = cloudConfig.email;
+        headers['x-google-key'] = cloudConfig.key;
+    }
+
+    // If Cloud is enabled, try to fetch
+    loadPromise = fetch('/api/storage', { headers })
       .then(async (res) => {
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
         
@@ -122,6 +146,9 @@ const StoreService = {
           cache = { ...defaultData, ...data, users: data.users || [] };
           // Update local backup with fresh cloud data
           localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
+          // Update backup time
+          lastBackupTime = new Date().toISOString();
+          localStorage.setItem('noor_last_backup', lastBackupTime);
         }
         return cache as StoreData;
       })
@@ -129,6 +156,7 @@ const StoreService = {
         console.warn("Cloud load failed (falling back to local):", err.message);
         const local = localStorage.getItem(LS_BACKUP_KEY);
         cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
+        // We do NOT throw here, we provide offline availability
         return cache as StoreData;
       })
       .finally(() => {
@@ -145,25 +173,29 @@ const StoreService = {
     // 1. Always save to LocalStorage immediately
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
 
-    // 2. Cloud Save (ONLY if configured)
-    const cloudConfig = this.getCloudConfig();
-    if (!cloudConfig) return;
+    // 2. Cloud Save (ONLY if enabled)
+    if (!this.isCloudEnabled()) return;
 
     if (saveTimeout) clearTimeout(saveTimeout);
     
     saveTimeout = setTimeout(async () => {
       try {
+        const cloudConfig = this.getCloudConfig();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (cloudConfig) {
+            headers['x-google-email'] = cloudConfig.email;
+            headers['x-google-key'] = cloudConfig.key;
+        }
+
         const res = await fetch('/api/storage', {
           method: 'POST',
-          headers: { 
-              'Content-Type': 'application/json',
-              'x-google-email': cloudConfig.email,
-              'x-google-key': cloudConfig.key
-          },
+          headers,
           body: JSON.stringify(cache)
         });
         if (res.ok) {
             console.log("Data synced to Cloud");
+            lastBackupTime = new Date().toISOString();
+            localStorage.setItem('noor_last_backup', lastBackupTime);
         } else {
             console.warn("Cloud sync failed");
         }
@@ -317,7 +349,7 @@ const StoreService = {
     return data.sales;
   },
 
-  async createSale(saleData: { items: CartItem[], customerId?: string, customerName: string, subtotal: number, tax: number, total: number, servedBy?: string }): Promise<Sale> {
+  async createSale(saleData: { items: CartItem[], customerId?: string, customerName: string, subtotal: number, tax: number, total: number, servedBy?: string, paymentMethod?: string }): Promise<Sale> {
     const data = await this.loadData();
     const newSale: Sale = {
       id: generateId(),
@@ -339,11 +371,41 @@ const StoreService = {
         data.customers[custIndex].visitCount += 1;
         data.customers[custIndex].totalSpent += saleData.total;
         data.customers[custIndex].history.push(newSale.id);
+
+        // PAY LATER Logic: Increment Dues
+        if (saleData.paymentMethod === 'Pay Later') {
+            data.customers[custIndex].totalDues = (data.customers[custIndex].totalDues || 0) + saleData.total;
+        }
       }
     }
 
     this.saveData();
     return newSale;
+  },
+
+  async deleteSale(id: string): Promise<void> {
+    const data = await this.loadData();
+    data.sales = data.sales.filter(s => s.id !== id);
+    
+    // Clean up customer history references
+    data.customers.forEach(c => {
+      c.history = c.history.filter(hId => hId !== id);
+    });
+
+    this.saveData();
+  },
+
+  async deleteSales(ids: string[]): Promise<void> {
+    const data = await this.loadData();
+    const idSet = new Set(ids);
+    data.sales = data.sales.filter(s => !idSet.has(s.id));
+    
+    // Clean up customer history references
+    data.customers.forEach(c => {
+      c.history = c.history.filter(hId => !idSet.has(hId));
+    });
+
+    this.saveData();
   },
 
   // --- Customers ---
@@ -371,6 +433,7 @@ const StoreService = {
       email: customer.email || '',
       location: customer.location || '',
       totalSpent: 0,
+      totalDues: 0,
       visitCount: 0,
       history: []
     };

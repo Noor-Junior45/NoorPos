@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Tab, User } from './types';
 import { Warehouse } from './pages/Warehouse';
 import { POS } from './pages/POS';
+import { Dashboard } from './pages/Dashboard';
 import { Customers } from './pages/Customers';
 import { Profile } from './pages/Profile';
-import { Package, ShoppingCart, Users, User as UserIcon } from 'lucide-react';
+import { Package, ShoppingCart, Users, User as UserIcon, LayoutDashboard } from 'lucide-react';
 
 const App: React.FC = () => {
   // Default to PROFILE so users see the login screen first if they aren't authenticated
@@ -51,54 +52,69 @@ const App: React.FC = () => {
       <main className="p-4 md:p-6 w-full max-w-[1920px] mx-auto min-h-screen">
         {activeTab === Tab.WAREHOUSE && <Warehouse />}
         {activeTab === Tab.POS && <POS />}
+        {activeTab === Tab.DASHBOARD && <Dashboard />}
         {activeTab === Tab.CUSTOMERS && <Customers />}
         {activeTab === Tab.PROFILE && <Profile user={currentUser} onLogin={handleLogin} onLogout={handleLogout} />}
       </main>
 
-      {/* Bottom Navbar (Glassmorphism) */}
+      {/* Bottom Navbar (Glossmorphism) */}
       <div className="fixed bottom-0 left-0 right-0 p-4 z-40 flex justify-center pointer-events-none">
-        <nav className="glass-panel pointer-events-auto rounded-full px-6 py-3 flex gap-6 items-center shadow-2xl ring-1 ring-black/5">
+        <nav className="pointer-events-auto rounded-full px-5 py-3 flex gap-1 items-center shadow-[0_20px_50px_rgba(8,_112,_184,_0.1)] ring-1 ring-white/50 bg-white/40 backdrop-blur-3xl border border-white/80">
+          
           <button 
             onClick={() => setActiveTab(Tab.WAREHOUSE)}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === Tab.WAREHOUSE ? 'text-yellow-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+            className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.WAREHOUSE ? 'text-yellow-600 scale-105 font-bold' : 'text-gray-800 hover:text-black'}`}
           >
-            <Package size={24} strokeWidth={activeTab === Tab.WAREHOUSE ? 2.5 : 2} />
-            <span className="text-[10px] font-bold tracking-wide">Stock</span>
+            <Package size={22} strokeWidth={activeTab === Tab.WAREHOUSE ? 2.5 : 2} />
+            <span className="text-[10px] tracking-wide">Stock</span>
           </button>
           
-          {/* Separator */}
-          <div className="w-px h-8 bg-gray-200 mx-1"></div>
+          <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
 
+          {/* POS Button - Floating Green Circle ONLY when active */}
           <button 
             onClick={() => setActiveTab(Tab.POS)}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === Tab.POS ? 'text-green-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+            className={`flex flex-col items-center gap-1 px-3 transition-all duration-300 ${activeTab === Tab.POS ? '' : 'text-gray-800 hover:text-black'}`}
           >
-            <div className={`p-3 rounded-full ${activeTab === Tab.POS ? 'bg-green-500 text-white shadow-lg shadow-green-500/40 -mt-6 ring-4 ring-white' : 'bg-transparent'}`}>
-                <ShoppingCart size={24} strokeWidth={activeTab === Tab.POS ? 2.5 : 2} />
+             <div className={`
+               flex items-center justify-center transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1)
+               ${activeTab === Tab.POS 
+                  ? 'bg-green-600 text-white w-14 h-14 rounded-full shadow-xl shadow-green-500/40 -mt-12 ring-4 ring-[#fdfdfc]' 
+                  : 'bg-transparent text-gray-800 w-auto h-auto mt-0'}
+            `}>
+                <ShoppingCart size={activeTab === Tab.POS ? 26 : 22} strokeWidth={activeTab === Tab.POS ? 2.5 : 2} />
             </div>
-            {activeTab !== Tab.POS && <span className="text-[10px] font-bold tracking-wide">POS</span>}
+            <span className={`text-[10px] font-bold tracking-wide transition-all duration-300 ${activeTab === Tab.POS ? 'w-0 h-0 opacity-0 overflow-hidden' : 'opacity-100 mt-0.5'}`}>POS</span>
           </button>
 
-          {/* Separator */}
-          <div className="w-px h-8 bg-gray-200 mx-1"></div>
+          <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
+
+          <button 
+            onClick={() => setActiveTab(Tab.DASHBOARD)}
+            className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.DASHBOARD ? 'text-indigo-600 scale-105 font-bold' : 'text-gray-800 hover:text-black'}`}
+          >
+            <LayoutDashboard size={22} strokeWidth={activeTab === Tab.DASHBOARD ? 2.5 : 2} />
+            <span className="text-[10px] tracking-wide">Dash</span>
+          </button>
+
+          <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
 
           <button 
             onClick={() => setActiveTab(Tab.CUSTOMERS)}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === Tab.CUSTOMERS ? 'text-blue-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+            className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.CUSTOMERS ? 'text-blue-600 scale-105 font-bold' : 'text-gray-800 hover:text-black'}`}
           >
-            <Users size={24} strokeWidth={activeTab === Tab.CUSTOMERS ? 2.5 : 2} />
-            <span className="text-[10px] font-bold tracking-wide">CRM</span>
+            <Users size={22} strokeWidth={activeTab === Tab.CUSTOMERS ? 2.5 : 2} />
+            <span className="text-[10px] tracking-wide">CRM</span>
           </button>
 
-          {/* New Separator Line as requested */}
-          <div className="w-px h-8 bg-gray-200 mx-1"></div>
+          <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
 
           <button 
             onClick={() => setActiveTab(Tab.PROFILE)}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === Tab.PROFILE ? 'text-purple-600 scale-110' : 'text-gray-400 hover:text-gray-600'}`}
+            className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.PROFILE ? 'text-purple-600 scale-105 font-bold' : 'text-gray-800 hover:text-black'}`}
           >
-            <UserIcon size={24} strokeWidth={activeTab === Tab.PROFILE ? 2.5 : 2} />
-            <span className="text-[10px] font-bold tracking-wide">Profile</span>
+            <UserIcon size={22} strokeWidth={activeTab === Tab.PROFILE ? 2.5 : 2} />
+            <span className="text-[10px] tracking-wide">Profile</span>
           </button>
         </nav>
       </div>

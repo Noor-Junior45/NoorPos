@@ -1,3 +1,4 @@
+
 export interface Tag {
   id: string;
   name: string;
@@ -42,6 +43,7 @@ export interface Customer {
   email?: string;
   location?: string;
   totalSpent: number;
+  totalDues: number; // Added for Pay Later functionality
   visitCount: number;
   history: string[]; // Sale IDs
 }
@@ -65,11 +67,13 @@ export interface Sale {
   total: number;
   timestamp: string; // ISO string
   servedBy?: string; // User Name
+  paymentMethod?: string; // 'Cash', 'UPI', 'Card', 'Pay Later', etc.
 }
 
 export enum Tab {
   WAREHOUSE = 'WAREHOUSE',
   POS = 'POS',
+  DASHBOARD = 'DASHBOARD',
   CUSTOMERS = 'CUSTOMERS',
   PROFILE = 'PROFILE'
 }

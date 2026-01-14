@@ -27,19 +27,21 @@ export default async function handler(req, res) {
     const base64Data = image.replace(/^data:.+;base64,/, '');
 
     const prompt = `
-      Analyze this inventory invoice or list. Extract product details accurately.
+      Analyze this image (invoice, inventory list, or product photo) and extract product details.
       
       Rules for Extraction:
-      - Name: Keep it concise.
-      - Stock: Integer only. Default to 1 if unspecified.
+      - Name: Concise product name.
+      - Stock: Integer quantity. Default to 1 if just a list item.
       - Unit: e.g., 'pcs', 'kg', 'box'. Default to 'pcs'.
-      - Buy Price: The unit cost. Default to 0 if not found.
-      - Sell Price: The retail price. If missing, estimate it as Buy Price * 1.3 (30% margin).
-      - Category: Infer a general category (e.g., 'Dairy', 'Vegetables', 'Beverages') based on the name.
+      - Buy Price: Unit cost. Default 0.
+      - Sell Price: Retail price. If missing, calculate as Buy Price * 1.3.
+      - Category: Infer category (e.g., 'Dairy', 'Produce', 'Snacks').
+      
+      Return a raw JSON object matching the schema.
     `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: {
         parts: [
           { inlineData: { mimeType: mimeType, data: base64Data } },
