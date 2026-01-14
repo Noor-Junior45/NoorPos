@@ -13,6 +13,8 @@ export interface GoogleUser {
   };
 }
 
+const headers = ['ID', 'Product Name', 'SKU', 'Price', 'Stock', 'Unit', 'Category'];
+
 export const GoogleDriveUtils = {
   
   /**
@@ -72,7 +74,10 @@ export const GoogleDriveUtils = {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     
-    if (!searchRes.ok) throw new Error("Failed to search Drive");
+    if (!searchRes.ok) {
+        const err = await searchRes.json();
+        throw new Error(`Drive Search Failed: ${err?.error?.message || searchRes.statusText}`);
+    }
     const searchData = await searchRes.json();
 
     if (searchData.files && searchData.files.length > 0) {
@@ -95,12 +100,14 @@ export const GoogleDriveUtils = {
       }),
     });
 
-    if (!createRes.ok) throw new Error("Failed to create Spreadsheet");
+    if (!createRes.ok) {
+        const err = await createRes.json();
+        throw new Error(`Sheet Creation Failed: ${err?.error?.message || createRes.statusText}`);
+    }
     const createData = await createRes.json();
     const spreadsheetId = createData.spreadsheetId;
 
     // 3. Add Headers to Products Sheet
-    const headers = ['ID', 'Product Name', 'SKU', 'Price', 'Stock', 'Unit', 'Category'];
     await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A1:G1?valueInputOption=USER_ENTERED`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -146,7 +153,10 @@ export const GoogleDriveUtils = {
         body: JSON.stringify(body)
     });
 
-    if (!res.ok) throw new Error(`Save failed: ${res.statusText}`);
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(`Save failed: ${err?.error?.message || res.statusText}`);
+    }
   },
 
   /**
@@ -158,7 +168,11 @@ export const GoogleDriveUtils = {
           headers: { Authorization: `Bearer ${accessToken}` }
       });
 
-      if (!res.ok) throw new Error("Failed to load from sheet");
+      if (!res.ok) {
+          // If 404/403, might be issue with sheet, return null to fallback
+          console.warn("Load failed, falling back", res.statusText);
+          return null; 
+      }
       
       const json = await res.json();
       
