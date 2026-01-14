@@ -558,17 +558,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     return colors[Math.abs(hash) % colors.length];
   };
 
-  const stockValueByCategory = useMemo(() => {
-    if (!tags || !products) return [];
-    const valueByTag: { [key: string]: { name: string, value: number, color: string } } = {};
-    tags.forEach(tag => { valueByTag[tag.id] = { name: tag.name, value: 0, color: tag.color }; });
-    products.forEach(p => {
-        const value = p.stock * p.sellPrice;
-        if (p.tagId && valueByTag[p.tagId]) valueByTag[p.tagId].value += value;
-    });
-    return Object.values(valueByTag).filter(d => d.value > 0);
-  }, [products, tags]);
-
   // Swipe Handlers
   const onTouchStart = (e: React.TouchEvent) => {
       setTouchEnd(null);
@@ -1000,9 +989,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   );
 
   const renderDashboard = () => {
-    // ... (Dashboard Content Remains Same)
-    // To save tokens, I'll assume dashboard code is identical to previous
-    // Just need to keep it in the full file output
+    // Note: Stock Value Chart logic moved to main Dashboard as requested.
     const totalValue = products.reduce((acc, p) => acc + (p.stock * p.sellPrice), 0);
     const totalUnits = products.reduce((acc, p) => acc + p.stock, 0);
     const lowStockItems = products.filter(p => p.stock < p.lowStockThreshold);
@@ -1052,7 +1039,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           </Card>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 items-start">
             <Card className="border-2 border-red-500 bg-red-50/40 flex flex-col shadow-sm h-full">
                 <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-red-100 pb-2">
                     <TriangleAlert size={20} className="text-red-500"/> Low Stock Alerts
@@ -1128,48 +1115,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                             ))}
                         </div>
                     )}
-                </div>
-            </Card>
-
-            <Card className="flex flex-col border-2 border-gray-100 shadow-sm relative overflow-hidden h-[320px]">
-                <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-gray-100 pb-2 z-10 relative">
-                    <DollarSign size={20} className="text-green-500"/> Stock Value
-                </h3>
-                <div className="w-full flex-1 min-h-0 relative z-10">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart margin={{ top: 0, right: 0, bottom: 20, left: 0 }}>
-                            <Pie 
-                                data={stockValueByCategory} 
-                                dataKey="value" 
-                                nameKey="name" 
-                                cx="50%" 
-                                cy="50%" 
-                                innerRadius={60} 
-                                outerRadius={80} 
-                                paddingAngle={5}
-                                label={false}
-                            >
-                                {stockValueByCategory.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0} />)}
-                            </Pie>
-                            <Tooltip 
-                                formatter={(value) => `${settings.currencySymbol}${Number(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
-                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                            />
-                            <Legend 
-                                verticalAlign="bottom" 
-                                height={36} 
-                                iconType="circle" 
-                                iconSize={8}
-                                wrapperStyle={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}
-                            />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pt-4">
-                        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Total</span>
-                        <span className="text-xl font-bold text-gray-800">
-                             {settings.currencySymbol}{(totalValue / 1000).toFixed(1)}k
-                        </span>
-                    </div>
                 </div>
             </Card>
         </div>

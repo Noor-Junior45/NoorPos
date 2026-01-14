@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
-import { Customer, Sale, Product, Tab } from '../types';
+import { Customer, Sale, Product, Tab, Tag } from '../types';
 import { Card, Badge, Button } from '../components/UI';
-import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle } from 'lucide-react';
+import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface DashboardProps {
@@ -13,20 +13,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
 
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
-    const [cData, sData, pData] = await Promise.all([
+    const [cData, sData, pData, tData] = await Promise.all([
         StoreService.getCustomers(),
         StoreService.getSales(),
-        StoreService.getInventory()
+        StoreService.getInventory(),
+        StoreService.getTags()
     ]);
     setCustomers(cData);
     setSales(sData);
     setProducts(pData);
+    setTags(tData);
   };
 
   const stats = useMemo(() => {
@@ -88,6 +91,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         .slice(0, 5)
         .map(([name, count]) => ({ name, count }));
 
+    // 6. Stock Value By Category
+    const valueByTag: { [key: string]: { name: string, value: number, color: string } } = {};
+    tags.forEach(tag => { valueByTag[tag.id] = { name: tag.name, value: 0, color: tag.color }; });
+    products.forEach(p => {
+        const value = p.stock * p.sellPrice;
+        if (p.tagId && valueByTag[p.tagId]) valueByTag[p.tagId].value += value;
+    });
+    const stockValueByCategory = Object.values(valueByTag).filter(d => d.value > 0);
+
     return { 
         totalRevenue, 
         totalDues, 
@@ -99,9 +111,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         lowStockItems,
         outOfStockCount,
         customerComposition,
-        topProducts
+        topProducts,
+        stockValueByCategory
     };
-  }, [customers, sales, products]);
+  }, [customers, sales, products, tags]);
 
   const handleCall = (phone: string) => {
       window.location.href = `tel:${phone}`;
@@ -237,18 +250,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
             </Card>
 
-            {/* Customer Composition (1 Col) */}
-            <Card className="border-gray-100 shadow-sm p-6 flex flex-col">
-                <div className="flex justify-between items-center mb-2">
+            {/* Stock Value by Category (Moved from Warehouse) - 1 Col */}
+            <Card className="border-gray-100 shadow-sm p-6 flex flex-col relative overflow-hidden">
+                <div className="flex justify-between items-center mb-2 z-10 relative">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <Users size={18} className="text-purple-600"/> Customer Loyalty
+                        <DollarSign size={18} className="text-green-500"/> Stock Value
                     </h3>
                 </div>
-                <div className="flex-1 min-h-[200px] relative">
+                <div className="flex-1 min-h-[200px] relative z-10">
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
-                                data={stats.customerComposition}
+                                data={stats.stockValueByCategory}
                                 cx="50%"
                                 cy="50%"
                                 innerRadius={60}
@@ -256,11 +269,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 paddingAngle={5}
                                 dataKey="value"
                             >
-                                {stats.customerComposition.map((entry, index) => (
+                                {stats.stockValueByCategory.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0}/>
                                 ))}
                             </Pie>
                             <Tooltip 
+                                formatter={(value: number) => `₹${value.toLocaleString()}`}
                                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                             />
                             <Legend 
@@ -274,21 +288,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     </ResponsiveContainer>
                     {/* Center Stat */}
                     <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
-                        <span className="text-3xl font-bold text-gray-800">{customers.length}</span>
-                        <span className="text-[10px] text-gray-400 uppercase tracking-wide">Total</span>
+                        <span className="text-sm font-bold text-gray-400 uppercase tracking-wide">Total</span>
+                        <span className="text-xl font-bold text-gray-800">₹{(stats.inventoryValue / 1000).toFixed(1)}k</span>
                     </div>
                 </div>
             </Card>
         </div>
 
-        {/* 3. INSIGHTS GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* 3. INSIGHTS GRID & CRM (Reflowed) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             
             {/* Outstanding Dues */}
             <Card className="border-red-100 bg-red-50/30 shadow-sm overflow-hidden flex flex-col h-[350px]">
                 <div className="px-5 py-4 border-b border-red-100 bg-red-50/50 flex justify-between items-center">
                     <h3 className="font-bold text-red-900 flex items-center gap-2">
-                        <Wallet size={18} /> Outstanding Dues
+                        <Wallet size={18} /> Outstanding
                     </h3>
                     <Badge color="bg-white text-red-600 border border-red-100 shadow-sm">{stats.customersWithDues.length}</Badge>
                 </div>
@@ -296,7 +310,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     {stats.customersWithDues.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
                             <Wallet size={32} className="mb-2 opacity-20"/>
-                            No pending payments.
+                            No dues.
                         </div>
                     ) : (
                         stats.customersWithDues.map(c => (
@@ -316,11 +330,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                         ))
                     )}
                 </div>
-                {stats.totalDues > 0 && (
-                    <div className="p-3 bg-red-100 border-t border-red-200 text-center text-red-800 text-xs font-bold uppercase tracking-wide">
-                        Collect ₹{stats.totalDues.toLocaleString()}
-                    </div>
-                )}
             </Card>
 
             {/* Top Products */}
@@ -334,7 +343,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     {stats.topProducts.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
                             <ShoppingBag size={32} className="mb-2 opacity-20"/>
-                            No sales data yet.
+                            No data.
                         </div>
                     ) : (
                         <div className="space-y-1">
@@ -344,9 +353,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-yellow-400 text-white' : 'bg-indigo-100 text-indigo-600'}`}>
                                             {idx + 1}
                                         </div>
-                                        <span className="font-medium text-gray-800 text-sm">{p.name}</span>
+                                        <span className="font-medium text-gray-800 text-sm truncate max-w-[80px]">{p.name}</span>
                                     </div>
-                                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{p.count} sold</span>
+                                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">{p.count}</span>
                                 </div>
                             ))}
                         </div>
@@ -354,7 +363,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
             </Card>
 
-            {/* Low Stock Alerts (Refined) */}
+            {/* Low Stock Alerts */}
             <Card className="border-amber-100 bg-amber-50/30 shadow-sm overflow-hidden flex flex-col h-[350px]">
                 <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50 flex justify-between items-center">
                     <h3 className="font-bold text-amber-900 flex items-center gap-2">
@@ -366,15 +375,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     {stats.lowStockItems.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
                             <Package size={32} className="mb-2 opacity-20"/>
-                            Inventory healthy.
+                            Healthy.
                         </div>
                     ) : (
                         <div className="space-y-2">
                             {stats.lowStockItems.map(p => (
                                 <div key={p.id} className="flex items-center justify-between p-3 bg-white border border-amber-100 rounded-xl shadow-sm group hover:border-amber-300 transition-colors">
                                     <div>
-                                        <div className="font-bold text-gray-800 text-sm">{p.name}</div>
-                                        <div className="text-[10px] text-gray-400">Limit: {p.lowStockThreshold} {p.unit}</div>
+                                        <div className="font-bold text-gray-800 text-sm truncate max-w-[90px]">{p.name}</div>
+                                        <div className="text-[10px] text-gray-400">Limit: {p.lowStockThreshold}</div>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-lg font-bold text-red-600 leading-none">{p.stock}</div>
@@ -384,6 +393,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                             ))}
                         </div>
                     )}
+                </div>
+            </Card>
+
+            {/* Customer Loyalty (Moved Here) */}
+            <Card className="border-gray-100 shadow-sm p-0 flex flex-col h-[350px] overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        <Users size={18} className="text-purple-600"/> Loyalty
+                    </h3>
+                </div>
+                <div className="flex-1 relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                                data={stats.customerComposition}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={50}
+                                outerRadius={70}
+                                paddingAngle={5}
+                                dataKey="value"
+                            >
+                                {stats.customerComposition.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0}/>
+                                ))}
+                            </Pie>
+                            <Tooltip 
+                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                            />
+                            <Legend 
+                                verticalAlign="bottom" 
+                                height={36} 
+                                iconType="circle" 
+                                iconSize={8}
+                                wrapperStyle={{ fontSize: '10px', fontWeight: 600, color: '#6b7280' }}
+                            />
+                        </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
+                        <span className="text-2xl font-bold text-gray-800">{customers.length}</span>
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide">Total</span>
+                    </div>
                 </div>
             </Card>
         </div>
