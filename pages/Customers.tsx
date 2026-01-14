@@ -209,14 +209,6 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                         </div>
                     )}
                </div>
-
-               {/* Floating Action Button (FAB) - Fixed position */}
-               <button 
-                  onClick={handleAddClick}
-                  className="fixed bottom-24 right-6 w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-xl flex items-center justify-center z-50 transition-transform active:scale-95 hover:bg-blue-700 hover:scale-105"
-                >
-                  <Plus size={28} />
-               </button>
           </div>
       </div>
   );
@@ -347,6 +339,15 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       <div className="flex-1 min-h-0 relative">
           {renderContacts()}
       </div>
+
+      {/* Floating Action Button (FAB) - Moved outside the animated container */}
+      <button 
+         onClick={handleAddClick}
+         className="fixed bottom-24 right-6 w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-xl flex items-center justify-center z-40 transition-transform active:scale-95 hover:bg-blue-700 hover:scale-105"
+         style={{ boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.4)' }}
+       >
+         <Plus size={28} />
+      </button>
 
       {/* Mobile Detail View Overlay (Google Contacts Style) */}
       {selectedCustomer && (

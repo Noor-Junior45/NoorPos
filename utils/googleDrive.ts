@@ -1,7 +1,7 @@
 
 // CLIENT_ID is now expected to be provided via Environment Variable
-// Scopes: drive.file (create/open files), spreadsheets (read/write sheets)
-const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets';
+// Scopes: drive.file (create/open files), spreadsheets (read/write sheets), userinfo (profile data)
+const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 
 export interface GoogleUser {
   accessToken: string;
@@ -58,7 +58,11 @@ export const GoogleDriveUtils = {
     const response = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) throw new Error("Failed to fetch user profile");
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Google Profile API Error:", response.status, errorText);
+        throw new Error("Failed to fetch user profile. Scopes might be missing.");
+    }
     return await response.json();
   },
 

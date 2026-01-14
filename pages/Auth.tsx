@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Input } from '../components/UI';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Sparkles, Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2, ExternalLink } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -11,6 +11,7 @@ interface AuthProps {
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [apiErrorLink, setApiErrorLink] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   const [isGoogleReady, setIsGoogleReady] = useState(false);
 
@@ -64,6 +65,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
     setLoading(true);
     setError('');
+    setApiErrorLink(null);
     setStatus('Initializing Login...');
 
     try {
@@ -93,15 +95,31 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       setLoading(false);
       
       let msg = "Login failed.";
+      let link = null;
+
       if (err?.error === 'popup_closed_by_user') {
           msg = "Login cancelled. Popup closed.";
       } else if (err?.error === 'access_denied') {
           msg = "Access denied. Permissions required.";
       } else if (err?.message) {
           msg = err.message;
+
+          // Check for API disabled error
+          if (msg.includes("Google Sheets API") && (msg.includes("disabled") || msg.includes("not been used"))) {
+             msg = "Google Sheets API is not enabled for this Project/Client ID.";
+             // Try to extract the link provided by Google
+             const urlRegex = /(https?:\/\/[^\s]+)/g;
+             const matches = err.message.match(urlRegex);
+             if (matches && matches[0]) {
+                 link = matches[0];
+             } else {
+                 link = "https://console.developers.google.com/apis/library/sheets.googleapis.com";
+             }
+          }
       }
       
       setError(msg);
+      setApiErrorLink(link);
     }
   };
 
@@ -167,8 +185,18 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              )}
 
              {error && (
-                <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm font-medium text-center border border-red-100 flex items-center gap-2 justify-center">
-                    <AlertTriangle size={16} /> {error}
+                <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm font-medium text-center border border-red-100 flex flex-col items-center gap-2 justify-center">
+                    <div className="flex items-center gap-2"><AlertTriangle size={16} /> {error}</div>
+                    {apiErrorLink && (
+                        <a 
+                            href={apiErrorLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="mt-1 flex items-center gap-1 text-xs font-bold text-red-700 underline hover:text-red-900 bg-red-100 px-3 py-1.5 rounded-lg"
+                        >
+                            <ExternalLink size={12} /> Enable Google Sheets API
+                        </a>
+                    )}
                 </div>
              )}
           </div>
