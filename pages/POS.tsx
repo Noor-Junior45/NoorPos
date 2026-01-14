@@ -3,7 +3,7 @@ import { Product, CartItem, Customer, Sale, Tag, StoreSettings } from '../types'
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, SquareCheck, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2 } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, CheckSquare, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 // Extended interface for local POS state to handle discounts and custom pricing
@@ -441,7 +441,7 @@ export const POS: React.FC = () => {
                            </>
                        ) : (
                            <Button size="sm" variant="neutral" onClick={() => setIsSelectionMode(true)} className="flex items-center gap-1">
-                               <SquareCheck size={16} /> Select
+                               <CheckSquare size={16} /> Select
                            </Button>
                        )}
                   </div>
@@ -452,7 +452,7 @@ export const POS: React.FC = () => {
                   <div className="bg-gray-50 px-4 py-3 flex items-center gap-3 border-b border-gray-100 sticky top-[73px] z-10">
                        <button onClick={toggleSelectAll} className="flex items-center gap-2 text-sm font-bold text-gray-600">
                            {selectedSales.size === recentSales.length && recentSales.length > 0 ? (
-                               <SquareCheck size={20} className="text-blue-600" />
+                               <CheckSquare size={20} className="text-blue-600" />
                            ) : (
                                <Square size={20} className="text-gray-400" />
                            )}
@@ -489,7 +489,7 @@ export const POS: React.FC = () => {
                                     <div className="font-bold text-gray-800 text-sm truncate w-full pr-6">{sale.customerName}</div>
                                     {isSelectionMode && (
                                         <div className="absolute top-3 right-3">
-                                            {isSelected ? <SquareCheck size={18} className="text-blue-600" /> : <Square size={18} className="text-gray-300" />}
+                                            {isSelected ? <CheckSquare size={18} className="text-blue-600" /> : <Square size={18} className="text-gray-300" />}
                                         </div>
                                     )}
                                 </div>
@@ -519,7 +519,7 @@ export const POS: React.FC = () => {
                             {isSelectionMode && (
                                 <div className="shrink-0 flex items-center justify-center pt-1">
                                     {isSelected ? (
-                                        <SquareCheck size={24} className="text-blue-600" />
+                                        <CheckSquare size={24} className="text-blue-600" />
                                     ) : (
                                         <Square size={24} className="text-gray-300" />
                                     )}
