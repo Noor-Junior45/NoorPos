@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Customer, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
@@ -17,6 +17,12 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [showEditModal, setShowEditModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Customer>>({});
 
+  // Input Refs for Enter Key Navigation
+  const nameRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
+
   // Delete Modal State
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
@@ -33,6 +39,15 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
         if (onClearAction) onClearAction();
     }
   }, [initialAction]);
+
+  // Focus Name input when modal opens
+  useEffect(() => {
+      if (showEditModal) {
+          setTimeout(() => {
+              nameRef.current?.focus();
+          }, 100);
+      }
+  }, [showEditModal]);
 
   const loadData = async () => {
     const cData = await StoreService.getCustomers();
@@ -93,6 +108,17 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       const message = `Hello ${customer.name},%0A%0AWe appreciate your business with Noor Store.%0A%0ATotal Spent: ₹${customer.totalSpent.toLocaleString()}%0AVisits: ${customer.visitCount}`;
       const url = `https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}?text=${message}`;
       window.open(url, '_blank');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLInputElement> | null, isSubmit = false) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          if (isSubmit) {
+              handleSave();
+          } else {
+              nextRef?.current?.focus();
+          }
+      }
   };
 
   const filteredAndSortedCustomers = useMemo(() => {
@@ -184,10 +210,10 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                     )}
                </div>
 
-               {/* Mobile Floating Action Button (FAB) - Visible on all screens now */}
+               {/* Floating Action Button (FAB) - Fixed position */}
                <button 
                   onClick={handleAddClick}
-                  className="absolute bottom-24 right-4 w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-lg flex items-center justify-center z-30 transition-transform active:scale-95 hover:bg-blue-700 hover:scale-105"
+                  className="fixed bottom-24 right-6 w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-xl flex items-center justify-center z-50 transition-transform active:scale-95 hover:bg-blue-700 hover:scale-105"
                 >
                   <Plus size={28} />
                </button>
@@ -342,6 +368,8 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                 <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
                      <User size={18} className="text-gray-400 mr-2"/>
                      <input 
+                        ref={nameRef}
+                        onKeyDown={(e) => handleKeyDown(e, phoneRef)}
                         className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
                         placeholder="Name"
                         value={formData.name || ''} 
@@ -355,6 +383,8 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                 <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
                      <Phone size={18} className="text-gray-400 mr-2"/>
                      <input 
+                        ref={phoneRef}
+                        onKeyDown={(e) => handleKeyDown(e, emailRef)}
                         className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
                         placeholder="Phone Number"
                         value={formData.phone || ''} 
@@ -372,6 +402,8 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                 <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
                      <Mail size={18} className="text-gray-400 mr-2"/>
                      <input 
+                        ref={emailRef}
+                        onKeyDown={(e) => handleKeyDown(e, addressRef)}
                         className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
                         placeholder="Email (Optional)"
                         value={formData.email || ''} 
@@ -385,6 +417,8 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                 <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
                      <MapPin size={18} className="text-gray-400 mr-2"/>
                      <input 
+                        ref={addressRef}
+                        onKeyDown={(e) => handleKeyDown(e, null, true)}
                         className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
                         placeholder="Location (Optional)"
                         value={formData.location || ''} 
