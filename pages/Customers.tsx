@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Customer, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, TriangleAlert } from 'lucide-react';
+import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle } from 'lucide-react';
 
 interface CustomersProps {
   initialAction?: string;
@@ -420,7 +420,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       <Modal isOpen={showDuesError} onClose={() => setShowDuesError(false)} title="Cannot Delete Contact">
           <div className="text-center py-4">
               <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <TriangleAlert size={32} />
+                  <AlertTriangle size={32} />
               </div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">Outstanding Dues</h3>
               <p className="text-sm text-gray-500 mb-6 px-4">

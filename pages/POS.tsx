@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Product, CartItem, Customer, Sale, Tag, StoreSettings } from '../types';
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, TriangleAlert, Box, Tag as TagIcon, Percent, SquareCheck, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2 } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, SquareCheck, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 // Extended interface for local POS state to handle discounts and custom pricing
@@ -1129,6 +1128,20 @@ export const POS: React.FC = () => {
                         >
                             {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
+                    </div>
+
+                    <div className="md:col-span-2">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Low Stock Alert</label>
+                        <div className="flex gap-2 items-center">
+                            <AlertTriangle size={16} className="text-purple-500"/>
+                            <Input 
+                                type="number" 
+                                placeholder="10" 
+                                value={newProduct.lowStockThreshold || ''} 
+                                onChange={e => setNewProduct({...newProduct, lowStockThreshold: parseInt(e.target.value) || 0})}
+                                className="!bg-white !border-gray-300 flex-1"
+                            />
+                        </div>
                     </div>
                  </div>
 

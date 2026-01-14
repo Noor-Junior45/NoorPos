@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { User } from '../types';
 import { Card, Button, Input, Modal } from '../components/UI';
-import { User as UserIcon, LogOut, Shield, Download, Upload, TriangleAlert, Cloud, ChevronRight, Clock, Database, Loader2, Sparkles, Lock, Settings } from 'lucide-react';
+import { User as UserIcon, LogOut, Shield, Download, Upload, AlertTriangle, Cloud, ChevronRight, Clock, Database, Loader2, Sparkles, Lock, Settings } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 
 interface ProfileProps {
@@ -414,7 +414,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
             <div className="mt-8 flex justify-center">
                  <button onClick={() => setShowResetConfirm(true)} className="text-xs text-red-400 hover:text-red-600 font-medium flex items-center gap-1 px-4 py-2 hover:bg-red-50 rounded-lg transition-colors">
-                     <TriangleAlert size={14}/> Factory Reset App
+                     <AlertTriangle size={14}/> Factory Reset App
                  </button>
             </div>
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
@@ -492,7 +492,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         >
             <div className="text-center">
                 <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <TriangleAlert size={32}/>
+                    <AlertTriangle size={32}/>
                 </div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Delete Everything?</h3>
                 <p className="text-sm text-gray-600 mb-6">

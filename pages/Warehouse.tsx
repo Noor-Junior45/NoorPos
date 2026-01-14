@@ -3,7 +3,7 @@ import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, TriangleAlert, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, SquareCheck, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, SquareCheck, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -703,7 +703,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     <div className="flex gap-2 flex-wrap">
                         {isLow && (
                             <div className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-100">
-                                <TriangleAlert size={12}/> Low Stock
+                                <AlertTriangle size={12}/> Low Stock
                             </div>
                         )}
                         {anyExpiring && (
@@ -943,7 +943,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
                 <div className="space-y-2">
                     <label className="font-bold text-gray-700 text-sm flex items-center gap-2">
-                        <TriangleAlert size={16} className="text-purple-500"/> Low Stock Alert
+                        <AlertTriangle size={16} className="text-purple-500"/> Low Stock Alert
                     </label>
                     <Input 
                         type="number" 
@@ -1042,7 +1042,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 items-start">
             <Card className="border-2 border-red-500 bg-red-50/40 flex flex-col shadow-sm h-full">
                 <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2 px-1 pt-1 border-b border-red-100 pb-2">
-                    <TriangleAlert size={20} className="text-red-500"/> Low Stock Alerts
+                    <AlertTriangle size={20} className="text-red-500"/> Low Stock Alerts
                 </h3>
                 <div className="p-1">
                     {lowStockItems.length === 0 && outOfStockItems.length === 0 ? (
@@ -1467,7 +1467,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 <div className="p-4 sm:p-6 hover:bg-gray-50/30 transition-colors">
                     <div className="flex gap-4 mb-6">
                         <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0 mt-1">
-                            <TriangleAlert size={20} />
+                            <AlertTriangle size={20} />
                         </div>
                         <div className="flex-1">
                             <div className="flex justify-between items-start gap-4">
@@ -1751,7 +1751,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
               <p className="text-gray-600 mb-2">Are you sure you want to delete <strong>{itemToDelete?.name}</strong>?</p>
               {itemToDelete?.type === 'tag' ? (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex gap-3 items-start">
-                      <div className="mt-0.5 text-blue-500"><TriangleAlert size={16} /></div>
+                      <div className="mt-0.5 text-blue-500"><AlertTriangle size={16} /></div>
                       <div className="text-sm text-blue-800">
                           <span className="font-bold block">Products will NOT be deleted.</span>
                           Products in this category will be marked as "Uncategorized".
