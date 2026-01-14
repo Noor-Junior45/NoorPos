@@ -25,7 +25,16 @@ export const POS: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [recentSales, setRecentSales] = useState<Sale[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [settings, setSettings] = useState<StoreSettings>({ expiryAlertDays: 7, lowStockDefault: 10, soundEnabled: true, currencySymbol: '₹' });
+  const [settings, setSettings] = useState<StoreSettings>({
+      storeName: '',
+      storeAddress: '',
+      storePhone: '',
+      notificationsEnabled: true,
+      expiryAlertDays: 7, 
+      lowStockDefault: 10, 
+      soundEnabled: true, 
+      currencySymbol: '₹'
+  });
   
   // Cart & Transaction State
   const [cart, setCart] = useState<POSCartItem[]>([]);

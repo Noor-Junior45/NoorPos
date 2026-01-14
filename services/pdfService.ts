@@ -1,4 +1,5 @@
 import { Sale, Customer } from "../types";
+import { StoreService } from "./storeService";
 
 // Define interface for the library since we are using a global CDN in index.html
 interface JsPDFInstance {
@@ -10,7 +11,7 @@ interface JsPDFInstance {
     line: (x1: number, y1: number, x2: number, y2: number) => any;
 }
 
-export const generateInvoicePDF = (sale: Sale) => {
+export const generateInvoicePDF = async (sale: Sale) => {
     // @ts-ignore - Check if library is loaded (from CDN) on window object
     const jspdf = window.jspdf;
 
@@ -19,18 +20,28 @@ export const generateInvoicePDF = (sale: Sale) => {
         return;
     }
 
+    // Fetch dynamic settings
+    const settings = await StoreService.getSettings();
+
     const { jsPDF } = jspdf;
     // @ts-ignore
     const doc = new jsPDF();
     const pageWidth = 210; // A4 width in mm
 
-    // Header / Logo Placeholder
+    // Header / Store Details
     doc.setFontSize(22);
-    doc.text("Noor POS", 14, 20);
+    doc.text(settings.storeName || "Noor POS", 14, 20);
     
     doc.setFontSize(10);
-    doc.text("1234 Future Street, Tech City", 14, 26);
-    doc.text("Phone: (555) 123-4567", 14, 31);
+    if (settings.storeAddress) {
+        doc.text(settings.storeAddress, 14, 26);
+    }
+    if (settings.storePhone) {
+        doc.text(`Phone: ${settings.storePhone}`, 14, 31);
+    }
+    if (settings.storeEmail) {
+        doc.text(settings.storeEmail, 14, 36);
+    }
 
     // Invoice Info
     doc.setFontSize(14);
@@ -48,8 +59,8 @@ export const generateInvoicePDF = (sale: Sale) => {
     const tableRows = sale.items.map(item => [
         item.name,
         item.quantity.toString(),
-        `Rs. ${item.sellPrice.toFixed(2)}`,
-        `Rs. ${(item.sellPrice * item.quantity).toFixed(2)}`
+        `${settings.currencySymbol} ${item.sellPrice.toFixed(2)}`,
+        `${settings.currencySymbol} ${(item.sellPrice * item.quantity).toFixed(2)}`
     ]);
 
     // @ts-ignore - autoTable is a plugin
@@ -66,11 +77,11 @@ export const generateInvoicePDF = (sale: Sale) => {
     // @ts-ignore
     const finalY = (doc as any).lastAutoTable.finalY + 10;
     
-    doc.text(`Subtotal: Rs. ${sale.subtotal.toFixed(2)}`, 140, finalY);
-    doc.text(`Tax (18%): Rs. ${sale.tax.toFixed(2)}`, 140, finalY + 5);
+    doc.text(`Subtotal: ${settings.currencySymbol} ${sale.subtotal.toFixed(2)}`, 140, finalY);
+    doc.text(`Tax: ${settings.currencySymbol} ${sale.tax.toFixed(2)}`, 140, finalY + 5);
     
     doc.setFontSize(12);
-    doc.text(`Grand Total: Rs. ${sale.total.toFixed(2)}`, 140, finalY + 12);
+    doc.text(`Grand Total: ${settings.currencySymbol} ${sale.total.toFixed(2)}`, 140, finalY + 12);
 
     // Footer
     doc.setFontSize(8);
@@ -79,13 +90,15 @@ export const generateInvoicePDF = (sale: Sale) => {
     doc.save(`invoice_${sale.id.slice(0, 8)}.pdf`);
 };
 
-export const generateCustomerStatementPDF = (customer: Customer, sales: Sale[]) => {
+export const generateCustomerStatementPDF = async (customer: Customer, sales: Sale[]) => {
     // @ts-ignore
     const jspdf = window.jspdf;
     if (typeof jspdf === 'undefined') {
         alert("PDF Library not loaded yet.");
         return;
     }
+
+    const settings = await StoreService.getSettings();
 
     const { jsPDF } = jspdf;
     // @ts-ignore
@@ -95,7 +108,7 @@ export const generateCustomerStatementPDF = (customer: Customer, sales: Sale[]) 
     // Header
     doc.setFontSize(22);
     doc.setTextColor(33, 150, 243); // Blue
-    doc.text("Noor Store", 14, 20);
+    doc.text(settings.storeName || "Noor Store", 14, 20);
     doc.setTextColor(0, 0, 0);
 
     doc.setFontSize(16);
@@ -109,7 +122,7 @@ export const generateCustomerStatementPDF = (customer: Customer, sales: Sale[]) 
     
     doc.text(`Statement Date: ${new Date().toLocaleDateString()}`, pageWidth - 60, 40);
     doc.text(`Total Visits: ${customer.visitCount}`, pageWidth - 60, 45);
-    doc.text(`Total Spent: Rs. ${customer.totalSpent.toFixed(2)}`, pageWidth - 60, 50);
+    doc.text(`Total Spent: ${settings.currencySymbol} ${customer.totalSpent.toFixed(2)}`, pageWidth - 60, 50);
 
     // Table
     const tableColumn = ["Date", "Invoice ID", "Items", "Total"];
@@ -117,7 +130,7 @@ export const generateCustomerStatementPDF = (customer: Customer, sales: Sale[]) 
         new Date(sale.timestamp).toLocaleDateString(),
         sale.id.slice(0, 8).toUpperCase(),
         sale.items.length.toString(),
-        `Rs. ${sale.total.toFixed(2)}`
+        `${settings.currencySymbol} ${sale.total.toFixed(2)}`
     ]);
 
     // @ts-ignore

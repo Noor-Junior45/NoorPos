@@ -27,9 +27,14 @@ const initialCustomers: Customer[] = [];
 const initialUsers: User[] = [];
 
 const defaultSettings: StoreSettings = {
+  storeName: 'Noor Store',
+  storeAddress: '1234 Market Street',
+  storePhone: '+91 98765 43210',
+  storeEmail: 'contact@noorstore.com',
   expiryAlertDays: 7,
   lowStockDefault: 10,
   soundEnabled: true,
+  notificationsEnabled: true,
   currencySymbol: '₹'
 };
 

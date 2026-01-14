@@ -108,7 +108,16 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [settings, setSettings] = useState<StoreSettings>({ expiryAlertDays: 7, lowStockDefault: 10, soundEnabled: true, currencySymbol: '₹' });
+  const [settings, setSettings] = useState<StoreSettings>({
+      storeName: '',
+      storeAddress: '',
+      storePhone: '',
+      notificationsEnabled: true,
+      expiryAlertDays: 7, 
+      lowStockDefault: 10, 
+      soundEnabled: true, 
+      currencySymbol: '₹' 
+  });
   const [loading, setLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);

@@ -26,9 +26,17 @@ export interface Product {
 }
 
 export interface StoreSettings {
+  // Store Profile
+  storeName: string;
+  storeAddress: string;
+  storePhone: string;
+  storeEmail?: string;
+  
+  // App Config
   expiryAlertDays: number; // Days before expiry to warn
   lowStockDefault: number; // Default threshold for new products
   soundEnabled: boolean;
+  notificationsEnabled: boolean;
   currencySymbol: string;
 }
 
