@@ -250,46 +250,43 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
             </Card>
 
-            {/* Stock Value by Category (Moved from Warehouse) - 1 Col */}
-            <Card className="border-gray-100 shadow-sm p-6 flex flex-col relative overflow-hidden">
-                <div className="flex justify-between items-center mb-2 z-10 relative">
+            {/* Stock Value by Category (List View) - 1 Col */}
+            <Card className="border-gray-100 shadow-sm p-0 flex flex-col relative overflow-hidden h-full max-h-[384px]">
+                <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                        <DollarSign size={18} className="text-green-500"/> Stock Value
+                        <DollarSign size={18} className="text-green-500"/> Category Value
                     </h3>
+                    <div className="bg-green-50 text-green-700 px-2 py-1 rounded-lg text-xs font-bold border border-green-100">
+                        ₹{(stats.inventoryValue / 1000).toFixed(1)}k
+                    </div>
                 </div>
-                <div className="flex-1 min-h-[200px] relative z-10">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                                data={stats.stockValueByCategory}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={80}
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                                {stats.stockValueByCategory.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0}/>
-                                ))}
-                            </Pie>
-                            <Tooltip 
-                                formatter={(value: number) => `₹${value.toLocaleString()}`}
-                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                            />
-                            <Legend 
-                                verticalAlign="bottom" 
-                                height={36} 
-                                iconType="circle" 
-                                iconSize={8}
-                                wrapperStyle={{ fontSize: '11px', fontWeight: 600, color: '#6b7280' }}
-                            />
-                        </PieChart>
-                    </ResponsiveContainer>
-                    {/* Center Stat */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
-                        <span className="text-sm font-bold text-gray-400 uppercase tracking-wide">Total</span>
-                        <span className="text-xl font-bold text-gray-800">₹{(stats.inventoryValue / 1000).toFixed(1)}k</span>
+                
+                <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+                    <div className="space-y-1">
+                        {stats.stockValueByCategory
+                            .sort((a, b) => b.value - a.value)
+                            .map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100 group">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm" style={{ backgroundColor: item.color }}>
+                                        {item.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="font-bold text-gray-700 text-sm truncate max-w-[100px]">{item.name}</span>
+                                </div>
+                                <div className="text-right">
+                                    <div className="font-bold text-gray-900">₹{item.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                                    <div className="text-[10px] text-gray-400 font-medium">
+                                        {((item.value / stats.inventoryValue) * 100).toFixed(1)}% of total
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {stats.stockValueByCategory.length === 0 && (
+                            <div className="text-center text-gray-400 py-10 flex flex-col items-center">
+                                <Package size={32} className="mb-2 opacity-20"/>
+                                <p className="text-xs">No categorized stock found</p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </Card>
