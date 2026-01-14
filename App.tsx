@@ -5,44 +5,39 @@ import { POS } from './pages/POS';
 import { Dashboard } from './pages/Dashboard';
 import { Customers } from './pages/Customers';
 import { Profile } from './pages/Profile';
+import { Auth } from './pages/Auth';
 import { Package, ShoppingCart, Users, User as UserIcon, LayoutDashboard } from 'lucide-react';
+import { GoogleDriveUtils } from './utils/googleDrive';
 
 const App: React.FC = () => {
-  // Default to PROFILE so users see the login screen first if they aren't authenticated
-  const [activeTab, setActiveTab] = useState<Tab>(Tab.PROFILE);
+  const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<string | undefined>(undefined);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
-    // Check for existing session (Gmail-like persistence)
-    const savedUser = localStorage.getItem('glassstore_user');
-    if (savedUser) {
-        try {
-            const parsedUser = JSON.parse(savedUser);
-            setCurrentUser(parsedUser);
-            // If we found a saved user, go straight to the app content (Warehouse)
-            setActiveTab(Tab.WAREHOUSE);
-        } catch (e) {
-            localStorage.removeItem('glassstore_user');
-        }
+    // Check if user has an active session
+    const session = GoogleDriveUtils.getSession();
+    if (session) {
+       // Restore user from session profile
+       const user: User = {
+          id: session.profile.email,
+          username: session.profile.email.split('@')[0],
+          name: session.profile.name,
+          role: 'admin',
+          pin: '0000'
+       };
+       setCurrentUser(user);
     }
-    setLoading(false);
+    setIsCheckingAuth(false);
   }, []);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
-    // Persist the user so they stay logged in even after refresh/closing app
-    localStorage.setItem('glassstore_user', JSON.stringify(user));
-    // Redirect to Stock page after successful login
-    setActiveTab(Tab.WAREHOUSE);
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('glassstore_user');
-    // Send them back to Profile to log in again
-    setActiveTab(Tab.PROFILE);
   };
 
   const handleNavigate = (tab: Tab, action?: string) => {
@@ -52,7 +47,11 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading) return null;
+  if (isCheckingAuth) return null; // Or a splash screen
+
+  if (!currentUser) {
+      return <Auth onLogin={handleLogin} />;
+  }
 
   return (
     <div className="min-h-screen bg-[#fdfdfc] text-gray-800 selection:bg-yellow-500/30">

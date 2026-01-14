@@ -1,5 +1,5 @@
-
 import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User } from '../types';
+import { GoogleDriveUtils } from '../utils/googleDrive';
 
 interface StoreData {
   products: Product[];
@@ -18,19 +18,15 @@ const initialTags: Tag[] = [
   { id: 't4', name: 'Beverage', color: '#8b5cf6' },
 ];
 
-const initialProducts: Product[] = [
-  { id: '1', name: 'Organic Bananas', sku: '12345', stock: 150, unit: 'kg', lowStockThreshold: 20, buyPrice: 0.5, sellPrice: 1.2, wholesalePrice: 0.8, location: 'Aisle 1', tagId: 't1', expiryDate: '2024-12-30', createdAt: new Date().toISOString() },
-  { id: '2', name: 'Almond Milk', sku: '67890', stock: 8, unit: 'l', lowStockThreshold: 10, buyPrice: 2.0, sellPrice: 4.5, wholesalePrice: 3.5, location: 'Fridge 2', expiryDate: '2024-10-15', tagId: 't2', createdAt: new Date().toISOString() },
-];
-
+const initialProducts: Product[] = []; // Start clean
 const initialCustomers: Customer[] = [];
 const initialUsers: User[] = [];
 
 const defaultSettings: StoreSettings = {
-  storeName: 'Noor Store',
-  storeAddress: '1234 Market Street',
-  storePhone: '+91 98765 43210',
-  storeEmail: 'contact@noorstore.com',
+  storeName: '',
+  storeAddress: '',
+  storePhone: '',
+  storeEmail: '',
   expiryAlertDays: 7,
   lowStockDefault: 10,
   soundEnabled: true,
@@ -49,8 +45,6 @@ const defaultData: StoreData = {
 
 // LocalStorage Keys
 const LS_BACKUP_KEY = 'glassstore_offline_backup';
-const LS_CLOUD_CONFIG = 'noor_cloud_config'; // { email: string, key: string }
-const LS_CLOUD_ENABLED = 'noor_cloud_enabled'; // 'true' | 'false'
 
 // In-memory cache
 let cache: StoreData | null = null;
@@ -69,38 +63,7 @@ const generateId = () => {
 };
 
 const StoreService = {
-  // --- Cloud Configuration Methods ---
-  getCloudConfig() {
-      const stored = localStorage.getItem(LS_CLOUD_CONFIG);
-      return stored ? JSON.parse(stored) : null;
-  },
-
-  setCloudConfig(email: string, key: string) {
-      localStorage.setItem(LS_CLOUD_CONFIG, JSON.stringify({ email, key }));
-      this.enableCloud();
-  },
-
-  clearCloudConfig() {
-      localStorage.removeItem(LS_CLOUD_CONFIG);
-  },
-
-  isCloudEnabled() {
-      return localStorage.getItem(LS_CLOUD_ENABLED) === 'true';
-  },
-
-  enableCloud() {
-      localStorage.setItem(LS_CLOUD_ENABLED, 'true');
-      cache = null; 
-      loadPromise = null;
-  },
-
-  disconnectCloud() {
-      localStorage.setItem(LS_CLOUD_ENABLED, 'false');
-      // We do NOT remove config, so user can re-enable easily
-      cache = null;
-      loadPromise = null;
-  },
-
+  
   getLastBackupTime() {
       return lastBackupTime;
   },
@@ -110,65 +73,54 @@ const StoreService = {
     if (cache) return cache;
     if (loadPromise) return loadPromise;
 
-    const cloudEnabled = this.isCloudEnabled();
+    const session = GoogleDriveUtils.getSession();
 
-    // CRITICAL: If Cloud is NOT enabled, use local storage.
-    if (!cloudEnabled) {
-        // console.log("Cloud disabled. Using local storage.");
-        const local = localStorage.getItem(LS_BACKUP_KEY);
-        cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
-        return cache as StoreData;
+    // 1. If Logged In, try Google Sheet
+    if (session) {
+        console.log("Loading from Google Sheet...");
+        loadPromise = GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId)
+          .then((remoteData) => {
+             if (remoteData) {
+                 return this._processRemoteData(remoteData);
+             } else {
+                 console.log("Sheet empty, using default/local.");
+                 return this._fallbackToLocal();
+             }
+          })
+          .catch(err => {
+            console.warn("Cloud load failed (falling back to local):", err.message);
+            // If token invalid, maybe prompt relogin? For now fallback.
+            return this._fallbackToLocal();
+          })
+          .finally(() => { loadPromise = null; });
+          
+        return loadPromise as Promise<StoreData>;
     }
 
-    const cloudConfig = this.getCloudConfig();
-    const headers: Record<string, string> = {};
+    // 2. Fallback to Local
+    return this._fallbackToLocal();
+  },
+
+  _processRemoteData(data: any): StoreData {
+    console.log("Remote storage loaded.");
+    // Merge defaults to ensure new fields in 'settings' don't break old backups
+    cache = { 
+        ...defaultData, 
+        ...data, 
+        settings: { ...defaultData.settings, ...data.settings }
+    };
     
-    // Only add headers if client-side config exists. 
-    // Otherwise server will use its own env vars.
-    if (cloudConfig) {
-        headers['x-google-email'] = cloudConfig.email;
-        headers['x-google-key'] = cloudConfig.key;
-    }
+    // Update local backup
+    localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
+    lastBackupTime = new Date().toISOString();
+    localStorage.setItem('noor_last_backup', lastBackupTime);
+    return cache as StoreData;
+  },
 
-    // If Cloud is enabled, try to fetch
-    loadPromise = fetch('/api/storage', { headers })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        
-        const data = await res.json();
-        
-        if (!data) {
-          // Cloud connected but empty, or auth passed but file missing
-          console.log("Cloud connected but empty. Merging with local.");
-          const local = localStorage.getItem(LS_BACKUP_KEY);
-          if (local) {
-             cache = { ...defaultData, ...JSON.parse(local) };
-          } else {
-             cache = JSON.parse(JSON.stringify(defaultData));
-          }
-        } else {
-          console.log("Cloud storage loaded.");
-          cache = { ...defaultData, ...data, users: data.users || [] };
-          // Update local backup with fresh cloud data
-          localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
-          // Update backup time
-          lastBackupTime = new Date().toISOString();
-          localStorage.setItem('noor_last_backup', lastBackupTime);
-        }
-        return cache as StoreData;
-      })
-      .catch(err => {
-        console.warn("Cloud load failed (falling back to local):", err.message);
-        const local = localStorage.getItem(LS_BACKUP_KEY);
-        cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
-        // We do NOT throw here, we provide offline availability
-        return cache as StoreData;
-      })
-      .finally(() => {
-        loadPromise = null;
-      });
-
-    return loadPromise as Promise<StoreData>;
+  _fallbackToLocal(): StoreData {
+    const local = localStorage.getItem(LS_BACKUP_KEY);
+    cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
+    return cache as StoreData;
   },
 
   // Core: Save data
@@ -177,37 +129,23 @@ const StoreService = {
     
     // 1. Always save to LocalStorage immediately
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
+    lastBackupTime = new Date().toISOString();
+    localStorage.setItem('noor_last_backup', lastBackupTime);
 
-    // 2. Cloud Save (ONLY if enabled)
-    if (!this.isCloudEnabled()) return;
+    // 2. If Logged In, Sync to Google Sheet (Debounced)
+    const session = GoogleDriveUtils.getSession();
+    if (!session) return;
 
     if (saveTimeout) clearTimeout(saveTimeout);
     
     saveTimeout = setTimeout(async () => {
       try {
-        const cloudConfig = this.getCloudConfig();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (cloudConfig) {
-            headers['x-google-email'] = cloudConfig.email;
-            headers['x-google-key'] = cloudConfig.key;
-        }
-
-        const res = await fetch('/api/storage', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(cache)
-        });
-        if (res.ok) {
-            console.log("Data synced to Cloud");
-            lastBackupTime = new Date().toISOString();
-            localStorage.setItem('noor_last_backup', lastBackupTime);
-        } else {
-            console.warn("Cloud sync failed");
-        }
+        await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
+        console.log("Synced to Google Sheet");
       } catch (err) {
-        console.error("Cloud save error:", err);
+        console.error("Remote save error:", err);
       }
-    }, 1000); 
+    }, 2000); // 2 second debounce
   },
 
   // --- Data Management ---
@@ -230,7 +168,13 @@ const StoreService = {
     window.location.reload();
   },
 
+  async logout(): Promise<void> {
+      GoogleDriveUtils.clearSession();
+      window.location.reload();
+  },
+
   // --- Auth & Users ---
+  // Note: App authentication (PIN) is distinct from Google Auth (Data Storage)
   async authenticate(username: string, pin: string): Promise<User | null> {
     const data = await this.loadData();
     const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.pin === pin);
@@ -257,16 +201,6 @@ const StoreService = {
     return newUser;
   },
 
-  async hasUsers(): Promise<boolean> {
-      const data = await this.loadData();
-      return data.users.length > 0;
-  },
-
-  async getUsers(): Promise<User[]> {
-      const data = await this.loadData();
-      return data.users;
-  },
-
   // --- Inventory ---
   async getInventory(): Promise<Product[]> {
     const data = await this.loadData();
@@ -287,7 +221,6 @@ const StoreService = {
 
   async batchAddProducts(productsToAdd: Partial<Product>[]): Promise<void> {
     const data = await this.loadData();
-    
     productsToAdd.forEach(p => {
         const matchedTag = data.tags.find(t => t.name.toLowerCase() === (p.category || '').toLowerCase());
         const newProduct: Product = {
@@ -341,9 +274,6 @@ const StoreService = {
 
   async deleteTag(id: string): Promise<void> {
     const data = await this.loadData();
-    data.products.forEach(p => {
-        if (p.tagId === id) delete p.tagId;
-    });
     data.tags = data.tags.filter(t => t.id !== id);
     this.saveData();
   },
@@ -377,7 +307,6 @@ const StoreService = {
         data.customers[custIndex].totalSpent += saleData.total;
         data.customers[custIndex].history.push(newSale.id);
 
-        // PAY LATER Logic: Increment Dues
         if (saleData.paymentMethod === 'Pay Later') {
             data.customers[custIndex].totalDues = (data.customers[custIndex].totalDues || 0) + saleData.total;
         }
@@ -388,28 +317,10 @@ const StoreService = {
     return newSale;
   },
 
-  async deleteSale(id: string): Promise<void> {
-    const data = await this.loadData();
-    data.sales = data.sales.filter(s => s.id !== id);
-    
-    // Clean up customer history references
-    data.customers.forEach(c => {
-      c.history = c.history.filter(hId => hId !== id);
-    });
-
-    this.saveData();
-  },
-
   async deleteSales(ids: string[]): Promise<void> {
     const data = await this.loadData();
     const idSet = new Set(ids);
     data.sales = data.sales.filter(s => !idSet.has(s.id));
-    
-    // Clean up customer history references
-    data.customers.forEach(c => {
-      c.history = c.history.filter(hId => !idSet.has(hId));
-    });
-
     this.saveData();
   },
 
@@ -421,7 +332,6 @@ const StoreService = {
 
   async upsertCustomer(customer: Partial<Customer>): Promise<Customer> {
     const data = await this.loadData();
-    
     if (customer.id) {
       const index = data.customers.findIndex(c => c.id === customer.id);
       if (index !== -1) {
