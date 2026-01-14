@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Input } from '../components/UI';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Sparkles, Loader2, Database, AlertTriangle } from 'lucide-react';
+import { Sparkles, Loader2, Database, AlertTriangle, User as UserIcon } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -14,7 +14,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [status, setStatus] = useState('');
 
   // Use VITE_GOOGLE_CLIENT_ID from environment
-  // Using optional chaining (?) to safely access env, preventing crash if undefined
   const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 
   const handleSuccess = (profile: any) => {
@@ -28,9 +27,21 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     onLogin(user);
   };
 
+  const handleGuestLogin = () => {
+    // Guest User for Local/Server Mode
+    const guestUser: User = {
+      id: 'guest',
+      username: 'guest',
+      name: 'Guest User',
+      role: 'admin',
+      pin: '0000'
+    };
+    onLogin(guestUser);
+  };
+
   const handleGoogleLogin = async () => {
     if (!CLIENT_ID) {
-        setError("Configuration Error: VITE_GOOGLE_CLIENT_ID is missing.");
+        setError("Missing Client ID. Use Guest Mode.");
         return;
     }
 
@@ -81,11 +92,12 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
         <div className="bg-white rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] p-8 border border-gray-100">
           <div className="text-center mb-6">
-              <h2 className="text-xl font-bold text-gray-800">Login</h2>
-              <p className="text-sm text-gray-400 mt-1">Connect your Google Drive to store data securely.</p>
+              <h2 className="text-xl font-bold text-gray-800">Welcome</h2>
+              <p className="text-sm text-gray-400 mt-1">Choose how you want to store your data.</p>
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
+             {/* Google Login */}
              <button
                 onClick={handleGoogleLogin}
                 disabled={loading}
@@ -97,6 +109,21 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                     <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6" alt="Google" />
                 )}
                 <span>{loading ? 'Connecting...' : 'Continue with Google'}</span>
+             </button>
+
+             <div className="relative py-2">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
+                <div className="relative flex justify-center text-xs"><span className="px-2 bg-white text-gray-400">OR</span></div>
+             </div>
+
+             {/* Guest Mode */}
+             <button
+                onClick={handleGuestLogin}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-3 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 font-bold py-3 px-4 rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-70"
+             >
+                <UserIcon size={20} />
+                <span>Guest / Local Server Mode</span>
              </button>
 
              {loading && (

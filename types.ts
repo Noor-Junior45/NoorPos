@@ -31,6 +31,7 @@ export interface StoreSettings {
   storeAddress: string;
   storePhone: string;
   storeEmail?: string;
+  logo?: string; // Base64 string of the logo
   
   // App Config
   expiryAlertDays: number; // Days before expiry to warn
@@ -38,6 +39,10 @@ export interface StoreSettings {
   soundEnabled: boolean;
   notificationsEnabled: boolean;
   currencySymbol: string;
+
+  // NAS / Local Server Config
+  nasUrl?: string;
+  syncToNas?: boolean;
 }
 
 export interface CartItem extends Product {

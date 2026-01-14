@@ -1,7 +1,10 @@
 import { google } from 'googleapis';
+import fs from 'fs/promises';
+import path from 'path';
 
 const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 const DB_FILENAME = 'glassstore_db.json';
+const LOCAL_DB_PATH = path.join(process.cwd(), 'local_db.json');
 
 // Helper to authenticate
 async function getAuth(req) {
@@ -46,11 +49,31 @@ export default async function handler(req, res) {
   try {
     const auth = await getAuth(req);
     
-    // If auth failed or credentials missing, return null to trigger frontend local fallback
+    // --- LOCAL MODE (No Google Auth Configured) ---
     if (!auth) {
-      return res.status(200).json(null);
+      if (req.method === 'GET') {
+        try {
+          const data = await fs.readFile(LOCAL_DB_PATH, 'utf-8');
+          return res.status(200).json(JSON.parse(data));
+        } catch (e) {
+          // File doesn't exist yet or error reading, return null to trigger frontend init
+          return res.status(200).json(null);
+        }
+      }
+
+      if (req.method === 'POST') {
+        try {
+          await fs.writeFile(LOCAL_DB_PATH, JSON.stringify(req.body, null, 2));
+          return res.status(200).json({ success: true, mode: 'local' });
+        } catch (e) {
+          console.error("Local write error:", e);
+          return res.status(500).json({ error: "Failed to save locally" });
+        }
+      }
+      return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
+    // --- GOOGLE DRIVE MODE (Service Account Configured) ---
     const drive = google.drive({ version: 'v3', auth });
 
     // 1. Check if file exists
@@ -109,13 +132,13 @@ export default async function handler(req, res) {
         });
       }
       
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, mode: 'cloud' });
     }
 
     return res.status(405).json({ error: 'Method Not Allowed' });
 
   } catch (error) {
-    console.error("Google Drive API Error:", error);
+    console.error("Storage API Error:", error);
     // Return 500 only on unexpected critical errors
     res.status(500).json({ error: error.message || "Storage Error" });
   }

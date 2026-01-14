@@ -27,11 +27,14 @@ const defaultSettings: StoreSettings = {
   storeAddress: '',
   storePhone: '',
   storeEmail: '',
+  logo: '',
   expiryAlertDays: 7,
   lowStockDefault: 10,
   soundEnabled: true,
-  notificationsEnabled: true,
-  currencySymbol: '₹'
+  notificationsEnabled: false,
+  currencySymbol: '₹',
+  nasUrl: 'http://localhost:3000/api/storage',
+  syncToNas: false
 };
 
 const defaultData: StoreData = {
@@ -45,6 +48,8 @@ const defaultData: StoreData = {
 
 // LocalStorage Keys
 const LS_BACKUP_KEY = 'glassstore_offline_backup';
+const LS_NAS_URL = 'noor_nas_url';
+const LS_SYNC_NAS = 'noor_sync_nas';
 
 // In-memory cache
 let cache: StoreData | null = null;
@@ -68,47 +73,89 @@ const StoreService = {
       return lastBackupTime;
   },
 
+  // Helper to trigger browser notification
+  sendBrowserNotification(title: string, body: string) {
+      if (cache?.settings?.notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/vite.svg' });
+      }
+  },
+
   // Core: Load data
   async loadData(): Promise<StoreData> {
     if (cache) return cache;
     if (loadPromise) return loadPromise;
 
     const session = GoogleDriveUtils.getSession();
+    const nasUrl = localStorage.getItem(LS_NAS_URL);
+    const syncToNas = localStorage.getItem(LS_SYNC_NAS) === 'true';
 
-    // 1. If Logged In, try Google Sheet
-    if (session) {
-        console.log("Loading from Google Sheet...");
-        loadPromise = GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId)
-          .then((remoteData) => {
-             if (remoteData) {
-                 return this._processRemoteData(remoteData);
-             } else {
-                 console.log("Sheet empty, using default/local.");
-                 return this._fallbackToLocal();
-             }
-          })
-          .catch(err => {
-            console.warn("Cloud load failed (falling back to local):", err.message);
-            // If token invalid, maybe prompt relogin? For now fallback.
-            return this._fallbackToLocal();
-          })
-          .finally(() => { loadPromise = null; });
-          
-        return loadPromise as Promise<StoreData>;
-    }
+    loadPromise = new Promise(async (resolve) => {
+        let remoteData = null;
 
-    // 2. Fallback to Local
-    return this._fallbackToLocal();
+        // 1. Try Google Sheet if Session exists
+        if (session) {
+            console.log("Loading from Google Sheet...");
+            try {
+                remoteData = await GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId);
+            } catch (err) {
+                console.warn("Cloud load failed, trying alternates:", err);
+            }
+        } 
+        
+        // 2. Try configured NAS if Google failed or not active
+        if (!remoteData && syncToNas && nasUrl) {
+            console.log(`Loading from NAS: ${nasUrl}...`);
+            try {
+                const res = await fetch(nasUrl);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json) remoteData = json;
+                }
+            } catch (err) {
+                 console.warn("NAS load failed:", err);
+            }
+        }
+
+        // 3. Fallback to default local server (if not explicit NAS)
+        if (!remoteData && !syncToNas) {
+            console.log("Trying default local server...");
+            try {
+                const res = await fetch('/api/storage');
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json) remoteData = json;
+                }
+            } catch (err) {
+                console.log("Local server unreachable, using browser storage.");
+            }
+        }
+
+        // 4. Process or Fallback
+        if (remoteData) {
+            resolve(this._processRemoteData(remoteData));
+        } else {
+            console.log("Using local browser storage.");
+            resolve(this._fallbackToLocal());
+        }
+    });
+    
+    return loadPromise.then(d => { loadPromise = null; return d; });
   },
 
   _processRemoteData(data: any): StoreData {
-    console.log("Remote storage loaded.");
+    console.log("Remote/Server storage loaded.");
     // Merge defaults to ensure new fields in 'settings' don't break old backups
     cache = { 
         ...defaultData, 
         ...data, 
         settings: { ...defaultData.settings, ...data.settings }
     };
+    
+    // Ensure LocalStorage configs are consistent with loaded settings
+    if (cache?.settings) {
+        if (cache.settings.nasUrl) localStorage.setItem(LS_NAS_URL, cache.settings.nasUrl);
+        if (cache.settings.syncToNas !== undefined) localStorage.setItem(LS_SYNC_NAS, String(cache.settings.syncToNas));
+    }
     
     // Update local backup
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
@@ -119,7 +166,17 @@ const StoreService = {
 
   _fallbackToLocal(): StoreData {
     const local = localStorage.getItem(LS_BACKUP_KEY);
-    cache = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
+    // Recover settings from LocalStorage keys if cache is rebuilt from scratch/defaults
+    const nasUrl = localStorage.getItem(LS_NAS_URL);
+    const syncToNas = localStorage.getItem(LS_SYNC_NAS) === 'true';
+
+    let data = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
+    
+    // Apply local connection config overrides
+    if (nasUrl) data.settings.nasUrl = nasUrl;
+    data.settings.syncToNas = syncToNas;
+
+    cache = data;
     return cache as StoreData;
   },
 
@@ -132,16 +189,40 @@ const StoreService = {
     lastBackupTime = new Date().toISOString();
     localStorage.setItem('noor_last_backup', lastBackupTime);
 
-    // 2. If Logged In, Sync to Google Sheet (Debounced)
-    const session = GoogleDriveUtils.getSession();
-    if (!session) return;
+    // Persist Connection settings separately for boot-up
+    if (cache.settings.nasUrl) localStorage.setItem(LS_NAS_URL, cache.settings.nasUrl);
+    localStorage.setItem(LS_SYNC_NAS, String(cache.settings.syncToNas));
 
+    // 2. Debounced Sync to Backend (Cloud or Local Server)
     if (saveTimeout) clearTimeout(saveTimeout);
     
     saveTimeout = setTimeout(async () => {
+      const session = GoogleDriveUtils.getSession();
+      
       try {
-        await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
-        console.log("Synced to Google Sheet");
+        // Sync to Google
+        if (session) {
+             await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
+             console.log("Synced to Google Sheet");
+        } 
+        
+        // Sync to NAS / Local Server (Can happen concurrently with Google if both enabled)
+        if (cache?.settings.syncToNas && cache?.settings.nasUrl) {
+             const res = await fetch(cache.settings.nasUrl, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify(cache)
+             });
+             if (res.ok) console.log("Synced to NAS: " + cache.settings.nasUrl);
+        } else if (!session) {
+            // Default fallback if no Google and no Custom NAS -> Local API
+            // Only if NOT using custom NAS, to avoid double save
+             const res = await fetch('/api/storage', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify(cache)
+             });
+        }
       } catch (err) {
         console.error("Remote save error:", err);
       }
@@ -164,6 +245,8 @@ const StoreService = {
 
   async factoryReset(): Promise<void> {
     cache = JSON.parse(JSON.stringify(defaultData));
+    localStorage.removeItem(LS_NAS_URL);
+    localStorage.removeItem(LS_SYNC_NAS);
     await this.saveData();
     window.location.reload();
   },
@@ -247,7 +330,18 @@ const StoreService = {
     const data = await this.loadData();
     const index = data.products.findIndex(p => p.id === id);
     if (index !== -1) {
+      const oldStock = data.products[index].stock;
       data.products[index] = { ...data.products[index], ...updates };
+      
+      // Notification Trigger: Low Stock
+      if (updates.stock !== undefined && updates.stock < oldStock) {
+         if (updates.stock <= data.products[index].lowStockThreshold) {
+             this.sendBrowserNotification(
+                 "Low Stock Alert", 
+                 `${data.products[index].name} is running low (${updates.stock} left)`
+             );
+         }
+      }
       this.saveData();
     }
   },
@@ -297,6 +391,14 @@ const StoreService = {
       const productIndex = data.products.findIndex(p => p.id === soldItem.id);
       if (productIndex !== -1) {
         data.products[productIndex].stock = Math.max(0, data.products[productIndex].stock - soldItem.quantity);
+        
+        // Notification Trigger
+        if (data.products[productIndex].stock <= data.products[productIndex].lowStockThreshold) {
+            this.sendBrowserNotification(
+                "Stock Alert",
+                `${data.products[productIndex].name} reached low stock after sale.`
+            );
+        }
       }
     }
 
