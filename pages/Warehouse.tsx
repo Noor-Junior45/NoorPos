@@ -158,6 +158,18 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const [showSourceOptions, setShowSourceOptions] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
+  // --- Editor Input Refs (Navigation) ---
+  const editNameRef = useRef<HTMLInputElement>(null);
+  const editSkuRef = useRef<HTMLInputElement>(null);
+  const editCategoryRef = useRef<HTMLSelectElement>(null);
+  const editBuyRef = useRef<HTMLInputElement>(null);
+  const editSellRef = useRef<HTMLInputElement>(null);
+  const editWholesaleRef = useRef<HTMLInputElement>(null);
+  const editTaxRef = useRef<HTMLInputElement>(null);
+  const editLocationRef = useRef<HTMLInputElement>(null);
+  const editUnitSizeRef = useRef<HTMLInputElement>(null);
+  const editStockRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => { loadData(); }, []);
 
   // Handle Initial Actions (from Dashboard)
@@ -195,12 +207,16 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
             
             // Configuration optimized to prevent "zoomed in" effect
             const config = { 
-                fps: 10,
+                fps: 15, // Increased FPS for smoother scanning
                 // Do NOT set aspectRatio here, let it adapt to the video feed.
                 // Using a rectangular qrbox matches barcode shape better and avoids cropping.
-                qrbox: { width: 280, height: 180 }, 
+                qrbox: { width: 300, height: 200 }, 
                 experimentalFeatures: {
                     useBarCodeDetectorIfSupported: true
+                },
+                videoConstraints: {
+                    facingMode: "environment",
+                    focusMode: "continuous", // Try to force continuous focus
                 }
             };
             
@@ -418,6 +434,14 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     
     setItemToDelete(null); 
     loadData(); 
+  };
+
+  // Keyboard navigation for Editor
+  const handleEditorKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          nextRef?.current?.focus();
+      }
   };
 
   // Invoice Parsing Handlers
@@ -787,6 +811,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <FileText size={16} className="text-blue-500"/> Product Name
                     </label>
                     <Input 
+                        ref={editNameRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editSkuRef)}
                         placeholder="e.g. Organic Bananas" 
                         value={newProduct.name} 
                         onChange={e => setNewProduct({...newProduct, name: e.target.value})}
@@ -802,10 +828,13 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     </label>
                     <div className="flex w-full">
                         <Input 
+                            ref={editSkuRef}
+                            onKeyDown={(e) => handleEditorKeyDown(e, editCategoryRef)}
                             placeholder="Scan or type" 
                             value={newProduct.sku} 
                             onChange={e => setNewProduct({...newProduct, sku: e.target.value})}
                             className="w-full border-2 border-blue-200 focus:border-blue-500 bg-blue-50/10 rounded-l-lg rounded-r-none !py-3 border-r-0 !px-6"
+                            autoComplete="off"
                         />
                         <button onClick={() => setShowScanner(true)} className="px-4 bg-blue-50 text-blue-600 rounded-r-lg border-2 border-blue-200 hover:bg-blue-100 transition-colors border-l-0">
                             <Scan size={20}/>
@@ -818,6 +847,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <Layers size={16} className="text-blue-500"/> Category
                     </label>
                     <select 
+                        ref={editCategoryRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editBuyRef)}
                         value={newProduct.tagId || ''} 
                         onChange={(e) => e.target.value === 'NEW_TAG_TRIGGER' ? setShowTagModal(true) : setNewProduct({...newProduct, tagId: e.target.value})}
                         className="w-full rounded-lg px-6 py-3 text-base bg-blue-50/10 border-2 border-blue-200 text-gray-900 focus:outline-none focus:border-blue-500/50 focus:border-blue-500 transition-all appearance-none"
@@ -834,6 +865,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <Factory size={16} className="text-green-600"/> Buy Price ({settings.currencySymbol})
                     </label>
                     <Input 
+                        ref={editBuyRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editSellRef)}
                         type="number" 
                         placeholder="0.00" 
                         value={newProduct.buyPrice || ''} 
@@ -847,6 +880,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <TagIcon size={16} className="text-green-600"/> Sell Price ({settings.currencySymbol})
                     </label>
                     <Input 
+                        ref={editSellRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editWholesaleRef)}
                         type="number" 
                         placeholder="0.00" 
                         value={newProduct.sellPrice || ''} 
@@ -860,6 +895,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <Box size={16} className="text-green-600"/> Wholesale Price ({settings.currencySymbol})
                     </label>
                     <Input 
+                        ref={editWholesaleRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editTaxRef)}
                         type="number" 
                         placeholder="0.00" 
                         value={newProduct.wholesalePrice || ''} 
@@ -873,6 +910,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <Percent size={16} className="text-green-600"/> Tax Rate (%)
                     </label>
                     <Input 
+                        ref={editTaxRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editLocationRef)}
                         type="number" 
                         placeholder="0" 
                         value={newProduct.taxRate || ''} 
@@ -886,6 +925,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <MapPin size={16} className="text-purple-500"/> Location
                     </label>
                     <Input 
+                        ref={editLocationRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, editUnitSizeRef)}
                         placeholder="e.g. Aisle 3" 
                         value={newProduct.location} 
                         onChange={e => setNewProduct({...newProduct, location: e.target.value})}
@@ -899,6 +940,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     </label>
                     <div className="flex w-full shadow-sm rounded-lg overflow-hidden border-2 border-purple-200 focus-within:border-purple-500 transition-all bg-purple-50/10 h-[50px]">
                         <input 
+                            ref={editUnitSizeRef}
+                            onKeyDown={(e) => handleEditorKeyDown(e, editStockRef)}
                             type="text" 
                             placeholder="1" 
                             className="w-1/3 bg-transparent px-3 text-center font-medium focus:outline-none border-r border-purple-200 text-gray-700 h-full"
@@ -920,6 +963,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <Box size={16} className="text-purple-500"/> Stock Quantity
                     </label>
                     <Input 
+                        ref={editStockRef}
+                        onKeyDown={(e) => handleEditorKeyDown(e, null)}
                         type="number" 
                         placeholder="0" 
                         value={newProduct.stock || ''} 
@@ -1748,7 +1793,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           </div>
       </Modal>
 
-      <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode">
+      <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode" className="!bg-[#fdfdfc]">
         <div className="relative w-full bg-black rounded-lg overflow-hidden flex flex-col items-center justify-center min-h-[300px]">
              <div id="reader" className="w-full"></div>
              <p className="absolute bottom-4 text-white text-xs bg-black/50 px-2 py-1 rounded z-10">Point camera at barcode</p>

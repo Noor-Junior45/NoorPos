@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, CartItem, Customer, Sale, Tag, StoreSettings } from '../types';
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
@@ -80,6 +80,22 @@ export const POS: React.FC = () => {
   const [historyLayout, setHistoryLayout] = useState<'list' | 'grid'>('list');
   const [saleDetail, setSaleDetail] = useState<Sale | null>(null); // For viewing details
 
+  // Refs for New Customer Form
+  const custNameRef = useRef<HTMLInputElement>(null);
+  const custPhoneRef = useRef<HTMLInputElement>(null);
+  const custEmailRef = useRef<HTMLInputElement>(null);
+  const custAddrRef = useRef<HTMLInputElement>(null);
+
+  // Refs for New Product Form
+  const prodNameRef = useRef<HTMLInputElement>(null);
+  const prodSkuRef = useRef<HTMLInputElement>(null);
+  const prodSellRef = useRef<HTMLInputElement>(null);
+  const prodBuyRef = useRef<HTMLInputElement>(null);
+  const prodStockRef = useRef<HTMLInputElement>(null);
+  const prodCatRef = useRef<HTMLSelectElement>(null);
+  const prodUnitRef = useRef<HTMLSelectElement>(null);
+  const prodAlertRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -108,6 +124,18 @@ export const POS: React.FC = () => {
     setRecentSales(s.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
     setTags(t);
     setSettings(st);
+  };
+
+  // Generic Key Down Handler
+  const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null, action?: () => void) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          if (nextRef && nextRef.current) {
+              nextRef.current.focus();
+          } else if (action) {
+              action();
+          }
+      }
   };
 
   // --- History Selection Logic ---
@@ -396,6 +424,13 @@ export const POS: React.FC = () => {
       e.currentTarget.blur();
   };
 
+  // Helper for cart row enter key (just blur)
+  const handleCartInputEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') {
+          e.currentTarget.blur();
+      }
+  };
+
   // --- RENDER ---
 
   if (viewMode === 'HISTORY') {
@@ -667,7 +702,7 @@ export const POS: React.FC = () => {
       {/* INVOICE SHEET CONTAINER */}
       <div className="w-full max-w-5xl mx-auto bg-white md:rounded-xl md:shadow-xl md:border border-gray-100 min-h-[85vh] flex flex-col">
           
-          {/* 1. HEADER: Branding & Customer Info */}
+          {/* Header */}
           <div className="p-6 md:p-8 border-b border-gray-100 flex flex-col md:flex-row justify-between gap-8 relative z-30">
               
               {/* Left: Branding & Meta */}
@@ -684,7 +719,6 @@ export const POS: React.FC = () => {
                       <Button variant="neutral" onClick={openHistory} className="!px-3" title="History">
                           <History size={18}/>
                       </Button>
-                      {/* Removed MoreVertical (Three Dots) button as requested */}
                   </div>
               </div>
 
@@ -763,6 +797,8 @@ export const POS: React.FC = () => {
                                       <div>
                                           <label className="block text-[10px] font-bold text-gray-400 mb-1">FULL NAME</label>
                                           <Input 
+                                            ref={custNameRef}
+                                            onKeyDown={(e) => handleKeyDown(e, custPhoneRef)}
                                             placeholder="Enter Name" 
                                             className="!py-2 !text-sm !bg-white !border-gray-200" 
                                             value={newCustName} 
@@ -774,6 +810,8 @@ export const POS: React.FC = () => {
                                           <div>
                                               <label className="block text-[10px] font-bold text-gray-400 mb-1">PHONE</label>
                                               <Input 
+                                                ref={custPhoneRef}
+                                                onKeyDown={(e) => handleKeyDown(e, custEmailRef)}
                                                 placeholder="Number" 
                                                 className="!py-2 !text-sm !bg-white !border-gray-200" 
                                                 value={newCustPhone} 
@@ -783,6 +821,8 @@ export const POS: React.FC = () => {
                                           <div>
                                               <label className="block text-[10px] font-bold text-gray-400 mb-1">EMAIL</label>
                                               <Input 
+                                                ref={custEmailRef}
+                                                onKeyDown={(e) => handleKeyDown(e, custAddrRef)}
                                                 placeholder="Optional" 
                                                 className="!py-2 !text-sm !bg-white !border-gray-200" 
                                                 value={newCustEmail} 
@@ -793,6 +833,8 @@ export const POS: React.FC = () => {
                                       <div>
                                           <label className="block text-[10px] font-bold text-gray-400 mb-1">ADDRESS</label>
                                           <Input 
+                                            ref={custAddrRef}
+                                            onKeyDown={(e) => handleKeyDown(e, null, handleCreateCustomer)}
                                             placeholder="Location / Address" 
                                             className="!py-2 !text-sm !bg-white !border-gray-200" 
                                             value={newCustAddress} 
@@ -840,32 +882,24 @@ export const POS: React.FC = () => {
               </div>
           </div>
 
-          {/* 2. ACTIONS BAR */}
-          <div className="px-6 py-4 flex flex-col sm:flex-row gap-3 border-b border-gray-100 bg-white sticky top-0 z-20 shadow-sm">
-               <div className="flex-1 flex gap-2">
-                    <button 
-                        onClick={() => {
-                            setShowProductLookup(true);
-                            setIsCreatingProduct(false); // Default to search
-                        }}
-                        className="flex-1 sm:flex-none px-6 py-2.5 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 hover:shadow-lg hover:shadow-blue-200 transition-all flex items-center justify-center gap-2 text-sm shadow-md shadow-blue-100"
-                    >
-                        <Plus size={18}/> Add Item
-                    </button>
-                    <button 
-                        onClick={() => setShowScanner(true)}
-                        className="flex-1 sm:flex-none px-6 py-2.5 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 hover:shadow-lg hover:shadow-purple-200 transition-all flex items-center justify-center gap-2 text-sm shadow-md shadow-purple-100"
-                    >
-                        <Scan size={18}/> Scan
-                    </button>
-               </div>
-          </div>
-
-          {/* Mobile Header Row */}
-          <div className="md:hidden grid grid-cols-[1fr_100px_60px] gap-3 px-4 py-3 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-wider sticky top-[73px] z-10">
-               <div>Item Details</div>
-               <div className="text-center">Qty / Rate</div>
-               <div className="text-right">Total</div>
+          {/* Action Bar */}
+          <div className="grid grid-cols-2 gap-4 px-6 md:px-8 py-4 bg-white border-b border-gray-100">
+              <button 
+                  onClick={() => {
+                      setIsCreatingProduct(false);
+                      setShowProductLookup(true);
+                      setTimeout(() => document.getElementById('pos-search-input')?.focus(), 100);
+                  }}
+                  className="flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-md hover:bg-blue-700 active:scale-95 transition-all"
+              >
+                  <Plus size={20}/> Add Item
+              </button>
+              <button 
+                  onClick={() => setShowScanner(true)}
+                  className="flex items-center justify-center gap-2 py-3 bg-gray-900 text-white rounded-xl font-bold shadow-md hover:bg-black active:scale-95 transition-all"
+              >
+                  <Scan size={20}/> Scan Barcode
+              </button>
           </div>
 
           {/* 3. INVOICE ITEMS (Scrollable Body) */}
@@ -908,6 +942,7 @@ export const POS: React.FC = () => {
                                                  value={item.customPrice ?? item.sellPrice}
                                                  onChange={(e) => updateCartItem(item.id, 'customPrice', parseFloat(e.target.value) || 0)}
                                                  onWheel={preventWheelChange}
+                                                 onKeyDown={handleCartInputEnter}
                                              />
                                          </div>
                                          <div className="px-2">
@@ -917,6 +952,7 @@ export const POS: React.FC = () => {
                                                  value={item.quantity}
                                                  onChange={(e) => updateCartItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
                                                  onWheel={preventWheelChange}
+                                                 onKeyDown={handleCartInputEnter}
                                              />
                                          </div>
                                          <div className="px-2">
@@ -927,6 +963,7 @@ export const POS: React.FC = () => {
                                                  value={item.discount || ''}
                                                  onChange={(e) => updateCartItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
                                                  onWheel={preventWheelChange}
+                                                 onKeyDown={handleCartInputEnter}
                                              />
                                          </div>
                                          <div className="text-right font-extrabold text-gray-900 text-lg">
@@ -957,6 +994,7 @@ export const POS: React.FC = () => {
                                                       value={item.quantity}
                                                       onChange={(e) => updateCartItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
                                                       onWheel={preventWheelChange}
+                                                      onKeyDown={handleCartInputEnter}
                                                   />
                                               </div>
                                               <div className="text-[10px] text-gray-500 font-medium">
@@ -980,7 +1018,8 @@ export const POS: React.FC = () => {
               )}
           </div>
 
-          {/* 4. FOOTER: Totals & Checkout */}
+          {/* ... [Footer] ... */}
+          
           <div className="bg-gray-50 p-6 md:p-8 border-t border-gray-200">
               <div className="flex flex-col md:flex-row gap-8 items-end justify-between">
                   <div className="w-full md:w-auto text-xs text-gray-400 hidden md:block">
@@ -1032,7 +1071,7 @@ export const POS: React.FC = () => {
             setIsCreatingProduct(false);
         }} 
         title={isCreatingProduct ? "Add New Product" : "Add Item"}
-        className={isCreatingProduct ? "!max-w-2xl" : ""}
+        className={`${isCreatingProduct ? "!max-w-2xl" : ""} !bg-[#fdfdfc] !shadow-2xl border-0`}
       >
           {isCreatingProduct ? (
             /* PRODUCT CREATION FORM (Reused from Warehouse) */
@@ -1041,11 +1080,13 @@ export const POS: React.FC = () => {
                     <div className="md:col-span-2">
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Product Name</label>
                         <Input 
+                            ref={prodNameRef}
+                            onKeyDown={(e) => handleKeyDown(e, prodSkuRef)}
                             placeholder="Product Name" 
                             value={newProduct.name} 
                             onChange={e => setNewProduct({...newProduct, name: e.target.value})}
                             autoFocus
-                            className="!bg-white !border-gray-300"
+                            className="!bg-white !border-gray-200"
                         />
                     </div>
                     
@@ -1053,12 +1094,14 @@ export const POS: React.FC = () => {
                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Barcode / SKU</label>
                          <div className="flex w-full">
                             <Input 
+                                ref={prodSkuRef}
+                                onKeyDown={(e) => handleKeyDown(e, prodSellRef)}
                                 placeholder="Scan or type" 
                                 value={newProduct.sku} 
                                 onChange={e => setNewProduct({...newProduct, sku: e.target.value})}
-                                className="!bg-white !border-gray-300 rounded-r-none"
+                                className="!bg-white !border-gray-200 rounded-r-none"
                             />
-                            <button onClick={() => setShowScanner(true)} className="px-3 bg-gray-100 border border-gray-300 border-l-0 rounded-r-lg text-gray-600 hover:bg-gray-200">
+                            <button onClick={() => setShowScanner(true)} className="px-3 bg-white border border-gray-200 border-l-0 rounded-r-lg text-gray-600 hover:bg-gray-50">
                                 <Scan size={20}/>
                             </button>
                         </div>
@@ -1067,22 +1110,26 @@ export const POS: React.FC = () => {
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Sell Price</label>
                         <Input 
+                            ref={prodSellRef}
+                            onKeyDown={(e) => handleKeyDown(e, prodBuyRef)}
                             type="number"
                             placeholder="0.00" 
                             value={newProduct.sellPrice || ''} 
                             onChange={e => setNewProduct({...newProduct, sellPrice: parseFloat(e.target.value) || 0})}
-                            className="!bg-white !border-gray-300 !text-green-700 !font-bold"
+                            className="!bg-white !border-gray-200 !text-green-700 !font-bold"
                         />
                     </div>
 
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Buy Price</label>
                         <Input 
+                            ref={prodBuyRef}
+                            onKeyDown={(e) => handleKeyDown(e, prodStockRef)}
                             type="number"
                             placeholder="0.00" 
                             value={newProduct.buyPrice || ''} 
                             onChange={e => setNewProduct({...newProduct, buyPrice: parseFloat(e.target.value) || 0})}
-                            className="!bg-white !border-gray-300"
+                            className="!bg-white !border-gray-200"
                         />
                     </div>
 
@@ -1090,25 +1137,27 @@ export const POS: React.FC = () => {
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Stock Quantity</label>
                         <div className="flex gap-2 items-center">
                             <Input 
+                                ref={prodStockRef}
+                                onKeyDown={(e) => handleKeyDown(e, prodCatRef)}
                                 type="number" 
                                 placeholder="Qty" 
                                 value={newProduct.stock || ''} 
                                 onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})}
-                                className="!bg-white !border-gray-300 flex-1"
+                                className="!bg-white !border-gray-200 flex-1"
                             />
                             
                             {/* Simple Batch Calculator */}
-                            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border border-gray-200">
+                            <div className="flex items-center gap-2 bg-white p-1.5 rounded-lg border border-gray-200">
                                 <input 
                                     type="number" placeholder="Packs" 
-                                    className="w-16 bg-white border border-gray-300 rounded px-2 py-1 text-xs outline-none"
+                                    className="w-16 bg-white border border-gray-200 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
                                     value={batchConfig.packs}
                                     onChange={(e) => handleBatchChange('packs', e.target.value)}
                                 />
                                 <span className="text-gray-400 text-xs">x</span>
                                 <input 
                                     type="number" placeholder="Qty" 
-                                    className="w-16 bg-white border border-gray-300 rounded px-2 py-1 text-xs outline-none"
+                                    className="w-16 bg-white border border-gray-200 rounded px-2 py-1 text-xs outline-none focus:border-blue-500"
                                     value={batchConfig.perPack}
                                     onChange={(e) => handleBatchChange('perPack', e.target.value)}
                                 />
@@ -1119,9 +1168,11 @@ export const POS: React.FC = () => {
                     <div>
                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Category</label>
                          <select 
+                            ref={prodCatRef}
+                            onKeyDown={(e) => handleKeyDown(e, prodUnitRef)}
                             value={newProduct.tagId || ''} 
                             onChange={(e) => setNewProduct({...newProduct, tagId: e.target.value})}
-                            className="w-full rounded-lg px-3 py-2.5 bg-white border-2 border-gray-300 text-gray-900 focus:outline-none focus:border-blue-500"
+                            className="w-full rounded-lg px-3 py-2.5 bg-white border-2 border-gray-200 text-gray-900 focus:outline-none focus:border-blue-500"
                         >
                             <option value="">No Category</option>
                             {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -1131,9 +1182,11 @@ export const POS: React.FC = () => {
                     <div>
                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Unit</label>
                          <select 
+                            ref={prodUnitRef}
+                            onKeyDown={(e) => handleKeyDown(e, prodAlertRef)}
                             value={newProduct.unit || 'pcs'} 
                             onChange={e => setNewProduct({...newProduct, unit: e.target.value})} 
-                            className="w-full rounded-lg px-3 py-2.5 bg-white border-2 border-gray-300 text-gray-900 focus:outline-none focus:border-blue-500"
+                            className="w-full rounded-lg px-3 py-2.5 bg-white border-2 border-gray-200 text-gray-900 focus:outline-none focus:border-blue-500"
                         >
                             {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
@@ -1144,11 +1197,13 @@ export const POS: React.FC = () => {
                         <div className="flex gap-2 items-center">
                             <AlertTriangle size={16} className="text-purple-500"/>
                             <Input 
+                                ref={prodAlertRef}
+                                onKeyDown={(e) => handleKeyDown(e, null, handleSaveProduct)}
                                 type="number" 
                                 placeholder="10" 
                                 value={newProduct.lowStockThreshold || ''} 
                                 onChange={e => setNewProduct({...newProduct, lowStockThreshold: parseInt(e.target.value) || 0})}
-                                className="!bg-white !border-gray-300 flex-1"
+                                className="!bg-white !border-gray-200 flex-1"
                             />
                         </div>
                     </div>
@@ -1166,6 +1221,7 @@ export const POS: React.FC = () => {
                     <Search className="absolute left-3 top-3 text-gray-400" size={18}/>
                     <input 
                         autoFocus
+                        id="pos-search-input"
                         className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 transition-all"
                         placeholder="Search product..."
                         value={searchTerm}
@@ -1176,7 +1232,7 @@ export const POS: React.FC = () => {
                 {/* Create New Trigger */}
                 <button 
                     onClick={() => setIsCreatingProduct(true)}
-                    className="w-full py-3 mb-2 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 text-blue-600 font-bold flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors"
+                    className="w-full py-3 mb-2 rounded-xl border-2 border-dashed border-blue-200 bg-white text-blue-600 font-bold flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors"
                 >
                     <Plus size={18}/> Create New Product
                 </button>
@@ -1186,7 +1242,7 @@ export const POS: React.FC = () => {
                         <button 
                             key={p.id} 
                             onClick={() => addToCart(p)}
-                            className="w-full text-left p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-all flex justify-between items-center group"
+                            className="w-full text-left p-3 rounded-xl border border-gray-100 bg-white hover:bg-blue-50/50 transition-all flex justify-between items-center group"
                         >
                             <div>
                                 <div className="font-bold text-gray-800">{p.name}</div>
@@ -1202,6 +1258,7 @@ export const POS: React.FC = () => {
 
       {/* Checkout Confirm */}
       <Modal isOpen={showCheckout} onClose={() => setShowCheckout(false)} title="Payment">
+        {/* ... [Same as original] ... */}
         <div className="text-center px-4 pb-4">
             <h2 className="text-4xl font-extrabold text-gray-900 mb-2">₹{totals.net.toFixed(2)}</h2>
             <p className="text-gray-500 text-sm mb-6">Total Amount Due</p>

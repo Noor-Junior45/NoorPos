@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { User, StoreSettings } from '../types';
 import { Card, Button, Input, Modal } from '../components/UI';
-import { User as UserIcon, LogOut, Shield, Download, Upload, AlertTriangle, Cloud, ChevronRight, Clock, Database, Loader2, Sparkles, Lock, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save } from 'lucide-react';
+import { User as UserIcon, LogOut, Shield, Download, Upload, AlertTriangle, Cloud, ChevronRight, Clock, Database, Loader2, Sparkles, Lock, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, ArrowRight } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 
 interface ProfileProps {
@@ -40,6 +40,22 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- Input Refs for Navigation ---
+  // Auth
+  const authNameRef = useRef<HTMLInputElement>(null);
+  const authUserRef = useRef<HTMLInputElement>(null);
+  const authPinRef = useRef<HTMLInputElement>(null);
+
+  // Store Settings
+  const storeNameRef = useRef<HTMLInputElement>(null);
+  const storeAddrRef = useRef<HTMLInputElement>(null);
+  const storePhoneRef = useRef<HTMLInputElement>(null);
+  const storeEmailRef = useRef<HTMLInputElement>(null);
+
+  // Drive
+  const driveEmailRef = useRef<HTMLInputElement>(null);
+  const driveKeyRef = useRef<HTMLTextAreaElement>(null);
+
   useEffect(() => {
     checkUsers();
     if (user) {
@@ -77,9 +93,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
     setDbStatus(enabled ? 'cloud' : 'local');
   };
 
+  // --- Key Navigation Helper ---
+  const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null, action?: () => void) => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          if (nextRef && nextRef.current) {
+              nextRef.current.focus();
+          } else if (action) {
+              action();
+          }
+      }
+  };
+
   // --- Auth Handlers ---
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAuth = async (e?: React.FormEvent) => {
+    if(e) e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
 
@@ -244,58 +272,106 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   // --- RENDER: Login Screen ---
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in">
-         <div className="w-full max-w-[400px]">
-            <div className="text-center mb-8">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 mb-4">
-                    <Sparkles size={32} />
+      <div className="flex flex-col items-center justify-center min-h-[85vh] animate-in fade-in duration-500">
+         <div className="w-full max-w-sm px-6">
+            {/* Header / Logo */}
+            <div className="flex flex-col items-center mb-10">
+                <div className="w-16 h-16 bg-gray-900 rounded-2xl flex items-center justify-center text-white shadow-xl shadow-gray-200 mb-6">
+                    <Sparkles size={28} strokeWidth={1.5} />
                 </div>
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Welcome to Noor</h1>
-                <p className="text-gray-500 mt-2 font-medium">Please sign in to access your profile.</p>
+                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+                    {authMode === 'login' ? 'Welcome back' : 'Setup Store'}
+                </h1>
+                <p className="text-gray-500 mt-2 text-center text-sm">
+                    {authMode === 'login' ? 'Enter your credentials to access the store.' : 'Create an admin account to get started.'}
+                </p>
             </div>
 
-            <Card className="!p-8 shadow-xl border-gray-100">
-                <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">
-                    {authMode === 'login' ? 'Sign In' : (isFirstRun ? 'Setup Admin' : 'Staff Register')}
-                </h2>
-                <form onSubmit={handleAuth} className="space-y-5">
-                    {authMode === 'register' && (
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Full Name</label>
-                        <div className="relative">
-                            <UserIcon size={18} className="absolute left-3.5 top-3.5 text-gray-400"/>
-                            <Input className="!pl-10 !bg-white !border-gray-200 focus:!border-indigo-500 !rounded-xl !py-3" placeholder="e.g. John Doe" value={name} onChange={e => setName(e.target.value)} required />
+            {/* Form */}
+            <form onSubmit={handleAuth} className="space-y-4">
+                {authMode === 'register' && (
+                    <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-500 uppercase ml-1">Full Name</label>
+                        <div className="relative group">
+                            <UserIcon size={18} className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-gray-800 transition-colors"/>
+                            <Input 
+                                ref={authNameRef}
+                                onKeyDown={(e) => handleKeyDown(e, authUserRef)}
+                                className="!pl-11 !py-3 !bg-white !border-gray-200 focus:!border-gray-400 !rounded-xl !shadow-sm focus:!shadow-md transition-all" 
+                                placeholder="John Doe" 
+                                value={name} 
+                                onChange={e => setName(e.target.value)} 
+                                required 
+                            />
                         </div>
-                    </div>
-                    )}
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Username</label>
-                        <div className="relative">
-                            <UserIcon size={18} className="absolute left-3.5 top-3.5 text-gray-400"/>
-                            <Input className="!pl-10 !bg-white !border-gray-200 focus:!border-indigo-500 !rounded-xl !py-3" placeholder="e.g. admin" value={username} onChange={e => setUsername(e.target.value)} required />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">PIN Code</label>
-                        <div className="relative">
-                            <Lock size={18} className="absolute left-3.5 top-3.5 text-gray-400"/>
-                            <Input type="password" className="!pl-10 font-mono tracking-widest !bg-white !border-gray-200 focus:!border-indigo-500 !rounded-xl !py-3" placeholder="••••" value={pin} onChange={e => setPin(e.target.value)} required maxLength={8} />
-                        </div>
-                    </div>
-                    {authError && <div className="p-3 rounded-xl bg-red-50 text-red-600 text-sm font-medium text-center border border-red-100">{authError}</div>}
-                    <Button type="submit" className="w-full py-3.5 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20 text-base" disabled={authLoading}>
-                        {authLoading && <Loader2 className="animate-spin mr-2" size={20}/>}
-                        {authMode === 'login' ? 'Access Profile' : 'Create Account'}
-                    </Button>
-                </form>
-                {!isFirstRun && (
-                    <div className="mt-8 text-center pt-6 border-t border-gray-50">
-                    <button onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(''); }} className="text-sm text-indigo-600 hover:text-indigo-800 font-semibold flex items-center justify-center gap-1 mx-auto transition-colors">
-                        {authMode === 'login' ? 'Register New Staff' : 'Back to Login'} <ChevronRight size={14} strokeWidth={2.5}/>
-                    </button>
                     </div>
                 )}
-            </Card>
+                
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">Username</label>
+                    <div className="relative group">
+                        <UserIcon size={18} className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-gray-800 transition-colors"/>
+                        <Input 
+                            ref={authUserRef}
+                            onKeyDown={(e) => handleKeyDown(e, authPinRef)}
+                            className="!pl-11 !py-3 !bg-white !border-gray-200 focus:!border-gray-400 !rounded-xl !shadow-sm focus:!shadow-md transition-all" 
+                            placeholder="admin" 
+                            value={username} 
+                            onChange={e => setUsername(e.target.value)} 
+                            required 
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase ml-1">PIN Code</label>
+                    <div className="relative group">
+                        <Lock size={18} className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-gray-800 transition-colors"/>
+                        <Input 
+                            ref={authPinRef}
+                            onKeyDown={(e) => handleKeyDown(e, null, () => handleAuth())}
+                            type="password" 
+                            className="!pl-11 !py-3 !bg-white !border-gray-200 focus:!border-gray-400 !rounded-xl !shadow-sm focus:!shadow-md transition-all font-mono tracking-widest" 
+                            placeholder="••••" 
+                            value={pin} 
+                            onChange={e => setPin(e.target.value)} 
+                            required 
+                            maxLength={8} 
+                        />
+                    </div>
+                </div>
+
+                {authError && (
+                    <div className="p-3 rounded-lg bg-red-50 text-red-600 text-xs font-bold text-center animate-in slide-in-from-top-1">
+                        {authError}
+                    </div>
+                )}
+
+                <Button 
+                    type="submit" 
+                    className="w-full !py-3.5 !mt-6 !rounded-xl bg-gray-900 hover:bg-black text-white shadow-xl shadow-gray-200 font-bold flex items-center justify-center gap-2" 
+                    disabled={authLoading}
+                >
+                    {authLoading ? <Loader2 className="animate-spin" size={20}/> : (authMode === 'login' ? 'Sign In' : 'Create Account')}
+                    {!authLoading && <ArrowRight size={18} />}
+                </Button>
+            </form>
+
+            {/* Footer / Toggle */}
+            {!isFirstRun && (
+                <div className="mt-8 text-center">
+                    <button 
+                        onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthError(''); }} 
+                        className="text-xs font-semibold text-gray-400 hover:text-gray-800 transition-colors"
+                    >
+                        {authMode === 'login' ? 'Register new staff member' : 'Back to login'}
+                    </button>
+                </div>
+            )}
+         </div>
+         
+         <div className="fixed bottom-6 text-[10px] text-gray-300 font-medium">
+             Noor POS v1.4
          </div>
       </div>
     );
@@ -347,20 +423,44 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                     <div className="space-y-3 animate-in fade-in">
                         <div>
                             <label className="text-xs font-bold text-gray-400 uppercase">Store Name</label>
-                            <Input value={tempProfile.storeName} onChange={e => setTempProfile({...tempProfile, storeName: e.target.value})} className="!py-2"/>
+                            <Input 
+                                ref={storeNameRef}
+                                onKeyDown={(e) => handleKeyDown(e, storeAddrRef)}
+                                value={tempProfile.storeName} 
+                                onChange={e => setTempProfile({...tempProfile, storeName: e.target.value})} 
+                                className="!py-2"
+                            />
                         </div>
                         <div>
                             <label className="text-xs font-bold text-gray-400 uppercase">Address</label>
-                            <Input value={tempProfile.storeAddress} onChange={e => setTempProfile({...tempProfile, storeAddress: e.target.value})} className="!py-2"/>
+                            <Input 
+                                ref={storeAddrRef}
+                                onKeyDown={(e) => handleKeyDown(e, storePhoneRef)}
+                                value={tempProfile.storeAddress} 
+                                onChange={e => setTempProfile({...tempProfile, storeAddress: e.target.value})} 
+                                className="!py-2"
+                            />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-xs font-bold text-gray-400 uppercase">Phone</label>
-                                <Input value={tempProfile.storePhone} onChange={e => setTempProfile({...tempProfile, storePhone: e.target.value})} className="!py-2"/>
+                                <Input 
+                                    ref={storePhoneRef}
+                                    onKeyDown={(e) => handleKeyDown(e, storeEmailRef)}
+                                    value={tempProfile.storePhone} 
+                                    onChange={e => setTempProfile({...tempProfile, storePhone: e.target.value})} 
+                                    className="!py-2"
+                                />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-gray-400 uppercase">Email</label>
-                                <Input value={tempProfile.storeEmail} onChange={e => setTempProfile({...tempProfile, storeEmail: e.target.value})} className="!py-2"/>
+                                <Input 
+                                    ref={storeEmailRef}
+                                    onKeyDown={(e) => handleKeyDown(e, null, handleSaveProfile)}
+                                    value={tempProfile.storeEmail} 
+                                    onChange={e => setTempProfile({...tempProfile, storeEmail: e.target.value})} 
+                                    className="!py-2"
+                                />
                             </div>
                         </div>
                         <p className="text-xs text-blue-500 bg-blue-50 p-2 rounded">These details will appear on your PDF Invoices.</p>
@@ -515,6 +615,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 <div>
                     <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Service Account Email</label>
                     <Input 
+                        ref={driveEmailRef}
+                        onKeyDown={(e) => { 
+                            if(e.key === 'Enter') { e.preventDefault(); driveKeyRef.current?.focus(); } 
+                        }}
                         placeholder="service-account@project.iam.gserviceaccount.com" 
                         value={customCreds.email}
                         onChange={(e) => setCustomCreds({...customCreds, email: e.target.value})}
@@ -524,6 +628,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 <div>
                     <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Private Key</label>
                     <textarea 
+                        ref={driveKeyRef}
                         placeholder="-----BEGIN PRIVATE KEY----- ..." 
                         value={customCreds.key}
                         onChange={(e) => setCustomCreds({...customCreds, key: e.target.value})}
