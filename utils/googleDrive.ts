@@ -1,3 +1,4 @@
+
 // CLIENT_ID is now expected to be provided via Environment Variable
 // Scopes: drive.file (create/open files), spreadsheets (read/write sheets)
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets';
@@ -19,26 +20,35 @@ export const GoogleDriveUtils = {
    */
   initGoogleLogin: (clientId: string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // @ts-ignore
-      if (typeof google === 'undefined') {
-        reject(new Error("Google Identity Services script not loaded."));
+      // Safely access google object on window
+      const g = (window as any).google;
+
+      if (!g || !g.accounts || !g.accounts.oauth2) {
+        reject(new Error("Google Identity Services script not loaded. Please refresh the page."));
         return;
       }
 
-      // @ts-ignore
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: SCOPES,
-        callback: (response: any) => {
-          if (response.error) {
-            reject(response);
-          } else {
-            resolve(response.access_token);
-          }
-        },
-      });
+      try {
+          const tokenClient = g.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: SCOPES,
+            callback: (response: any) => {
+              if (response.error) {
+                reject(response);
+              } else {
+                resolve(response.access_token);
+              }
+            },
+            error_callback: (err: any) => {
+                reject(err);
+            }
+          });
 
-      tokenClient.requestAccessToken();
+          // Request token (triggers popup)
+          tokenClient.requestAccessToken();
+      } catch (e) {
+          reject(e);
+      }
     });
   },
 

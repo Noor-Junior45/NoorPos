@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Input } from '../components/UI';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Sparkles, Loader2, Database, AlertTriangle, User as UserIcon } from 'lucide-react';
+import { Sparkles, Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2 } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -12,9 +12,21 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
+  const [isGoogleReady, setIsGoogleReady] = useState(false);
 
   // Use VITE_GOOGLE_CLIENT_ID from environment
   const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+
+  useEffect(() => {
+    // Check if Google Script is loaded
+    const checkGoogle = setInterval(() => {
+        if ((window as any).google?.accounts?.oauth2) {
+            setIsGoogleReady(true);
+            clearInterval(checkGoogle);
+        }
+    }, 500);
+    return () => clearInterval(checkGoogle);
+  }, []);
 
   const handleSuccess = (profile: any) => {
     const user: User = {
@@ -41,13 +53,18 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   const handleGoogleLogin = async () => {
     if (!CLIENT_ID) {
-        setError("Missing Client ID. Use Guest Mode.");
+        setError("Missing Client ID in env variables. Use Guest Mode.");
+        return;
+    }
+
+    if (!isGoogleReady) {
+        setError("Google Service not ready. Check internet or ad-blockers.");
         return;
     }
 
     setLoading(true);
     setError('');
-    setStatus('Connecting to Google...');
+    setStatus('Initializing Login...');
 
     try {
       // 1. Get Token
@@ -72,9 +89,19 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       handleSuccess(profile);
 
     } catch (err: any) {
-      console.error(err);
-      setError("Login failed. Check popup blockers or console errors.");
+      console.error("Auth Error:", err);
       setLoading(false);
+      
+      let msg = "Login failed.";
+      if (err?.error === 'popup_closed_by_user') {
+          msg = "Login cancelled. Popup closed.";
+      } else if (err?.error === 'access_denied') {
+          msg = "Access denied. Permissions required.";
+      } else if (err?.message) {
+          msg = err.message;
+      }
+      
+      setError(msg);
     }
   };
 
@@ -101,7 +128,9 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              <button
                 onClick={handleGoogleLogin}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold py-3 px-4 rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-70"
+                className={`w-full flex items-center justify-center gap-3 border border-gray-300 font-bold py-3 px-4 rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-70
+                    ${isGoogleReady ? 'bg-white hover:bg-gray-50 text-gray-700' : 'bg-gray-50 text-gray-400 cursor-not-allowed'}
+                `}
              >
                 {loading ? (
                     <Loader2 size={24} className="animate-spin text-indigo-600" />
@@ -110,6 +139,10 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 )}
                 <span>{loading ? 'Connecting...' : 'Continue with Google'}</span>
              </button>
+
+             {!isGoogleReady && !loading && (
+                 <p className="text-[10px] text-center text-gray-400">Loading Google Services...</p>
+             )}
 
              <div className="relative py-2">
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
@@ -127,7 +160,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              </button>
 
              {loading && (
-                 <div className="flex items-center justify-center gap-2 text-xs text-indigo-600 font-medium animate-pulse">
+                 <div className="flex items-center justify-center gap-2 text-xs text-indigo-600 font-medium animate-pulse pt-2">
                      <Database size={14} />
                      {status}
                  </div>
