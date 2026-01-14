@@ -4,7 +4,12 @@ import { StoreService } from '../services/storeService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
 import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, TriangleAlert } from 'lucide-react';
 
-export const Customers: React.FC = () => {
+interface CustomersProps {
+  initialAction?: string;
+  onClearAction?: () => void;
+}
+
+export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearAction }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -20,6 +25,14 @@ export const Customers: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Handle Initial Actions (from Dashboard)
+  useEffect(() => {
+    if (initialAction === 'add') {
+        handleAddClick();
+        if (onClearAction) onClearAction();
+    }
+  }, [initialAction]);
 
   const loadData = async () => {
     const cData = await StoreService.getCustomers();

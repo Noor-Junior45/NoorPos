@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.PROFILE);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingAction, setPendingAction] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     // Check for existing session (Gmail-like persistence)
@@ -44,16 +45,23 @@ const App: React.FC = () => {
     setActiveTab(Tab.PROFILE);
   };
 
+  const handleNavigate = (tab: Tab, action?: string) => {
+    setActiveTab(tab);
+    if (action) {
+      setPendingAction(action);
+    }
+  };
+
   if (loading) return null;
 
   return (
     <div className="min-h-screen bg-[#fdfdfc] text-gray-800 selection:bg-yellow-500/30">
       {/* Main Content Area */}
       <main className="p-4 md:p-6 w-full max-w-[1920px] mx-auto min-h-screen">
-        {activeTab === Tab.WAREHOUSE && <Warehouse />}
+        {activeTab === Tab.WAREHOUSE && <Warehouse initialAction={pendingAction} onClearAction={() => setPendingAction(undefined)} />}
         {activeTab === Tab.POS && <POS />}
-        {activeTab === Tab.DASHBOARD && <Dashboard />}
-        {activeTab === Tab.CUSTOMERS && <Customers />}
+        {activeTab === Tab.DASHBOARD && <Dashboard onNavigate={handleNavigate} />}
+        {activeTab === Tab.CUSTOMERS && <Customers initialAction={pendingAction} onClearAction={() => setPendingAction(undefined)} />}
         {activeTab === Tab.PROFILE && <Profile user={currentUser} onLogin={handleLogin} onLogout={handleLogout} />}
       </main>
 

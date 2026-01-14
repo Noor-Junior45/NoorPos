@@ -97,7 +97,12 @@ const ProductSettingRow: React.FC<{
     );
 };
 
-export const Warehouse: React.FC = () => {
+interface WarehouseProps {
+  initialAction?: string;
+  onClearAction?: () => void;
+}
+
+export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearAction }) => {
   const [activeTab, setActiveTab] = useState<SubTab>(SubTab.DASHBOARD);
   const [viewMode, setViewMode] = useState<'WAREHOUSE' | 'REVIEW'>('WAREHOUSE'); // New View Mode State
   const [products, setProducts] = useState<Product[]>([]);
@@ -145,6 +150,14 @@ export const Warehouse: React.FC = () => {
   const [showCamera, setShowCamera] = useState(false);
 
   useEffect(() => { loadData(); }, []);
+
+  // Handle Initial Actions (from Dashboard)
+  useEffect(() => {
+    if (initialAction === 'add') {
+        handleOpenAdd();
+        if (onClearAction) onClearAction();
+    }
+  }, [initialAction]);
 
   const loadData = async () => {
     setLoading(true);

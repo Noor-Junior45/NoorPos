@@ -5,11 +5,11 @@ import { Card, Badge, Button } from '../components/UI';
 import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
-// Helper to switch tabs if needed (though usually passed via props, we can simulate navigation or just provide links)
-// Since this is a component, we will assume standard navigation behavior isn't available via props here easily without prop drilling.
-// We will focus on data visualization.
+interface DashboardProps {
+  onNavigate: (tab: Tab, action?: string) => void;
+}
 
-export const Dashboard: React.FC = () => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -95,7 +95,7 @@ export const Dashboard: React.FC = () => {
         salesTrend, 
         customersWithDues, 
         topBuyer, 
-        mostLoyal,
+        mostLoyal, 
         lowStockItems,
         outOfStockCount,
         customerComposition,
@@ -124,13 +124,22 @@ export const Dashboard: React.FC = () => {
             {/* Quick Actions Toolbar */}
             <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm overflow-x-auto max-w-full">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">Quick Tools:</span>
-                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors text-xs font-bold whitespace-nowrap">
+                <button 
+                    onClick={() => onNavigate(Tab.POS)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors text-xs font-bold whitespace-nowrap"
+                >
                     <ShoppingCart size={14}/> New Sale
                 </button>
-                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-bold whitespace-nowrap">
+                <button 
+                    onClick={() => onNavigate(Tab.WAREHOUSE, 'add')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-bold whitespace-nowrap"
+                >
                     <Package size={14}/> Add Stock
                 </button>
-                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors text-xs font-bold whitespace-nowrap">
+                <button 
+                    onClick={() => onNavigate(Tab.CUSTOMERS, 'add')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors text-xs font-bold whitespace-nowrap"
+                >
                     <UserPlus size={14}/> New Customer
                 </button>
             </div>
