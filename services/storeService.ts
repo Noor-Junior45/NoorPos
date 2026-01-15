@@ -374,15 +374,22 @@ const StoreService = {
     return data.sales;
   },
 
-  async createSale(saleData: { items: CartItem[], customerId?: string, customerName: string, subtotal: number, tax: number, total: number, servedBy?: string, paymentMethod?: string }): Promise<Sale> {
+  async createSale(saleData: { items: CartItem[], customerId?: string, customerName: string, subtotal: number, tax: number, total: number, amountPaid?: number, servedBy?: string, paymentMethod?: string }): Promise<Sale> {
     const data = await this.loadData();
+    
+    // Determine paid amount and dues
+    const amountPaid = saleData.amountPaid !== undefined ? saleData.amountPaid : saleData.total;
+    const dueAmount = saleData.total - amountPaid;
+
     const newSale: Sale = {
       id: generateId(),
       timestamp: new Date().toISOString(),
-      ...saleData
+      ...saleData,
+      amountPaid // Store partial payment info
     };
     data.sales.push(newSale);
 
+    // Update Stock
     for (const soldItem of saleData.items) {
       const productIndex = data.products.findIndex(p => p.id === soldItem.id);
       if (productIndex !== -1) {
@@ -398,6 +405,7 @@ const StoreService = {
       }
     }
 
+    // Update Customer Logic
     if (saleData.customerId) {
       const custIndex = data.customers.findIndex(c => c.id === saleData.customerId);
       if (custIndex !== -1) {
@@ -405,14 +413,61 @@ const StoreService = {
         data.customers[custIndex].totalSpent += saleData.total;
         data.customers[custIndex].history.push(newSale.id);
 
-        if (saleData.paymentMethod === 'Pay Later') {
-            data.customers[custIndex].totalDues = (data.customers[custIndex].totalDues || 0) + saleData.total;
+        // Update Dues: Add calculating remaining balance (if any)
+        if (dueAmount > 0) {
+            data.customers[custIndex].totalDues = (data.customers[custIndex].totalDues || 0) + dueAmount;
         }
       }
     }
 
     this.saveData();
     return newSale;
+  },
+
+  async updateSale(updatedSale: Sale): Promise<void> {
+    const data = await this.loadData();
+    const index = data.sales.findIndex(s => s.id === updatedSale.id);
+    if (index === -1) throw new Error("Sale not found");
+
+    const oldSale = data.sales[index];
+
+    // 1. Revert Stock for Old Items
+    oldSale.items.forEach(oldItem => {
+      const pIndex = data.products.findIndex(p => p.id === oldItem.id);
+      if (pIndex !== -1) {
+        data.products[pIndex].stock += oldItem.quantity;
+      }
+    });
+
+    // 2. Apply Stock for New Items
+    updatedSale.items.forEach(newItem => {
+      const pIndex = data.products.findIndex(p => p.id === newItem.id);
+      if (pIndex !== -1) {
+        data.products[pIndex].stock = Math.max(0, data.products[pIndex].stock - newItem.quantity);
+      }
+    });
+
+    // 3. Update Customer Dues
+    if (oldSale.customerId) {
+      const custIndex = data.customers.findIndex(c => c.id === oldSale.customerId);
+      if (custIndex !== -1) {
+        // Reverse old financials
+        const oldPaid = oldSale.amountPaid ?? (oldSale.paymentMethod === 'Pay Later' ? 0 : oldSale.total);
+        const oldDue = oldSale.total - oldPaid;
+        data.customers[custIndex].totalSpent -= oldSale.total;
+        data.customers[custIndex].totalDues -= oldDue;
+
+        // Apply new financials
+        const newPaid = updatedSale.amountPaid ?? (updatedSale.paymentMethod === 'Pay Later' ? 0 : updatedSale.total);
+        const newDue = updatedSale.total - newPaid;
+        data.customers[custIndex].totalSpent += updatedSale.total;
+        data.customers[custIndex].totalDues += newDue;
+      }
+    }
+
+    // 4. Update Record
+    data.sales[index] = updatedSale;
+    this.saveData();
   },
 
   async deleteSales(ids: string[]): Promise<void> {

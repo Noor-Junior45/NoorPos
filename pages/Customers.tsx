@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Customer, Sale } from '../types';
 import { StoreService } from '../services/storeService';
@@ -187,7 +188,14 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                                         {c.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                        <div className="font-medium text-gray-900 truncate">{c.name}</div>
+                                        <div className="flex justify-between items-center pr-2">
+                                            <span className="font-medium text-gray-900 truncate">{c.name}</span>
+                                            {(c.totalDues || 0) > 0 && (
+                                                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100 shrink-0 ml-2 whitespace-nowrap">
+                                                    Due: ₹{c.totalDues}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-xs text-gray-500 truncate">{c.phone}</div>
                                     </div>
                                     {/* Quick Actions (Desktop Hover) */}

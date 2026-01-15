@@ -78,6 +78,7 @@ export interface Sale {
   subtotal: number;
   tax: number;
   total: number;
+  amountPaid?: number; // Amount paid at time of sale (for partial payments)
   timestamp: string; // ISO string
   servedBy?: string; // User Name
   paymentMethod?: string; // 'Cash', 'UPI', 'Card', 'Pay Later', etc.
