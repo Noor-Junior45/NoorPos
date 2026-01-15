@@ -4,7 +4,7 @@ import { Product, CartItem, Customer, Sale, Tag, StoreSettings } from '../types'
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, CheckSquare, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2, Pencil, Edit3 } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, CheckSquare, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2, Pencil, Edit3, CheckCircle } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 // Extended interface for local POS state to handle discounts and custom pricing
@@ -19,6 +19,13 @@ const UNITS = [
 ];
 
 type PaymentMethod = 'Cash' | 'UPI' | 'Card' | 'Pay Later';
+
+// Simple WhatsApp Logo Component
+const WhatsAppLogo = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" className="mr-2">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.008-.57-.008-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+  </svg>
+);
 
 export const POS: React.FC = () => {
   // Data State
@@ -436,7 +443,7 @@ export const POS: React.FC = () => {
       }
   };
 
-  const handleCheckout = async (action: 'save' | 'print' | 'whatsapp') => {
+  const handleCheckout = async (action: 'save' | 'print' | 'share') => {
     if (cart.length === 0) return;
 
     // Parse numeric value of paid amount
@@ -478,13 +485,18 @@ export const POS: React.FC = () => {
 
     if (action === 'print') {
         generateInvoicePDF(sale);
-    } else if (action === 'whatsapp') {
-        const storeName = settings.storeName || "Noor Store";
-        const itemsList = sale.items.map(i => `• ${i.name} x${i.quantity} : ₹${(i.sellPrice * i.quantity).toFixed(0)}`).join('%0A');
-        const message = `🧾 *${storeName} Invoice*%0A%0ADate: ${new Date().toLocaleDateString()}%0AInvoice: #${sale.id.slice(0,5).toUpperCase()}%0A%0A*Items:*%0A${itemsList}%0A%0A----------------%0A*Total: ₹${sale.total.toFixed(0)}*%0A*Paid:* ₹${paidAmountValue.toFixed(0)}%0A${dueAmount > 0 ? `*Balance Due:* ₹${dueAmount.toFixed(0)}` : ''}%0A----------------%0A%0AThank you for shopping with us!`;
-        const phone = selectedCustomer ? selectedCustomer.phone.replace(/[^0-9]/g, '') : '';
-        const url = phone ? `https://wa.me/${phone}?text=${message}` : `https://wa.me/?text=${message}`;
-        window.open(url, '_blank');
+    } else if (action === 'share') {
+        const hasPhone = selectedCustomer && selectedCustomer.phone;
+        if (hasPhone) {
+            const storeName = settings.storeName || "Noor Store";
+            const itemsList = sale.items.map(i => `• ${i.name} x${i.quantity}`).join('%0A');
+            const link = `${window.location.origin}/?invoiceId=${sale.id}`; // Simulated link
+            const message = `*${storeName}*%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ₹${sale.total.toFixed(0)}*%0A*Invoice:* ${link}`;
+            
+            const phone = selectedCustomer.phone.replace(/[^0-9]/g, '');
+            const url = `https://wa.me/${phone}?text=${message}`;
+            window.open(url, '_blank');
+        }
     }
 
     setCart([]);
@@ -505,6 +517,11 @@ export const POS: React.FC = () => {
                 { facingMode: "environment" },
                 { fps: 10, qrbox: { width: 250, height: 150 } },
                 (decodedText) => {
+                    // Play sound
+                    if (settings.soundEnabled) {
+                        new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {});
+                    }
+
                     const product = products.find(p => p.sku === decodedText || p.id === decodedText);
                     if (product) {
                         addToCart(product);
@@ -525,7 +542,7 @@ export const POS: React.FC = () => {
         }, 100);
         return () => { clearTimeout(timeoutId); html5QrCode?.isScanning && html5QrCode.stop(); };
     }
-  }, [showScanner]);
+  }, [showScanner, products, settings.soundEnabled]);
 
   // --- Helpers ---
   const preventWheelChange = (e: React.WheelEvent<HTMLInputElement>) => {
@@ -1370,9 +1387,13 @@ export const POS: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-                <Button onClick={() => handleCheckout('whatsapp')} className="py-3 font-bold bg-[#25D366] hover:bg-[#128C7E] text-white shadow-[#25D366]/20"><Share2 size={18} className="mr-2 inline"/> WhatsApp</Button>
-                <Button onClick={() => handleCheckout('save')} variant="neutral" className="py-3 font-bold text-gray-700 bg-gray-100 border-gray-200 hover:bg-gray-200">Save Only</Button>
-                <Button onClick={() => handleCheckout('print')} className="col-span-2 py-4 text-lg font-bold bg-green-600 hover:bg-green-700 shadow-xl shadow-green-200"><Printer size={20} className="mr-2 inline"/> Confirm & Print</Button>
+                <Button onClick={() => handleCheckout('share')} className="col-span-1 py-3 font-bold bg-[#25D366] hover:bg-[#128C7E] text-white shadow-[#25D366]/20 flex items-center justify-center gap-2">
+                    {selectedCustomer?.phone ? <WhatsAppLogo /> : <CheckCircle size={20}/>}
+                    {selectedCustomer?.phone ? 'Share & Save' : 'Save Only'}
+                </Button>
+                <Button onClick={() => handleCheckout('print')} className="col-span-1 py-3 font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-200 flex items-center justify-center gap-2">
+                    <Printer size={20}/> Save & Print
+                </Button>
             </div>
         </div>
       </Modal>

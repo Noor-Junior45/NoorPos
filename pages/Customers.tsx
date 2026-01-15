@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Customer, Sale, Payment } from '../types';
 import { StoreService } from '../services/storeService';
+import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone } from 'lucide-react';
+import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone, Printer } from 'lucide-react';
 
 interface CustomersProps {
   initialAction?: string;
@@ -24,6 +25,9 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
   const [paymentNote, setPaymentNote] = useState<string>('');
+
+  // Invoice View State
+  const [viewingSale, setViewingSale] = useState<Sale | null>(null);
 
   // Input Refs for Enter Key Navigation
   const nameRef = useRef<HTMLInputElement>(null);
@@ -390,7 +394,11 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                                if (item.type === 'sale') {
                                    const sale = item.data as Sale;
                                    return (
-                                       <div key={`sale-${sale.id}`} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
+                                       <div 
+                                            key={`sale-${sale.id}`} 
+                                            onClick={() => setViewingSale(sale)}
+                                            className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                                       >
                                            <div className="flex items-center gap-3">
                                                <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500">
                                                    <Clock size={16}/>
@@ -646,6 +654,64 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                   <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={handleRecordPayment}>Clear Amount</Button>
               </div>
           </div>
+      </Modal>
+
+      {/* Invoice Details Modal */}
+      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Invoice Details">
+        {viewingSale && (
+            <div className="space-y-4">
+                <div className="flex justify-between items-start border-b border-gray-100 pb-3">
+                    <div>
+                        <p className="text-xs text-gray-500 font-bold uppercase">Invoice #</p>
+                        <p className="font-mono font-bold text-gray-800">{viewingSale.id.slice(0,8).toUpperCase()}</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-xs text-gray-500 font-bold uppercase">Date</p>
+                        <p className="text-sm font-medium text-gray-800">{new Date(viewingSale.timestamp).toLocaleDateString()}</p>
+                    </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
+                    {viewingSale.items.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0 text-sm">
+                            <div>
+                                <span className="font-bold text-gray-700">{item.name}</span>
+                                <div className="text-xs text-gray-500">x{item.quantity} @ {item.sellPrice.toFixed(2)}</div>
+                            </div>
+                            <span className="font-bold text-gray-800">
+                                {(item.quantity * item.sellPrice).toFixed(2)}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="space-y-1 pt-2">
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Subtotal</span>
+                        <span>{viewingSale.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Tax</span>
+                        <span>{viewingSale.tax.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-lg font-bold text-gray-900 border-t border-gray-100 pt-2 mt-2">
+                        <span>Total</span>
+                        <span>{viewingSale.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm text-gray-600">
+                        <span>Paid via {viewingSale.paymentMethod || 'Cash'}</span>
+                        <span>{viewingSale.amountPaid !== undefined ? viewingSale.amountPaid.toFixed(2) : viewingSale.total.toFixed(2)}</span>
+                    </div>
+                </div>
+
+                <div className="flex gap-3 mt-4">
+                    <Button variant="neutral" className="flex-1" onClick={() => setViewingSale(null)}>Close</Button>
+                    <Button className="flex-1 flex items-center justify-center gap-2" onClick={() => generateInvoicePDF(viewingSale)}>
+                        <Printer size={16}/> Print Invoice
+                    </Button>
+                </div>
+            </div>
+        )}
       </Modal>
 
     </div>
