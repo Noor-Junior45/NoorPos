@@ -1,7 +1,8 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { User, StoreSettings } from '../types';
 import { Card, Button, Input, Modal } from '../components/UI';
-import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, Sparkles, Server, HardDrive, Image as ImageIcon } from 'lucide-react';
+import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2 } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils } from '../utils/googleDrive';
 
@@ -19,7 +20,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [tempNas, setTempNas] = useState<{ nasUrl: string, syncToNas: boolean }>({ nasUrl: '', syncToNas: false });
   const [googleProfile, setGoogleProfile] = useState<any>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showContactDropdown, setShowContactDropdown] = useState(false);
+  const [showTermsDropdown, setShowTermsDropdown] = useState(false);
   const [lastBackup, setLastBackup] = useState<string | null>(null);
+  
+  // Staff Sharing State
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  const [showShareSuccess, setShowShareSuccess] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +132,32 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       await StoreService.saveSettings(newSettings);
       setStoreSettings(newSettings);
   };
+  
+  const handleInviteStaff = async () => {
+      if (!inviteEmail || !inviteEmail.includes('@')) {
+          alert("Please enter a valid email address.");
+          return;
+      }
+      
+      const session = GoogleDriveUtils.getSession();
+      if (!session) {
+          alert("You must be logged in with Google to share access.");
+          return;
+      }
+
+      setIsInviting(true);
+      try {
+          await GoogleDriveUtils.shareDatabase(session.accessToken, session.spreadsheetId, inviteEmail);
+          setInviteEmail('');
+          setShowShareSuccess(true);
+          setTimeout(() => setShowShareSuccess(false), 3000);
+      } catch (err: any) {
+          console.error(err);
+          alert("Failed to share: " + (err.message || "Unknown Error"));
+      } finally {
+          setIsInviting(false);
+      }
+  };
 
   const handleLogout = async () => {
       if (confirm("Sign out? Local data will remain, but you will need to log in again to sync.")) {
@@ -169,25 +203,25 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-32 animate-in fade-in">
         
-        {/* 1. Profile Header */}
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+        {/* 1. Profile Header - Updated for Mobile Layout */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4 w-full">
                 {googleProfile?.picture ? (
-                    <img src={googleProfile.picture} alt="Profile" className="w-16 h-16 rounded-full shadow-lg border-2 border-white" />
+                    <img src={googleProfile.picture} alt="Profile" className="w-16 h-16 rounded-full shadow-lg border-2 border-white shrink-0" />
                 ) : (
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shrink-0">
                         {user.name.charAt(0)}
                     </div>
                 )}
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">{googleProfile?.name || user.name}</h1>
+                <div className="min-w-0 flex-1">
+                    <h1 className="text-2xl font-bold text-gray-900 truncate">{googleProfile?.name || user.name}</h1>
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <span>{googleProfile?.email || user.username}</span>
-                        <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 font-bold border border-green-200">Online</span>
+                        <span className="truncate">{googleProfile?.email || user.username}</span>
+                        <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 font-bold border border-green-200 shrink-0">Online</span>
                     </div>
                 </div>
             </div>
-            <Button onClick={handleLogout} variant="neutral" className="border-red-100 text-red-600 hover:bg-red-50">
+            <Button onClick={handleLogout} variant="neutral" className="w-full md:w-auto border-red-100 text-red-600 hover:bg-red-50 flex justify-center">
                 <LogOut size={18} className="mr-2 inline"/> Sign Out
             </Button>
         </div>
@@ -397,7 +431,42 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
              )}
         </Card>
 
-        {/* 5. Sync Status */}
+        {/* 5. Staff Sharing (Moved below NAS) */}
+        {googleProfile && (
+            <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+                <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
+                    <Users size={20} className="text-indigo-600"/>
+                    <h2 className="font-bold text-gray-800">Staff Access & Sharing</h2>
+                </div>
+                <div className="p-5">
+                    <div className="mb-4">
+                        <p className="text-sm text-gray-600 mb-2">Invite staff members to access this store database. They must log in with their Google Account.</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Input 
+                            placeholder="staff.member@gmail.com" 
+                            value={inviteEmail} 
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            className="flex-1 !py-2.5"
+                        />
+                        <Button 
+                            onClick={handleInviteStaff} 
+                            disabled={isInviting || !inviteEmail}
+                            className="bg-indigo-600 hover:bg-indigo-700 w-28 flex items-center justify-center"
+                        >
+                            {isInviting ? <Loader2 size={18} className="animate-spin" /> : <><UserPlus size={18} className="mr-2"/> Invite</>}
+                        </Button>
+                    </div>
+                    {showShareSuccess && (
+                        <div className="mt-3 p-2 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                            <CheckSquare size={16}/> Invitation sent successfully!
+                        </div>
+                    )}
+                </div>
+            </Card>
+        )}
+
+        {/* 6. Sync Status */}
         <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
             <div className="bg-white p-5">
                 <div className="flex items-center gap-4">
@@ -421,7 +490,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </Card>
 
-        {/* 6. Actions */}
+        {/* 7. Actions */}
         <div className="pt-4 flex flex-col gap-3">
             <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider px-2">Data Management</h3>
             
@@ -449,6 +518,66 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </button>
             
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
+        </div>
+
+        {/* 8. Support & Legal */}
+        <div className="pt-2 flex flex-col gap-3">
+            <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider px-2">Support & Legal</h3>
+            
+            <div className="overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm hover:border-blue-300 transition-all">
+                <button 
+                    onClick={() => setShowTermsDropdown(!showTermsDropdown)} 
+                    className="w-full p-4 flex items-center justify-between group bg-white"
+                >
+                    <div className="flex items-center gap-3">
+                        <FileText size={20} className="text-gray-400 group-hover:text-blue-500"/>
+                        <span className="font-medium text-gray-700">Terms & Conditions</span>
+                    </div>
+                    {showTermsDropdown ? <ChevronDown size={18} className="text-gray-500"/> : <ChevronRight size={18} className="text-gray-300"/>}
+                </button>
+                
+                {showTermsDropdown && (
+                    <div className="px-4 pb-4 pt-0 bg-white animate-in slide-in-from-top-2">
+                        <div className="pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-400 mb-2">Read our policies:</p>
+                            <a 
+                                href="https://terms-conditions-store.vercel.app" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                            >
+                                <ExternalLink size={16} className="text-gray-500"/>
+                                <span className="text-sm font-bold text-gray-800">View Online</span>
+                            </a>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-all">
+                <button 
+                    onClick={() => setShowContactDropdown(!showContactDropdown)} 
+                    className="w-full p-4 flex items-center justify-between group bg-white"
+                >
+                    <div className="flex items-center gap-3">
+                        <Headphones size={20} className="text-gray-400 group-hover:text-green-500"/>
+                        <span className="font-medium text-gray-700">Contact Support</span>
+                    </div>
+                    {showContactDropdown ? <ChevronDown size={18} className="text-gray-500"/> : <ChevronRight size={18} className="text-gray-300"/>}
+                </button>
+                
+                {showContactDropdown && (
+                    <div className="px-4 pb-4 pt-0 bg-white animate-in slide-in-from-top-2">
+                        <div className="pt-3 border-t border-gray-100">
+                            <p className="text-xs text-gray-400 mb-2">Reach us at:</p>
+                            <a href="mailto:newluckypharmacy@gmail.com" className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors">
+                                <Mail size={16} className="text-gray-500"/>
+                                <span className="text-sm font-bold text-gray-800">newluckypharmacy@gmail.com</span>
+                            </a>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
 
         {/* Reset Confirm Modal */}

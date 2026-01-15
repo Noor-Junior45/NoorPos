@@ -100,7 +100,11 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const [showTagModal, setShowTagModal] = useState(false);
   const [newTag, setNewTag] = useState<Partial<Tag>>({ name: '', color: '#3b82f6' });
   const [itemToDelete, setItemToDelete] = useState<{ id: string, type: 'product' | 'tag' | 'bulk_products', name: string } | null>(null);
+  
+  // Scanner State
   const [showScanner, setShowScanner] = useState(false);
+  const [isScanningToAdd, setIsScanningToAdd] = useState(false);
+
   const [activeFilter, setActiveFilter] = useState<ProductFilter>(ProductFilter.ALL);
   const [settingsSearch, setSettingsSearch] = useState('');
 
@@ -137,6 +141,11 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     if (initialAction === 'add') {
         handleOpenAdd();
         if (onClearAction) onClearAction();
+    } else if (initialAction === 'scan_add') {
+        resetForm();
+        setIsScanningToAdd(true);
+        setShowScanner(true);
+        if (onClearAction) onClearAction();
     }
   }, [initialAction]);
 
@@ -169,13 +178,28 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
             };
             html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
                     if (settings.soundEnabled) { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); }
-                    if (isEditorOpen) { setNewProduct(prev => ({ ...prev, sku: decodedText })); } else { setSearchTerm(decodedText); setActiveTab(SubTab.PRODUCTS); }
-                    setShowScanner(false);
+                    
+                    if (isScanningToAdd) {
+                        // Scan to Add Mode
+                        setNewProduct(prev => ({ ...prev, sku: decodedText }));
+                        setShowScanner(false);
+                        setIsEditorOpen(true);
+                        setIsScanningToAdd(false);
+                    } else if (isEditorOpen) { 
+                        // Just filling the field in an open form
+                        setNewProduct(prev => ({ ...prev, sku: decodedText })); 
+                        setShowScanner(false);
+                    } else { 
+                        // Scan to Search
+                        setSearchTerm(decodedText); 
+                        setActiveTab(SubTab.PRODUCTS); 
+                        setShowScanner(false);
+                    }
                 }, () => {}).catch(console.error);
         }, 300);
         return () => { clearTimeout(timeoutId); if (html5QrCode && html5QrCode.isScanning) { html5QrCode.stop().then(() => html5QrCode?.clear()).catch(console.error); } };
     }
-  }, [showScanner, isEditorOpen, settings.soundEnabled]);
+  }, [showScanner, isEditorOpen, settings.soundEnabled, isScanningToAdd]);
   
   useEffect(() => {
       let stream: MediaStream | null = null;
@@ -1289,7 +1313,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                                             />
                                         </div>
                                         <div className="relative mt-1">
-                                            <span className="absolute left-2 top-1.5 text-gray-400 text-[10px]">Buy</span>
+                                            <span className="absolute left-2 top-1.5 text-gray-400 text-xs">Buy</span>
                                             <input 
                                                 type="number"
                                                 className="w-full pl-8 bg-transparent border-b border-transparent focus:border-gray-400 focus:outline-none text-right text-xs text-gray-500 py-1"
@@ -1401,6 +1425,22 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
              <div id="reader" className="w-full"></div>
              <p className="absolute bottom-4 text-white text-xs bg-black/50 px-2 py-1 rounded z-10">Point camera at barcode</p>
         </div>
+        
+        {isScanningToAdd && (
+            <div className="mt-4 pt-4 border-t border-gray-100 flex justify-center">
+                <Button 
+                    variant="neutral" 
+                    onClick={() => {
+                        setShowScanner(false);
+                        setIsEditorOpen(true);
+                        setIsScanningToAdd(false);
+                    }}
+                    className="w-full"
+                >
+                    Can't scan? Enter Manually
+                </Button>
+            </div>
+        )}
       </Modal>
       
       <Modal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} title={itemToDelete?.type === 'tag' ? "Delete Category" : "Confirm Delete"}>

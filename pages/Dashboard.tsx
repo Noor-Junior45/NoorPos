@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
 import { Customer, Sale, Product, Tab, Tag } from '../types';
 import { Card, Badge, Button } from '../components/UI';
-import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign } from 'lucide-react';
+import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface DashboardProps {
@@ -121,7 +122,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in pb-24">
+    <div className="space-y-6 animate-in fade-in pb-24 relative">
+        
+        {/* Floating Scan Button (Transparent Glass Style) */}
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+            <button 
+                onClick={() => onNavigate(Tab.WAREHOUSE, 'scan_add')}
+                className="flex items-center gap-3 pl-3 pr-6 py-2.5 rounded-full bg-white/40 backdrop-blur-xl border border-white/60 text-gray-800 hover:bg-white/60 transition-all active:scale-95 shadow-[0_8px_30px_rgb(0,0,0,0.12)] group"
+            >
+                <div className="p-2 bg-red-600 rounded-full shadow-lg shadow-red-500/30 text-white">
+                    <Scan size={18} className="group-hover:rotate-12 transition-transform"/>
+                </div>
+                <span className="font-bold tracking-wide text-sm mr-1">Scan to Add</span>
+            </button>
+        </div>
+
         {/* Header with Quick Tools */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2 px-1 pt-2">
             <div className="flex items-center gap-3">
@@ -135,26 +150,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
             
             {/* Quick Actions Toolbar */}
-            <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm overflow-x-auto max-w-full">
-                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2">Quick Tools:</span>
-                <button 
-                    onClick={() => onNavigate(Tab.POS)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors text-xs font-bold whitespace-nowrap"
-                >
-                    <ShoppingCart size={14}/> New Sale
-                </button>
-                <button 
-                    onClick={() => onNavigate(Tab.WAREHOUSE, 'add')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-bold whitespace-nowrap"
-                >
-                    <Package size={14}/> Add Stock
-                </button>
-                <button 
-                    onClick={() => onNavigate(Tab.CUSTOMERS, 'add')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors text-xs font-bold whitespace-nowrap"
-                >
-                    <UserPlus size={14}/> New Customer
-                </button>
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                    <button 
+                        onClick={() => onNavigate(Tab.POS)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors text-xs font-bold whitespace-nowrap"
+                    >
+                        <ShoppingCart size={14}/> New Sale
+                    </button>
+                    <button 
+                        onClick={() => onNavigate(Tab.WAREHOUSE, 'add')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-bold whitespace-nowrap"
+                    >
+                        <Package size={14}/> Add Manual
+                    </button>
+                    <button 
+                        onClick={() => onNavigate(Tab.CUSTOMERS, 'add')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors text-xs font-bold whitespace-nowrap"
+                    >
+                        <UserPlus size={14}/> Customer
+                    </button>
+                </div>
             </div>
         </div>
 

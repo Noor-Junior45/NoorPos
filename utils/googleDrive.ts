@@ -1,4 +1,6 @@
 
+
+
 // CLIENT_ID is now expected to be provided via Environment Variable
 // Scopes: drive.file (create/open files), spreadsheets (read/write sheets), userinfo (profile data)
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
@@ -119,6 +121,30 @@ export const GoogleDriveUtils = {
     });
 
     return spreadsheetId;
+  },
+
+  /**
+   * Shares the database file with another email address.
+   */
+  shareDatabase: async (accessToken: string, spreadsheetId: string, email: string) => {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions`, {
+        method: 'POST',
+        headers: { 
+            Authorization: `Bearer ${accessToken}`, 
+            'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({
+            role: 'writer',
+            type: 'user',
+            emailAddress: email
+        })
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(`Sharing failed: ${err?.error?.message || res.statusText}`);
+    }
+    return true;
   },
 
   /**
