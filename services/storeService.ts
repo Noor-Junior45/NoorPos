@@ -1,3 +1,4 @@
+
 import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User } from '../types';
 import { GoogleDriveUtils } from '../utils/googleDrive';
 
@@ -11,14 +12,9 @@ interface StoreData {
 }
 
 // Initial Data for fresh starts
-const initialTags: Tag[] = [
-  { id: 't1', name: 'Fruits', color: '#fbbf24' },
-  { id: 't2', name: 'Dairy', color: '#3b82f6' },
-  { id: 't3', name: 'Bakery', color: '#d97706' },
-  { id: 't4', name: 'Beverage', color: '#8b5cf6' },
-];
+const initialTags: Tag[] = []; // Start clean, no pre-filled tags
 
-const initialProducts: Product[] = []; // Start clean
+const initialProducts: Product[] = []; // Start clean, no pre-filled products
 const initialCustomers: Customer[] = [];
 const initialUsers: User[] = [];
 

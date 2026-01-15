@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon, Check } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -28,70 +29,29 @@ const UNITS = [
 ];
 
 const TAG_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e', '#10b981', '#14b8a6', 
-    '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', 
-    '#ec4899', '#f43f5e', '#64748b', '#1f2937'
+  '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', 
+  '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', 
+  '#f43f5e', '#64748b'
 ];
 
-// Helper Component for Settings Rows to prevent re-renders losing focus
 const ProductSettingRow: React.FC<{ 
     product: Product; 
-    type: 'stock' | 'expiry'; 
+    type: 'stock'; 
     onUpdate: (id: string, updates: Partial<Product>) => void 
 }> = ({ product, type, onUpdate }) => {
-    const [val, setVal] = useState(type === 'stock' ? product.lowStockThreshold : (product.expiryDate || ''));
-
-    useEffect(() => {
-        setVal(type === 'stock' ? product.lowStockThreshold : (product.expiryDate || ''));
-    }, [product.lowStockThreshold, product.expiryDate, type]);
-
-    const handleBlur = () => {
-        if (type === 'stock') {
-            const numVal = parseInt(val as string) || 0;
-            if (numVal !== product.lowStockThreshold) {
-                onUpdate(product.id, { lowStockThreshold: numVal });
-            }
-        } else {
-            if (val !== product.expiryDate) {
-                onUpdate(product.id, { expiryDate: val as string });
-            }
-        }
-    };
-
     return (
-        <div className="flex items-center justify-between p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 group">
-            <div className="min-w-0 flex-1 pr-4">
-                <div className="font-medium text-sm text-gray-700 truncate">{product.name}</div>
-                <div className="text-xs text-gray-400 flex items-center gap-2">
-                    {type === 'stock' ? (
-                        <>
-                            <span className={product.stock < product.lowStockThreshold ? "text-red-500 font-bold" : ""}>
-                                {product.stock} {product.unit} in stock
-                            </span>
-                        </>
-                    ) : (
-                        <>
-                            <span>Manuf: {product.manufacturingDate ? new Date(product.manufacturingDate).toLocaleDateString() : '-'}</span>
-                        </>
-                    )}
-                </div>
+        <div className="flex justify-between items-center p-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+            <div className="flex-1 min-w-0 pr-4">
+                <div className="font-bold text-gray-800 text-sm truncate">{product.name}</div>
+                <div className="text-xs text-gray-400">Current Stock: {product.stock} {product.unit}</div>
             </div>
-            <div className="shrink-0">
-                <div className={`flex items-center bg-white border border-gray-200 rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/50 transition-all ${type === 'expiry' ? 'w-36' : 'w-24'}`}>
-                    <input 
-                        type={type === 'stock' ? "number" : "date"}
-                        className="w-full px-2 py-1.5 text-sm bg-transparent outline-none text-gray-700 font-medium"
-                        value={val}
-                        onChange={(e) => setVal(e.target.value)}
-                        onBlur={handleBlur}
-                        placeholder={type === 'stock' ? "0" : "YYYY-MM-DD"}
-                    />
-                    {type === 'stock' && (
-                        <span className="bg-gray-50 border-l border-gray-200 px-2 py-1.5 text-xs text-gray-500 select-none">
-                            limit
-                        </span>
-                    )}
-                </div>
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-100 transition-all w-24">
+                <input 
+                    type="number"
+                    className="w-full text-center font-bold text-gray-700 outline-none text-sm"
+                    value={product.lowStockThreshold}
+                    onChange={(e) => onUpdate(product.id, { lowStockThreshold: parseInt(e.target.value) || 0 })}
+                />
             </div>
         </div>
     );
@@ -194,325 +154,79 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     setSales(salesData);
     setLoading(false);
   };
-
+  
   // Barcode Scanner Logic
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
     if (showScanner) {
-        // Wait for modal transition to complete to ensure DOM element exists
         const timeoutId = setTimeout(() => {
             if (!document.getElementById("reader")) return;
-            
             html5QrCode = new Html5Qrcode("reader");
-            
-            // Configuration optimized to prevent "zoomed in" effect
             const config = { 
-                fps: 15, // Increased FPS for smoother scanning
-                // Do NOT set aspectRatio here, let it adapt to the video feed.
-                // Using a rectangular qrbox matches barcode shape better and avoids cropping.
-                qrbox: { width: 300, height: 200 }, 
-                experimentalFeatures: {
-                    useBarCodeDetectorIfSupported: true
-                },
-                videoConstraints: {
-                    facingMode: "environment",
-                    focusMode: "continuous", // Try to force continuous focus
-                }
+                fps: 15, qrbox: { width: 300, height: 200 }, 
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                videoConstraints: { facingMode: "environment", focusMode: "continuous" }
             };
-            
-            html5QrCode.start(
-                { facingMode: "environment" },
-                config,
-                (decodedText) => {
-                    if (settings.soundEnabled) {
-                        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-                        audio.play().catch(() => {});
-                    }
-                    
-                    if (isEditorOpen) {
-                        setNewProduct(prev => ({ ...prev, sku: decodedText }));
-                    } else {
-                        setSearchTerm(decodedText);
-                        setActiveTab(SubTab.PRODUCTS);
-                    }
+            html5QrCode.start({ facingMode: "environment" }, config, (decodedText) => {
+                    if (settings.soundEnabled) { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); }
+                    if (isEditorOpen) { setNewProduct(prev => ({ ...prev, sku: decodedText })); } else { setSearchTerm(decodedText); setActiveTab(SubTab.PRODUCTS); }
                     setShowScanner(false);
-                },
-                (errorMessage) => {
-                    // console.log(errorMessage);
-                }
-            ).catch(err => {
-                console.error("Error starting scanner", err);
-            });
+                }, () => {}).catch(console.error);
         }, 300);
-
-        return () => {
-            clearTimeout(timeoutId);
-            if (html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => html5QrCode?.clear()).catch(console.error);
-            }
-        };
+        return () => { clearTimeout(timeoutId); if (html5QrCode && html5QrCode.isScanning) { html5QrCode.stop().then(() => html5QrCode?.clear()).catch(console.error); } };
     }
   }, [showScanner, isEditorOpen, settings.soundEnabled]);
   
-  // Camera Logic for Image Capture
   useEffect(() => {
       let stream: MediaStream | null = null;
       if (showCamera) {
-          const startCamera = async () => {
-              try {
-                  stream = await navigator.mediaDevices.getUserMedia({ 
-                      video: { facingMode: 'environment' } 
-                  });
-                  if (videoRef.current) {
-                      videoRef.current.srcObject = stream;
-                  }
-              } catch (err) {
-                  console.error("Camera Error:", err);
-                  alert("Could not access camera. Please allow permissions.");
-                  setShowCamera(false);
-              }
-          };
-          startCamera();
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(s => { stream = s; if (videoRef.current) videoRef.current.srcObject = stream; }).catch(() => { alert("Could not access camera."); setShowCamera(false); });
       }
-      return () => {
-          if (stream) {
-              stream.getTracks().forEach(track => track.stop());
-          }
-      };
+      return () => { if (stream) stream.getTracks().forEach(track => track.stop()); };
   }, [showCamera]);
 
   const capturePhoto = () => {
       if (videoRef.current) {
           const video = videoRef.current;
           const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
           const ctx = canvas.getContext('2d');
           if (ctx) {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-              
-              // Process capture
-              setInvoiceImage(dataUrl);
-              setShowCamera(false);
-              
-              // Create a File object from Data URL for the parser
-              fetch(dataUrl)
-                  .then(res => res.blob())
-                  .then(blob => {
-                      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
-                      processImageFile(file);
-                  });
+              setInvoiceImage(dataUrl); setShowCamera(false);
+              fetch(dataUrl).then(res => res.blob()).then(blob => { processImageFile(new File([blob], "capture.jpg", { type: "image/jpeg" })); });
           }
       }
   };
 
-  const handleUpdateSettings = async (newSettings: StoreSettings) => {
-      setSettings(newSettings);
-      await StoreService.saveSettings(newSettings);
-  };
-
-  const handleInlineProductUpdate = async (id: string, updates: Partial<Product>) => {
-      // Optimistic update
-      setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
-      await StoreService.updateProduct(id, updates);
-  };
-
-  const handleBatchChange = (field: 'packs' | 'perPack', value: string) => {
-      const newConfig = { ...batchConfig, [field]: value };
-      setBatchConfig(newConfig);
-      
-      const packs = parseFloat(newConfig.packs);
-      const perPack = parseFloat(newConfig.perPack);
-      
-      if (!isNaN(packs) && !isNaN(perPack) && packs >= 0 && perPack >= 0) {
-          setNewProduct(prev => ({ ...prev, stock: Math.floor(packs * perPack) }));
-      }
-  };
-  
+  const handleUpdateSettings = async (newSettings: StoreSettings) => { setSettings(newSettings); await StoreService.saveSettings(newSettings); };
+  const handleInlineProductUpdate = async (id: string, updates: Partial<Product>) => { setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p)); await StoreService.updateProduct(id, updates); };
+  const handleBatchChange = (field: 'packs' | 'perPack', value: string) => { const newConfig = { ...batchConfig, [field]: value }; setBatchConfig(newConfig); const packs = parseFloat(newConfig.packs); const perPack = parseFloat(newConfig.perPack); if (!isNaN(packs) && !isNaN(perPack) && packs >= 0 && perPack >= 0) { setNewProduct(prev => ({ ...prev, stock: Math.floor(packs * perPack) })); } };
   const getTag = (id?: string) => tags.find(t => t.id === id);
-
-  // Updated Expiry Logic
-  const getDaysUntilExpiry = (dateStr?: string) => {
-    if (!dateStr) return Infinity;
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const exp = new Date(dateStr);
-    exp.setHours(0,0,0,0);
-    const diffTime = exp.getTime() - today.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  };
-
-  const isAboutToExpire = (dateStr?: string) => {
-    if (!dateStr) return false;
-    const diffDays = getDaysUntilExpiry(dateStr);
-    return diffDays >= 0 && diffDays <= (settings.expiryAlertDays || 7);
-  };
-
+  const getDaysUntilExpiry = (dateStr?: string) => { if (!dateStr) return Infinity; const today = new Date(); today.setHours(0,0,0,0); const exp = new Date(dateStr); exp.setHours(0,0,0,0); return Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)); };
+  const isAboutToExpire = (dateStr?: string) => { if (!dateStr) return false; const diffDays = getDaysUntilExpiry(dateStr); return diffDays >= 0 && diffDays <= (settings.expiryAlertDays || 7); };
   const formatDate = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleDateString('en-GB') : '-';
-  const formatDateTime = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
-
-  const handleSaveProduct = async () => {
-    if (!newProduct.name || !newProduct.sellPrice) return;
-    if (isEditing && newProduct.id) await StoreService.updateProduct(newProduct.id, newProduct);
-    else await StoreService.addProduct(newProduct as Product);
-    setIsEditorOpen(false); setIsEditing(false); loadData(); resetForm();
-  };
-  
-  const handleSaveTag = async () => { 
-    if (!newTag.name) return; 
-    const createdTag = await StoreService.addTag(newTag as Tag); 
-    await loadData();
-    if (isEditorOpen) setNewProduct(prev => ({ ...prev, tagId: createdTag.id }));
-    setShowTagModal(false); 
-    setNewTag({ name: '', color: '#3b82f6' }); 
-  };
-
-  const resetForm = () => {
-    setNewProduct({ 
-        name: '', sku: '', stock: 0, unit: 'pcs', capacity: '', 
-        buyPrice: 0, sellPrice: 0, wholesalePrice: 0, 
-        lowStockThreshold: settings.lowStockDefault, location: '', taxRate: 0,
-        expiryDate: '', manufacturingDate: ''
-    });
-    setBatchConfig({ packs: '', perPack: '' });
-  };
-
-  const toggleGroup = (groupId: string) => {
-    const newExpanded = new Set(expandedGroups);
-    if (newExpanded.has(groupId)) newExpanded.delete(groupId);
-    else newExpanded.add(groupId);
-    setExpandedGroups(newExpanded);
-  };
-
-  const handleNameBlur = () => {
-    if (!newProduct.name || isEditing) return;
-    const existing = products.find(p => p.name.toLowerCase() === newProduct.name?.toLowerCase());
-    if (existing) {
-        setNewProduct(prev => ({
-            ...prev,
-            tagId: prev.tagId || existing.tagId,
-            location: prev.location || existing.location,
-            unit: existing.unit,
-            capacity: existing.capacity,
-            lowStockThreshold: existing.lowStockThreshold,
-            buyPrice: prev.buyPrice || existing.buyPrice,
-            wholesalePrice: prev.wholesalePrice || existing.wholesalePrice,
-            sellPrice: prev.sellPrice || existing.sellPrice,
-            taxRate: existing.taxRate,
-        }));
-    }
-  };
-
-  const handleEditProduct = (p: Product) => { 
-      setNewProduct({ ...p }); 
-      setBatchConfig({ packs: '', perPack: '' });
-      setIsEditing(true); 
-      setIsEditorOpen(true); 
-  };
-  
-  const handleCloneProduct = (p: Product) => {
-      setNewProduct({
-          ...p,
-          id: undefined,
-          stock: 0,
-          expiryDate: '',
-          manufacturingDate: '',
-          sku: p.sku
-      });
-      setBatchConfig({ packs: '', perPack: '' });
-      setIsEditing(false);
-      setIsEditorOpen(true);
-  };
-
+  const handleSaveProduct = async () => { if (!newProduct.name || !newProduct.sellPrice) return; if (isEditing && newProduct.id) await StoreService.updateProduct(newProduct.id, newProduct); else await StoreService.addProduct(newProduct as Product); setIsEditorOpen(false); setIsEditing(false); loadData(); resetForm(); };
+  const handleSaveTag = async () => { if (!newTag.name) return; const createdTag = await StoreService.addTag(newTag as Tag); await loadData(); if (isEditorOpen) setNewProduct(prev => ({ ...prev, tagId: createdTag.id })); setShowTagModal(false); setNewTag({ name: '', color: '#3b82f6' }); };
+  const resetForm = () => { setNewProduct({ name: '', sku: '', stock: 0, unit: 'pcs', capacity: '', buyPrice: 0, sellPrice: 0, wholesalePrice: 0, lowStockThreshold: settings.lowStockDefault, location: '', taxRate: 0, expiryDate: '', manufacturingDate: '' }); setBatchConfig({ packs: '', perPack: '' }); };
+  const toggleGroup = (groupId: string) => { const newExpanded = new Set(expandedGroups); if (newExpanded.has(groupId)) newExpanded.delete(groupId); else newExpanded.add(groupId); setExpandedGroups(newExpanded); };
+  const handleNameBlur = () => { if (!newProduct.name || isEditing) return; const existing = products.find(p => p.name.toLowerCase() === newProduct.name?.toLowerCase()); if (existing) { setNewProduct(prev => ({ ...prev, tagId: prev.tagId || existing.tagId, location: prev.location || existing.location, unit: existing.unit, capacity: existing.capacity, lowStockThreshold: existing.lowStockThreshold, buyPrice: prev.buyPrice || existing.buyPrice, wholesalePrice: prev.wholesalePrice || existing.wholesalePrice, sellPrice: prev.sellPrice || existing.sellPrice, taxRate: existing.taxRate, })); } };
+  const handleEditProduct = (p: Product) => { setNewProduct({ ...p }); setBatchConfig({ packs: '', perPack: '' }); setIsEditing(true); setIsEditorOpen(true); };
+  const handleCloneProduct = (p: Product) => { setNewProduct({ ...p, id: undefined, stock: 0, expiryDate: '', manufacturingDate: '', sku: p.sku }); setBatchConfig({ packs: '', perPack: '' }); setIsEditing(false); setIsEditorOpen(true); };
   const handleOpenAdd = () => { resetForm(); setIsEditing(false); setIsEditorOpen(true); };
+  const confirmDelete = async () => { if (!itemToDelete) return; if (itemToDelete.type === 'product') await StoreService.deleteProduct(itemToDelete.id); else if (itemToDelete.type === 'tag') await StoreService.deleteTag(itemToDelete.id); setItemToDelete(null); loadData(); };
+  const handleEditorKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null) => { if (e.key === 'Enter') { e.preventDefault(); nextRef?.current?.focus(); } };
+  const handleAnalyzeClick = () => { setShowSourceOptions(true); };
+  const handleUploadOption = () => { setShowSourceOptions(false); fileInputRef.current?.click(); };
+  const handleCameraOption = () => { setShowSourceOptions(false); setShowCamera(true); };
+  const processImageFile = async (file: File) => { setIsParsingInvoice(true); try { const products = await GeminiService.parseInvoice(file); setParsedProducts(products); setViewMode('REVIEW'); } catch (err) { console.error(err); alert("Failed to process image. Please try again."); } finally { setIsParsingInvoice(false); } };
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const previewUrl = URL.createObjectURL(file); setInvoiceImage(previewUrl); await processImageFile(file); if (fileInputRef.current) fileInputRef.current.value = ''; };
+  const handleCloseReview = () => { setViewMode('WAREHOUSE'); if (invoiceImage) { URL.revokeObjectURL(invoiceImage); setInvoiceImage(null); } setParsedProducts([]); };
+  const handleImportParsedProducts = async () => { await StoreService.batchAddProducts(parsedProducts); handleCloseReview(); loadData(); };
+  const updateParsedProduct = (index: number, field: keyof Product, value: any) => { const updated = [...parsedProducts]; updated[index] = { ...updated[index], [field]: value }; setParsedProducts(updated); };
+  const removeParsedProduct = (index: number) => { const updated = parsedProducts.filter((_, i) => i !== index); setParsedProducts(updated); };
   
-  const confirmDelete = async () => { 
-    if (!itemToDelete) return; 
-    if (itemToDelete.type === 'product') await StoreService.deleteProduct(itemToDelete.id); 
-    else if (itemToDelete.type === 'tag') await StoreService.deleteTag(itemToDelete.id);
-    
-    setItemToDelete(null); 
-    loadData(); 
-  };
-
-  // Keyboard navigation for Editor
-  const handleEditorKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null) => {
-      if (e.key === 'Enter') {
-          e.preventDefault();
-          nextRef?.current?.focus();
-      }
-  };
-
-  // Invoice Parsing Handlers
-  const handleAnalyzeClick = () => {
-      setShowSourceOptions(true);
-  };
-
-  const handleUploadOption = () => {
-      setShowSourceOptions(false);
-      fileInputRef.current?.click();
-  };
-
-  const handleCameraOption = () => {
-      setShowSourceOptions(false);
-      setShowCamera(true);
-  };
-
-  const processImageFile = async (file: File) => {
-    setIsParsingInvoice(true);
-    try {
-        const products = await GeminiService.parseInvoice(file);
-        setParsedProducts(products);
-        setViewMode('REVIEW'); // Switch to Review Page View
-    } catch (err) {
-        console.error(err);
-        alert("Failed to process image. Please try again.");
-    } finally {
-        setIsParsingInvoice(false);
-    }
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Create preview URL
-    const previewUrl = URL.createObjectURL(file);
-    setInvoiceImage(previewUrl);
-    
-    await processImageFile(file);
-    
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleCloseReview = () => {
-    setViewMode('WAREHOUSE'); // Switch back
-    if (invoiceImage) {
-        URL.revokeObjectURL(invoiceImage);
-        setInvoiceImage(null);
-    }
-    setParsedProducts([]);
-  };
-
-  const handleImportParsedProducts = async () => {
-    await StoreService.batchAddProducts(parsedProducts);
-    handleCloseReview();
-    loadData();
-  };
-
-  const updateParsedProduct = (index: number, field: keyof Product, value: any) => {
-    const updated = [...parsedProducts];
-    updated[index] = { ...updated[index], [field]: value };
-    setParsedProducts(updated);
-  };
-
-  const removeParsedProduct = (index: number) => {
-    const updated = parsedProducts.filter((_, i) => i !== index);
-    setParsedProducts(updated);
-  };
-  
-  // 1. Base List of Products (Affected by Low Stock/Filters, but NOT search term)
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
         if (activeFilter === ProductFilter.LOW_STOCK) return p.stock > 0 && p.stock < p.lowStockThreshold;
@@ -520,43 +234,22 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
         if (activeFilter === ProductFilter.EXPIRING_SOON) return isAboutToExpire(p.expiryDate);
         return true;
     });
-  }, [products, activeFilter, settings.expiryAlertDays]); // Removed searchTerm dependency
+  }, [products, activeFilter, settings.expiryAlertDays]);
 
-  // 2. Search Results (Specific matches based on search term)
   const searchResults = useMemo(() => {
     if (!searchTerm.trim()) return [];
     const term = searchTerm.toLowerCase();
-    
-    // Sort matches by relevance (Exact -> StartsWith -> Contains)
-    const matches = filteredProducts.filter(p => 
-        p.name.toLowerCase().includes(term) || 
-        p.sku.toLowerCase().includes(term)
-    );
-
+    const matches = filteredProducts.filter(p => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term));
     const getMatchScore = (p: Product) => {
-        const name = p.name.toLowerCase();
-        const sku = p.sku.toLowerCase();
-        if (name === term || sku === term) return 4;
-        if (name.startsWith(term) || sku.startsWith(term)) return 3;
-        if (name.includes(term) || sku.includes(term)) return 2;
-        return 1;
+        const name = p.name.toLowerCase(); const sku = p.sku.toLowerCase();
+        if (name === term || sku === term) return 4; if (name.startsWith(term) || sku.startsWith(term)) return 3; if (name.includes(term) || sku.includes(term)) return 2; return 1;
     };
-
     return matches.sort((a, b) => getMatchScore(b) - getMatchScore(a));
   }, [filteredProducts, searchTerm]);
 
-  // Helper to group products (reused for both main list and search results)
   const groupProductList = (list: Product[]) => {
-      const groups: { [key: string]: Product[] } = {};
-      const order: string[] = [];
-      list.forEach(p => {
-          const uniqueGroupKey = `${p.name}|${p.capacity || ''}|${p.unit}`;
-          if (!groups[uniqueGroupKey]) {
-              groups[uniqueGroupKey] = [];
-              order.push(uniqueGroupKey);
-          }
-          groups[uniqueGroupKey].push(p);
-      });
+      const groups: { [key: string]: Product[] } = {}; const order: string[] = [];
+      list.forEach(p => { const uniqueGroupKey = `${p.name}|${p.capacity || ''}|${p.unit}`; if (!groups[uniqueGroupKey]) { groups[uniqueGroupKey] = []; order.push(uniqueGroupKey); } groups[uniqueGroupKey].push(p); });
       return order.map(key => ({ key, items: groups[key] }));
   };
 
@@ -565,221 +258,83 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   const variantCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    groupedProducts.forEach(g => {
-        const name = g.items[0].name;
-        counts[name] = (counts[name] || 0) + 1;
-    });
+    groupedProducts.forEach(g => { const name = g.items[0].name; counts[name] = (counts[name] || 0) + 1; });
     return counts;
   }, [groupedProducts]);
 
   const getUnitBadgeStyle = (unitString: string, isMultiVariant: boolean) => {
-      if (!isMultiVariant) return "bg-gray-100 text-gray-600 border-gray-200"; // Default Grey
-      
-      const colors = [
-        'bg-orange-100 text-orange-800 border-orange-200',
-        'bg-blue-100 text-blue-800 border-blue-200',
-        'bg-purple-100 text-purple-800 border-purple-200',
-        'bg-rose-100 text-rose-800 border-rose-200',
-        'bg-emerald-100 text-emerald-800 border-emerald-200',
-        'bg-indigo-100 text-indigo-800 border-indigo-200',
-        'bg-cyan-100 text-cyan-800 border-cyan-200',
-    ];
-    let hash = 0;
-    for (let i = 0; i < unitString.length; i++) {
-        hash = unitString.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return colors[Math.abs(hash) % colors.length];
+      if (!isMultiVariant) return "bg-gray-100 text-gray-600 border-gray-200";
+      const colors = ['bg-orange-100 text-orange-800 border-orange-200', 'bg-blue-100 text-blue-800 border-blue-200', 'bg-purple-100 text-purple-800 border-purple-200', 'bg-rose-100 text-rose-800 border-rose-200', 'bg-emerald-100 text-emerald-800 border-emerald-200', 'bg-indigo-100 text-indigo-800 border-indigo-200', 'bg-cyan-100 text-cyan-800 border-cyan-200'];
+      let hash = 0; for (let i = 0; i < unitString.length; i++) { hash = unitString.charCodeAt(i) + ((hash << 5) - hash); }
+      return colors[Math.abs(hash) % colors.length];
   };
 
-  // Swipe Handlers
-  const onTouchStart = (e: React.TouchEvent) => {
-      setTouchEnd(null);
-      setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-      setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
-  };
-
+  const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY }); };
+  const onTouchMove = (e: React.TouchEvent) => { setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY }); };
   const onTouchEnd = () => {
       if (!touchStart || !touchEnd) return;
-      
-      const distanceX = touchStart.x - touchEnd.x;
-      const distanceY = touchStart.y - touchEnd.y;
-      
-      // If vertical scroll is dominant, ignore swipe
+      const distanceX = touchStart.x - touchEnd.x; const distanceY = touchStart.y - touchEnd.y;
       if (Math.abs(distanceY) > Math.abs(distanceX)) return;
-
-      const isLeftSwipe = distanceX > minSwipeDistance;
-      const isRightSwipe = distanceX < -minSwipeDistance;
-      
+      const isLeftSwipe = distanceX > minSwipeDistance; const isRightSwipe = distanceX < -minSwipeDistance;
       if (isLeftSwipe || isRightSwipe) {
           const tabs = [SubTab.DASHBOARD, SubTab.PRODUCTS, SubTab.TAGS, SubTab.SETTINGS];
           const currentIndex = tabs.indexOf(activeTab);
-          
-          if (isLeftSwipe && currentIndex < tabs.length - 1) {
-              setActiveTab(tabs[currentIndex + 1]);
-          }
-          if (isRightSwipe && currentIndex > 0) {
-              setActiveTab(tabs[currentIndex - 1]);
-          }
+          if (isLeftSwipe && currentIndex < tabs.length - 1) { setActiveTab(tabs[currentIndex + 1]); }
+          if (isRightSwipe && currentIndex > 0) { setActiveTab(tabs[currentIndex - 1]); }
       }
   };
 
-  // ... (renderProductGroup remains same)
   const renderProductGroup = (groupKey: string, items: Product[]) => {
-      const p = items[0]; 
-      const tag = getTag(p.tagId);
-      const totalStock = items.reduce((acc, item) => acc + item.stock, 0);
-      const borderColor = tag?.color || '#cbd5e1';
-      const isExpanded = expandedGroups.has(groupKey);
-      const isLow = totalStock < p.lowStockThreshold;
-      const anyExpiring = items.some(i => isAboutToExpire(i.expiryDate));
-
-      const unitString = `${p.capacity || '1'} ${p.unit}`;
-      const isMultiVariant = (variantCounts[p.name] || 0) > 1;
-      const unitBadgeClass = getUnitBadgeStyle(unitString, isMultiVariant);
-
-      // Determine Earliest Expiry
-      const validExpiries = items
-        .map(i => i.expiryDate)
-        .filter((d): d is string => !!d && d !== '');
-      
-      let earliestExpiryDisplay: string | null = null;
-      let isEarliestLow = false;
-
-      if (validExpiries.length > 0) {
-        // Sort to find the earliest date. ISO format sorts naturally.
-        validExpiries.sort();
-        earliestExpiryDisplay = validExpiries[0];
-        isEarliestLow = isAboutToExpire(earliestExpiryDisplay);
-      }
+      const p = items[0]; const tag = getTag(p.tagId); const totalStock = items.reduce((acc, item) => acc + item.stock, 0); const borderColor = tag?.color || '#cbd5e1'; const isExpanded = expandedGroups.has(groupKey); const isLow = totalStock < p.lowStockThreshold; const anyExpiring = items.some(i => isAboutToExpire(i.expiryDate));
+      const unitString = `${p.capacity || '1'} ${p.unit}`; const isMultiVariant = (variantCounts[p.name] || 0) > 1; const unitBadgeClass = getUnitBadgeStyle(unitString, isMultiVariant);
+      const validExpiries = items.map(i => i.expiryDate).filter((d): d is string => !!d && d !== '');
+      let earliestExpiryDisplay: string | null = null; let isEarliestLow = false;
+      if (validExpiries.length > 0) { validExpiries.sort(); earliestExpiryDisplay = validExpiries[0]; isEarliestLow = isAboutToExpire(earliestExpiryDisplay); }
 
       return (
-        <Card 
-            key={groupKey} 
-            className="flex flex-col !p-0 overflow-hidden hover:shadow-xl transition-all duration-300 shadow-sm bg-white"
-            style={{ 
-                border: `2px solid ${borderColor}`,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
-            }}
-        >
+        <Card key={groupKey} className="flex flex-col !p-0 overflow-hidden hover:shadow-xl transition-all duration-300 shadow-sm bg-white" style={{ border: `2px solid ${borderColor}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
             <div className="p-3 flex flex-col gap-1">
-                {/* Line 1: Name & Actions (ALWAYS VISIBLE) */}
                 <div className="flex justify-between items-start gap-2">
                     <h4 className="font-bold text-gray-900 text-2xl leading-tight line-clamp-2" title={p.name}>{p.name}</h4>
                     <div className="flex gap-2 shrink-0">
-                         <button onClick={() => handleEditProduct(p)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors bg-gray-50 border border-gray-100">
-                            <Pencil size={18} />
-                         </button>
-                         <button onClick={() => setItemToDelete({ id: p.id, type: 'product', name: p.name })} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors bg-gray-50 border border-gray-100">
-                            <Trash2 size={18} />
-                         </button>
+                         <button onClick={() => handleEditProduct(p)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors bg-gray-50 border border-gray-100"><Pencil size={18} /></button>
+                         <button onClick={() => setItemToDelete({ id: p.id, type: 'product', name: p.name })} className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors bg-gray-50 border border-gray-100"><Trash2 size={18} /></button>
                     </div>
                 </div>
-
-                {/* Line 2: SKU (Black, Bold) */}
-                <div className="text-sm font-mono font-bold text-black mt-1 mb-3">
-                    SKU: {p.sku || 'N/A'}
-                </div>
-
-                {/* Line 3: Prices (Compact Grid - Reverted to Row Layout) */}
+                <div className="text-sm font-mono font-bold text-black mt-1 mb-3">SKU: {p.sku || 'N/A'}</div>
                 <div className="grid grid-cols-3 gap-2 border-b border-dashed border-gray-200 pb-2 mb-1">
-                    <div className="flex flex-col">
-                        <span className="text-xs uppercase font-bold text-gray-500">Buy</span>
-                        <span className="font-bold text-lg text-gray-700">{settings.currencySymbol}{p.buyPrice}</span>
-                    </div>
-                    <div className="flex flex-col border-l border-gray-200 pl-2">
-                        <span className="text-xs uppercase font-bold text-gray-500">Wholesale</span>
-                        <span className="font-bold text-lg text-blue-600">{settings.currencySymbol}{p.wholesalePrice || '-'}</span>
-                    </div>
-                    <div className="flex flex-col border-l border-gray-200 pl-2">
-                        <span className="text-xs uppercase font-bold text-gray-500">Sell</span>
-                        <span className="font-extrabold text-3xl text-green-700 leading-none">{settings.currencySymbol}{p.sellPrice}</span>
-                    </div>
+                    <div className="flex flex-col"><span className="text-xs uppercase font-bold text-gray-500">Buy</span><span className="font-bold text-lg text-gray-700">{settings.currencySymbol}{p.buyPrice}</span></div>
+                    <div className="flex flex-col border-l border-gray-200 pl-2"><span className="text-xs uppercase font-bold text-gray-500">Wholesale</span><span className="font-bold text-lg text-blue-600">{settings.currencySymbol}{p.wholesalePrice || '-'}</span></div>
+                    <div className="flex flex-col border-l border-gray-200 pl-2"><span className="text-xs uppercase font-bold text-gray-500">Sell</span><span className="font-extrabold text-3xl text-green-700 leading-none">{settings.currencySymbol}{p.sellPrice}</span></div>
                 </div>
-
-                {/* Line 4: Info Line (Loc, Unit, Tax, Qty) - Reverted to Row, Added Tax Logic */}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm font-medium text-gray-600 mt-2">
-                    <span className="flex items-center gap-1">
-                        <MapPin size={14} className="text-gray-900"/> {p.location || 'N/A'}
-                    </span>
-                    
-                    <span className="flex items-center gap-1">
-                        Unit: 
-                        <span className={`px-2 py-0.5 rounded text-xs font-bold border ${unitBadgeClass}`}>
-                            {unitString}
-                        </span>
-                    </span>
-
-                    {/* Tax Always Visible */}
-                    <span className="flex items-center gap-1">
-                        Tax: {p.taxRate ? `${p.taxRate}%` : 'N/A'}
-                    </span>
-
-                    <span className={`flex items-center gap-1 ${isLow ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
-                        <Box size={14} className={isLow ? 'text-red-600' : 'text-gray-500'}/> Qty: {totalStock}
-                    </span>
+                    <span className="flex items-center gap-1"><MapPin size={14} className="text-gray-900"/> {p.location || 'N/A'}</span>
+                    <span className="flex items-center gap-1">Unit: <span className={`px-2 py-0.5 rounded text-xs font-bold border ${unitBadgeClass}`}>{unitString}</span></span>
+                    <span className="flex items-center gap-1">Tax: {p.taxRate ? `${p.taxRate}%` : 'N/A'}</span>
+                    <span className={`flex items-center gap-1 ${isLow ? 'text-red-600 font-bold' : 'text-gray-500'}`}><Box size={14} className={isLow ? 'text-red-600' : 'text-gray-500'}/> Qty: {totalStock}</span>
                 </div>
-
-                 {/* Line 5: Earliest Expiry Date */}
-                 <div className="flex items-center gap-2 mt-2 text-sm">
-                     <Clock size={14} className={isEarliestLow ? "text-amber-600" : "text-gray-400"} />
-                     <span className="text-gray-500 font-medium">Expiry:</span>
-                     <span className={`font-bold ${isEarliestLow ? "text-amber-700" : "text-gray-800"}`}>
-                        {earliestExpiryDisplay ? formatDate(earliestExpiryDisplay) : 'N/A'}
-                     </span>
-                 </div>
-
-                {/* Line 6: Badges & Toggle */}
+                 <div className="flex items-center gap-2 mt-2 text-sm"><Clock size={14} className={isEarliestLow ? "text-amber-600" : "text-gray-400"} /><span className="text-gray-500 font-medium">Expiry:</span><span className={`font-bold ${isEarliestLow ? "text-amber-700" : "text-gray-800"}`}>{earliestExpiryDisplay ? formatDate(earliestExpiryDisplay) : 'N/A'}</span></div>
                 <div className="flex justify-between items-center mt-3 pt-2 border-t border-gray-100">
                     <div className="flex gap-2 flex-wrap">
-                        {isLow && (
-                            <div className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-100">
-                                <AlertTriangle size={12}/> Low Stock
-                            </div>
-                        )}
-                        {anyExpiring && (
-                            <div className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">
-                                <Clock size={12}/> Expiring
-                            </div>
-                        )}
+                        {isLow && (<div className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md border border-red-100"><AlertTriangle size={12}/> Low Stock</div>)}
+                        {anyExpiring && (<div className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-100"><Clock size={12}/> Expiring</div>)}
                     </div>
-                    
                     <div className="flex items-center gap-1 ml-auto">
-                         <Button size="sm" variant="neutral" onClick={() => handleCloneProduct(p)} className="!px-2 !py-1 h-8 bg-gray-100 hover:bg-gray-200 border-gray-200" title="Add Batch">
-                            <Plus size={16}/>
-                         </Button>
-                         <button 
-                            onClick={() => toggleGroup(groupKey)} 
-                            className="text-gray-400 hover:text-gray-600 transition-colors p-1 bg-gray-50 rounded-md border border-gray-100 h-8 w-8 flex items-center justify-center"
-                        >
-                            {isExpanded ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}
-                        </button>
+                         <Button size="sm" variant="neutral" onClick={() => handleCloneProduct(p)} className="!px-2 !py-1 h-8 bg-gray-100 hover:bg-gray-200 border-gray-200" title="Add Batch"><Plus size={16}/></Button>
+                         <button onClick={() => toggleGroup(groupKey)} className="text-gray-400 hover:text-gray-600 transition-colors p-1 bg-gray-50 rounded-md border border-gray-100 h-8 w-8 flex items-center justify-center">{isExpanded ? <ChevronUp size={20}/> : <ChevronDown size={20}/>}</button>
                     </div>
                 </div>
             </div>
-
-            {/* Dropdown Content */}
             {isExpanded && (
                 <div className="bg-gray-50 border-t border-gray-200 p-2 text-xs animate-in slide-in-from-top-1 duration-200">
-                     {/* Batches Header */}
-                     <div className="grid grid-cols-4 text-gray-500 font-bold uppercase mb-2 px-1 text-[10px] tracking-wide">
-                        <span>Added</span>
-                        <span className="text-center">Expiry</span>
-                        <span className="text-center">Qty</span>
-                        <span className="text-right">Action</span>
-                     </div>
+                     <div className="grid grid-cols-4 text-gray-500 font-bold uppercase mb-2 px-1 text-[10px] tracking-wide"><span>Added</span><span className="text-center">Expiry</span><span className="text-center">Qty</span><span className="text-right">Action</span></div>
                      <div className="space-y-1">
                         {items.map(item => {
                             const expiring = isAboutToExpire(item.expiryDate);
                             return (
                                 <div key={item.id} className="grid grid-cols-4 items-center bg-white border border-gray-200 p-2 rounded-md shadow-sm">
                                     <div className="text-gray-700 font-medium truncate">{new Date(item.createdAt || '').toLocaleDateString('en-GB', {day: '2-digit', month: 'short'})}</div>
-                                    <div className={`text-center font-bold ${expiring ? 'text-amber-600' : 'text-gray-600'}`}>
-                                        {item.expiryDate ? formatDate(item.expiryDate) : '-'}
-                                        {expiring && <span className="block text-[8px] uppercase font-extrabold text-amber-600 leading-tight mt-0.5">Sell First</span>}
-                                    </div>
+                                    <div className={`text-center font-bold ${expiring ? 'text-amber-600' : 'text-gray-600'}`}>{item.expiryDate ? formatDate(item.expiryDate) : '-'}{expiring && <span className="block text-[8px] uppercase font-extrabold text-amber-600 leading-tight mt-0.5">Sell First</span>}</div>
                                     <div className="text-center font-extrabold text-gray-900 text-sm">{item.stock}</div>
                                     <div className="flex justify-end gap-1">
                                         <button onClick={() => handleEditProduct(item)} className="p-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded border border-blue-100 transition-colors"><Pencil size={14}/></button>
@@ -797,7 +352,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   const renderEditor = () => (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 pb-24">
-        {/* ... (Editor Content Remains Same) ... */}
+        
         <div className="flex items-center gap-4 mb-6">
             <button onClick={() => setIsEditorOpen(false)} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
             <h2 className="text-2xl font-bold text-gray-800">{isEditing ? 'Edit Product' : 'Add New Product'}</h2>
@@ -1073,7 +628,25 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     };
 
     return (
-      <div className="space-y-6 animate-in fade-in">
+      <div className="space-y-6 animate-in fade-in relative">
+        {/* Floating Scan Button */}
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+            <button
+                onClick={handleAnalyzeClick}
+                disabled={isParsingInvoice}
+                className="flex items-center gap-3 pl-4 pr-6 py-3 bg-gradient-to-b from-red-500 to-red-700 text-white rounded-full shadow-[0_10px_25px_-5px_rgba(220,38,38,0.5)] border-t border-red-400/50 active:scale-95 hover:scale-105 transition-all duration-300 group hover:shadow-[0_15px_30px_-5px_rgba(220,38,38,0.6)]"
+            >
+                <div className="p-1.5 bg-red-800/30 rounded-full shadow-inner">
+                    {isParsingInvoice ? (
+                        <Loader2 size={18} className="animate-spin text-white"/>
+                    ) : (
+                        <Scan size={18} className="text-white group-hover:rotate-12 transition-transform"/>
+                    )}
+                </div>
+                <span className="font-bold text-sm tracking-wide drop-shadow-md">Scan to Add</span>
+            </button>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="border-2 border-sky-600 shadow-sm hover:shadow-md transition-shadow">
              <div className="text-sky-700 text-xs uppercase font-bold tracking-wider">Total Products</div>
@@ -1446,12 +1019,16 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 </Card>
             ))}
         </div>
+        {tags.length === 0 && (
+            <div className="text-center py-20 text-gray-400">
+                <TagIcon size={48} className="mx-auto mb-2 opacity-20"/>
+                <p>No categories found. Create one to organize your products.</p>
+            </div>
+        )}
     </div>
   );
 
   const renderSettings = () => (
-    // ... (Settings Content Remains Same) ...
-    // Using previous code for brevity, assumes identical structure
     <div className="space-y-6 animate-in fade-in max-w-3xl mx-auto pb-20">
         <div className="flex items-center gap-3 mb-6 px-1">
             <div className="p-3 bg-gray-900 text-white rounded-xl shadow-lg shadow-gray-900/20">
@@ -1762,7 +1339,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                             ? 'bg-gray-900 text-white shadow-md' 
                             : 'text-gray-500 hover:bg-gray-100/80 hover:text-gray-900'
                         }
-                        ${tab.id === SubTab.SETTINGS ? '!px-2' : ''}
+                        ${tab.id !== SubTab.SETTINGS ? 'px-4' : 'px-2'}
                     `}
                     title={tab.label}
                 >
@@ -1786,10 +1363,36 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       {/* ... Existing Modals ... */}
       <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="Create New Tag">
           <div className="space-y-4">
-              <Input placeholder="Tag Name" value={newTag.name || ''} onChange={e => setNewTag({...newTag, name: e.target.value})} />
-              <div className="font-medium text-sm text-gray-600">Color</div>
-              <div className="flex gap-2 flex-wrap">{TAG_COLORS.map(color => (<button key={color} onClick={() => setNewTag({...newTag, color})} className={`w-8 h-8 rounded-full cursor-pointer transition-transform active:scale-90 ${newTag.color === color ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`} style={{ backgroundColor: color }} />))}</div>
-              <Button className="w-full mt-4" onClick={handleSaveTag}>Create Tag</Button>
+              <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Category Name</label>
+                  <Input placeholder="e.g. Dairy, Electronics" value={newTag.name || ''} onChange={e => setNewTag({...newTag, name: e.target.value})} className="!bg-gray-50 !border-gray-200"/>
+              </div>
+              
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">Color Code</label>
+                <div className="grid grid-cols-6 sm:grid-cols-8 gap-3 justify-items-center p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    {TAG_COLORS.map(color => (
+                        <button 
+                            key={color} 
+                            onClick={() => setNewTag({...newTag, color})} 
+                            className={`
+                                w-8 h-8 rounded-full transition-transform duration-200 hover:scale-110 active:scale-95 flex items-center justify-center shadow-sm border border-black/5
+                            `}
+                            style={{ 
+                                backgroundColor: color,
+                                transform: newTag.color === color ? 'scale(1.2)' : 'scale(1)',
+                                boxShadow: newTag.color === color ? '0 0 0 2px white, 0 0 0 4px ' + color : '0 1px 2px rgba(0,0,0,0.1)'
+                            }}
+                        >
+                            {newTag.color === color && (
+                                <Check size={14} className="text-white drop-shadow-md" strokeWidth={4} />
+                            )}
+                        </button>
+                    ))}
+                </div>
+              </div>
+
+              <Button className="w-full mt-2" onClick={handleSaveTag}>Save Category</Button>
           </div>
       </Modal>
 

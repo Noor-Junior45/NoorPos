@@ -201,8 +201,23 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              )}
           </div>
         </div>
+
+        {/* Terms & Conditions Section */}
+        <div className="text-center mt-6">
+            <p className="text-xs text-gray-500">
+                By continuing, you agree to our Terms & Conditions.
+                <a 
+                    href="https://terms-conditions-store.vercel.app" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="ml-1 text-indigo-600 hover:text-indigo-800 underline font-bold transition-colors"
+                >
+                    Read More
+                </a>
+            </p>
+        </div>
         
-        <div className="text-center mt-8 text-xs font-medium text-gray-400">
+        <div className="text-center mt-4 text-xs font-medium text-gray-400">
            Noor POS System v1.5
         </div>
       </div>
