@@ -1,5 +1,5 @@
 
-import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User, DeletedItem } from '../types';
+import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User, DeletedItem, Payment } from '../types';
 import { GoogleDriveUtils } from '../utils/googleDrive';
 
 interface StoreData {
@@ -519,7 +519,7 @@ const StoreService = {
     this.saveData();
   },
 
-  // --- Customers (Updated with Soft Delete) ---
+  // --- Customers (Updated with Soft Delete & Payments) ---
   async getCustomers(): Promise<Customer[]> { const data = await this.loadData(); return data.customers; },
 
   async upsertCustomer(customer: Partial<Customer>): Promise<Customer> {
@@ -532,10 +532,44 @@ const StoreService = {
         return data.customers[index];
       }
     }
-    const newCustomer: Customer = { id: generateId(), name: customer.name || 'Unknown', phone: customer.phone || '', email: customer.email || '', location: customer.location || '', totalSpent: 0, totalDues: 0, visitCount: 0, history: [] };
+    const newCustomer: Customer = { 
+        id: generateId(), 
+        name: customer.name || 'Unknown', 
+        phone: customer.phone || '', 
+        email: customer.email || '', 
+        location: customer.location || '', 
+        totalSpent: 0, 
+        totalDues: 0, 
+        visitCount: 0, 
+        history: [],
+        payments: []
+    };
     data.customers.push(newCustomer);
     this.saveData();
     return newCustomer;
+  },
+
+  async addCustomerPayment(customerId: string, amount: number, method: string, note: string, dateStr?: string): Promise<Customer> {
+      const data = await this.loadData();
+      const index = data.customers.findIndex(c => c.id === customerId);
+      if (index === -1) throw new Error("Customer not found");
+
+      const payment: Payment = {
+          id: generateId(),
+          amount,
+          date: dateStr || new Date().toISOString(),
+          method,
+          note
+      };
+
+      if (!data.customers[index].payments) data.customers[index].payments = [];
+      data.customers[index].payments.push(payment);
+      
+      // Reduce Dues (Don't go below 0 for now, although credit is possible in real accounting)
+      data.customers[index].totalDues = Math.max(0, (data.customers[index].totalDues || 0) - amount);
+      
+      this.saveData();
+      return data.customers[index];
   },
 
   async deleteCustomer(id: string): Promise<void> {

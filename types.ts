@@ -50,6 +50,14 @@ export interface CartItem extends Product {
   quantity: number;
 }
 
+export interface Payment {
+  id: string;
+  amount: number;
+  date: string; // ISO string
+  method: string;
+  note?: string;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -60,6 +68,7 @@ export interface Customer {
   totalDues: number; // Added for Pay Later functionality
   visitCount: number;
   history: string[]; // Sale IDs
+  payments?: Payment[]; // Payment history
 }
 
 export interface User {

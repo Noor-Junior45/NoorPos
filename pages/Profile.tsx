@@ -1,110 +1,259 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { User, DeletedItem, StoreSettings } from '../types';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { User, StoreSettings, DeletedItem } from '../types';
+import { Card, Button, Input, Modal, Badge } from '../components/UI';
+import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Card, Button, Modal, Badge, Input } from '../components/UI';
-import { 
-  Download, Upload, ChevronRight, Trash2, Clock, 
-  FileText, ChevronDown, ExternalLink, Headphones, 
-  Mail, AlertTriangle, LogOut, RotateCcw, Cloud, 
-  CheckCircle, X, ShieldCheck, Save, Image as ImageIcon, MapPin, Phone
-} from 'lucide-react';
 
 interface ProfileProps {
-  user: User;
+  user: User | null;
   onLogin: (user: User) => void;
   onLogout: () => void;
 }
 
-export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
-  const [deletedItems, setDeletedItems] = useState<DeletedItem[]>([]);
-  const [settings, setSettings] = useState<StoreSettings | null>(null);
-  const [showRecycleBin, setShowRecycleBin] = useState(false);
-  const [showTermsDropdown, setShowTermsDropdown] = useState(false);
-  const [showContactDropdown, setShowContactDropdown] = useState(false);
+export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => {
+  const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isEditingNas, setIsEditingNas] = useState(false);
+  const [tempProfile, setTempProfile] = useState<Partial<StoreSettings>>({});
+  const [tempNas, setTempNas] = useState<{ nasUrl: string, syncToNas: boolean }>({ nasUrl: '', syncToNas: false });
+  const [googleProfile, setGoogleProfile] = useState<any>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [isGoogleLinked, setIsGoogleLinked] = useState(false);
+  const [showContactDropdown, setShowContactDropdown] = useState(false);
+  const [showTermsDropdown, setShowTermsDropdown] = useState(false);
+  const [lastBackup, setLastBackup] = useState<string | null>(null);
+  
+  // Recycle Bin State
+  const [showRecycleBin, setShowRecycleBin] = useState(false);
+  const [deletedItems, setDeletedItems] = useState<DeletedItem[]>([]);
+  const [recycleRetention, setRecycleRetention] = useState(30);
+
+  // Staff Sharing State
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  const [showShareSuccess, setShowShareSuccess] = useState(false);
   
   // Gesture State
   const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
   const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
   const minSwipeDistance = 50;
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  
+  // Refs
+  const storeNameRef = useRef<HTMLInputElement>(null);
+  const storeAddrRef = useRef<HTMLInputElement>(null);
+  const storePhoneRef = useRef<HTMLInputElement>(null);
+  const storeEmailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
-    const session = GoogleDriveUtils.getSession();
-    setIsGoogleLinked(!!session);
   }, []);
 
   const loadData = async () => {
-    const items = await StoreService.getDeletedItems();
-    const currentSettings = await StoreService.getSettings();
-    setDeletedItems(items);
-    setSettings(currentSettings);
-  };
-
-  const handleExport = async () => {
-    const data = await StoreService.getRawData();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `noor_backup_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const json = JSON.parse(e.target?.result as string);
-        await StoreService.importData(json);
-        alert("Data imported successfully. The app will reload.");
-      } catch (err) {
-        alert("Invalid backup file.");
+      const s = await StoreService.getSettings();
+      setStoreSettings(s);
+      setRecycleRetention(s.recycleBinRetentionDays || 30);
+      
+      const session = GoogleDriveUtils.getSession();
+      if (session) {
+          setGoogleProfile(session.profile);
       }
-    };
-    reader.readAsText(file);
+      
+      const lastTime = StoreService.getLastBackupTime();
+      if (lastTime) setLastBackup(new Date(lastTime).toLocaleString());
+
+      const delItems = await StoreService.getDeletedItems();
+      setDeletedItems(delItems);
   };
 
-  const handleRestore = async (id: string) => {
+  const handleStartEdit = () => {
+      if (storeSettings) {
+          setTempProfile({
+              storeName: storeSettings.storeName,
+              storeAddress: storeSettings.storeAddress,
+              storePhone: storeSettings.storePhone,
+              storeEmail: storeSettings.storeEmail,
+              logo: storeSettings.logo
+          });
+          setIsEditingProfile(true);
+      }
+  };
+
+  const handleSaveProfile = async () => {
+      if (!storeSettings) return;
+      const newSettings = { ...storeSettings, ...tempProfile };
+      await StoreService.saveSettings(newSettings);
+      setStoreSettings(newSettings);
+      setIsEditingProfile(false);
+  };
+  
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setTempProfile(prev => ({ ...prev, logo: reader.result as string }));
+          };
+          reader.readAsDataURL(file);
+      }
+  };
+
+  const handleSaveRetention = async (days: number) => {
+      if (!storeSettings) return;
+      setRecycleRetention(days);
+      const newSettings = { ...storeSettings, recycleBinRetentionDays: days };
+      await StoreService.saveSettings(newSettings);
+      setStoreSettings(newSettings);
+  };
+
+  const handleRestoreItem = async (id: string) => {
       await StoreService.restoreItem(id);
-      loadData();
+      loadData(); // Refresh list
   };
 
   const handlePermanentDelete = async (id: string) => {
-      await StoreService.permanentlyDelete(id);
-      loadData();
+      if(confirm("Delete this item permanently? This cannot be undone.")) {
+          await StoreService.permanentlyDelete(id);
+          loadData();
+      }
   };
 
   const handleEmptyBin = async () => {
-      if(confirm("Are you sure you want to permanently delete all items?")) {
+      if(confirm("Are you sure? This will permanently remove all items in the recycle bin.")) {
           await StoreService.emptyRecycleBin();
           loadData();
       }
   };
 
-  const handleFactoryReset = async () => {
-      await StoreService.factoryReset();
-      onLogout();
+  const groupedDeletedItems = useMemo(() => {
+      const groups: Record<string, DeletedItem[]> = {};
+      const today = new Date().toDateString();
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+
+      deletedItems.forEach(item => {
+          const d = new Date(item.deletedAt);
+          let key = d.toDateString();
+          if (key === today) key = 'Today';
+          else if (key === yesterday) key = 'Yesterday';
+          
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(item);
+      });
+      return groups;
+  }, [deletedItems]);
+
+  const handleStartEditNas = () => {
+      if (storeSettings) {
+          setTempNas({
+              nasUrl: storeSettings.nasUrl || 'http://localhost:3000/api/storage',
+              syncToNas: storeSettings.syncToNas || false
+          });
+          setIsEditingNas(true);
+      }
+  };
+
+  const handleSaveNas = async () => {
+      if (!storeSettings) return;
+      const newSettings = { 
+          ...storeSettings, 
+          nasUrl: tempNas.nasUrl,
+          syncToNas: tempNas.syncToNas
+      };
+      await StoreService.saveSettings(newSettings);
+      setStoreSettings(newSettings);
+      setIsEditingNas(false);
+      alert("NAS configuration saved. App will try to sync on next action.");
+  };
+
+  const handleToggleNotifications = async () => {
+      if (!storeSettings) return;
+      
+      const newState = !storeSettings.notificationsEnabled;
+      
+      if (newState) {
+          if (!("Notification" in window)) {
+              alert("This browser does not support desktop notifications");
+              return;
+          }
+          const permission = await Notification.requestPermission();
+          if (permission !== 'granted') {
+              alert("Notification permission denied");
+              return;
+          }
+          new Notification("Notifications Enabled", { body: "You will now receive alerts for low stock." });
+      }
+
+      const newSettings = { ...storeSettings, notificationsEnabled: newState };
+      await StoreService.saveSettings(newSettings);
+      setStoreSettings(newSettings);
+  };
+  
+  const handleInviteStaff = async () => {
+      if (!inviteEmail || !inviteEmail.includes('@')) {
+          alert("Please enter a valid email address.");
+          return;
+      }
+      
+      const session = GoogleDriveUtils.getSession();
+      if (!session) {
+          alert("You must be logged in with Google to share access.");
+          return;
+      }
+
+      setIsInviting(true);
+      try {
+          await GoogleDriveUtils.shareDatabase(session.accessToken, session.spreadsheetId, inviteEmail);
+          setInviteEmail('');
+          setShowShareSuccess(true);
+          setTimeout(() => setShowShareSuccess(false), 3000);
+      } catch (err: any) {
+          console.error(err);
+          alert("Failed to share: " + (err.message || "Unknown Error"));
+      } finally {
+          setIsInviting(false);
+      }
   };
 
   const handleLogout = async () => {
-      await StoreService.logout();
-      onLogout();
+      if (confirm("Sign out? Local data will remain, but you will need to log in again to sync.")) {
+          await StoreService.logout();
+      }
+  };
+  
+  const handleExport = async () => {
+      const data = await StoreService.getRawData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `noor_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
+  const handleImportClick = () => fileInputRef.current?.click();
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          try {
+              const json = JSON.parse(e.target?.result as string);
+              if (confirm("Overwrite data with backup?")) {
+                   await StoreService.importData(json);
+              }
+          } catch (err) { alert("Invalid backup file."); }
+      };
+      reader.readAsText(file);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleReset = async () => {
+      await StoreService.factoryReset();
   };
 
   // --- Gesture Handlers ---
@@ -123,56 +272,305 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
       const distanceY = touchStart.y - touchEnd.y;
       const isRightSwipe = distanceX < -minSwipeDistance; // Swipe Right (Back)
       
-      // Ensure horizontal swipe dominant and we are in modal
-      if (isRightSwipe && Math.abs(distanceX) > Math.abs(distanceY) && showRecycleBin) {
+      // Ensure horizontal swipe dominant
+      if (isRightSwipe && Math.abs(distanceX) > Math.abs(distanceY)) {
           setShowRecycleBin(false);
       }
   };
 
-  const recycleRetention = settings?.recycleBinRetentionDays || 30;
+  if (!user) return null;
 
   return (
-    <div className="pb-24 animate-in fade-in max-w-3xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 pb-32 animate-in fade-in">
         
-        {/* Header Profile Card */}
-        <div className="flex items-center gap-4 mb-6 pt-2 px-2">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-indigo-200">
-                {user.name.charAt(0).toUpperCase()}
-            </div>
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900">{user.name}</h1>
-                <p className="text-gray-500 text-sm">@{user.username} • {user.role}</p>
-            </div>
-            <button onClick={handleLogout} className="ml-auto p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors" title="Logout">
-                <LogOut size={20} />
-            </button>
-        </div>
-
-        {/* Sync Status */}
-        <Card className="border-0 shadow-sm ring-1 ring-black/5 bg-gradient-to-br from-white to-gray-50">
-            <div className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className={`p-2.5 rounded-full ${isGoogleLinked ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'}`}>
-                        <Cloud size={20} />
+        {/* 1. Profile Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4 w-full">
+                {googleProfile?.picture ? (
+                    <img src={googleProfile.picture} alt="Profile" className="w-16 h-16 rounded-full shadow-lg border-2 border-white shrink-0" />
+                ) : (
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shrink-0">
+                        {user.name.charAt(0)}
                     </div>
-                    <div>
-                        <h3 className="font-bold text-gray-800 text-sm">Cloud Sync</h3>
-                        <p className="text-xs text-gray-500">{isGoogleLinked ? 'Connected to Google Drive' : 'Local Mode (Not Synced)'}</p>
+                )}
+                <div className="min-w-0 flex-1">
+                    <h1 className="text-2xl font-bold text-gray-900 truncate">{googleProfile?.name || user.name}</h1>
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span className="truncate">{googleProfile?.email || user.username}</span>
+                        <span className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 font-bold border border-green-200 shrink-0">Online</span>
                     </div>
                 </div>
-                {isGoogleLinked ? (
-                    <div className="flex items-center gap-1 text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-full border border-green-100">
-                        <CheckCircle size={14}/> Active
+            </div>
+            <Button onClick={handleLogout} variant="neutral" className="w-full md:w-auto border-red-100 text-red-600 hover:bg-red-50 flex justify-center">
+                <LogOut size={18} className="mr-2 inline"/> Sign Out
+            </Button>
+        </div>
+
+        {/* 2. Store Settings */}
+        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+            <div className="bg-white p-4 border-b border-gray-100 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                    <Store size={20} className="text-blue-600"/>
+                    <h2 className="font-bold text-gray-800">Store Profile</h2>
+                </div>
+                {!isEditingProfile ? (
+                    <button onClick={handleStartEdit} className="text-blue-600 text-xs font-bold hover:underline">EDIT</button>
+                ) : (
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 text-xs font-bold hover:text-gray-600">CANCEL</button>
+                        <button onClick={handleSaveProfile} className="text-green-600 text-xs font-bold hover:text-green-700 flex items-center gap-1"><Save size={12}/> SAVE</button>
+                    </div>
+                )}
+            </div>
+            
+            <div className="p-5">
+                {isEditingProfile ? (
+                    <div className="space-y-5 animate-in fade-in">
+                        {/* Logo Upload */}
+                        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                             <div className="w-20 h-20 rounded-lg bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
+                                 {tempProfile.logo ? (
+                                     <img src={tempProfile.logo} alt="Logo" className="w-full h-full object-contain" />
+                                 ) : (
+                                     <ImageIcon className="text-gray-300" size={32} />
+                                 )}
+                             </div>
+                             <div>
+                                 <input 
+                                    type="file" 
+                                    ref={logoInputRef} 
+                                    onChange={handleLogoUpload} 
+                                    className="hidden" 
+                                    accept="image/*" 
+                                 />
+                                 <Button size="sm" variant="neutral" onClick={() => logoInputRef.current?.click()} className="flex items-center gap-2">
+                                     <Upload size={14}/> Upload Logo
+                                 </Button>
+                                 <p className="text-[10px] text-gray-400 mt-2">Recommended: 200x200px (PNG/JPG)</p>
+                             </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Store Name</label>
+                            <Input 
+                                ref={storeNameRef}
+                                value={tempProfile.storeName} 
+                                onChange={e => setTempProfile({...tempProfile, storeName: e.target.value})} 
+                                className="!py-3 !px-4 bg-white border-2 border-indigo-100 focus:border-indigo-500 shadow-sm"
+                                placeholder="Enter Store Name"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Address</label>
+                            <Input 
+                                ref={storeAddrRef}
+                                value={tempProfile.storeAddress} 
+                                onChange={e => setTempProfile({...tempProfile, storeAddress: e.target.value})} 
+                                className="!py-3 !px-4 bg-white border-2 border-indigo-100 focus:border-indigo-500 shadow-sm"
+                                placeholder="Enter Address"
+                            />
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Phone</label>
+                                <Input 
+                                    ref={storePhoneRef}
+                                    value={tempProfile.storePhone} 
+                                    onChange={e => setTempProfile({...tempProfile, storePhone: e.target.value})} 
+                                    className="!py-3 !px-4 bg-white border-2 border-indigo-100 focus:border-indigo-500 shadow-sm"
+                                    placeholder="Enter Phone"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Email</label>
+                                <Input 
+                                    ref={storeEmailRef}
+                                    value={tempProfile.storeEmail} 
+                                    onChange={e => setTempProfile({...tempProfile, storeEmail: e.target.value})} 
+                                    className="!py-3 !px-4 bg-white border-2 border-indigo-100 focus:border-indigo-500 shadow-sm"
+                                    placeholder="Enter Email"
+                                />
+                            </div>
+                        </div>
                     </div>
                 ) : (
-                    <div className="flex items-center gap-1 text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
-                        Offline
+                    <div className="space-y-3">
+                         {storeSettings?.logo && (
+                             <div className="mb-4 flex justify-center">
+                                 <img src={storeSettings.logo} alt="Store Logo" className="h-16 object-contain" />
+                             </div>
+                         )}
+                        <div>
+                            <div className="text-lg font-bold text-gray-900">
+                                {storeSettings?.storeName || <span className="text-gray-400 italic font-normal">Store Name Not Set</span>}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                                <MapPin size={14} className="shrink-0"/> 
+                                {storeSettings?.storeAddress || <span className="text-gray-400 italic">Address Not Set</span>}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-gray-50">
+                            <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                <Phone size={14}/> 
+                                {storeSettings?.storePhone || <span className="text-gray-400 italic">Phone Not Set</span>}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                <Mail size={14}/> 
+                                {storeSettings?.storeEmail || <span className="text-gray-400 italic">Email Not Set</span>}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
         </Card>
-        
-        {/* Actions */}
+
+        {/* 4. Notifications */}
+        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+             <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
+                 <Bell size={20} className="text-amber-500"/>
+                 <h2 className="font-bold text-gray-800">Notifications</h2>
+             </div>
+             <div className="p-5 flex items-center justify-between">
+                 <div>
+                     <div className="font-semibold text-gray-800">Browser Alerts</div>
+                     <p className="text-sm text-gray-500">Get notified about low stock and critical events.</p>
+                 </div>
+                 <button 
+                    onClick={handleToggleNotifications}
+                    className={`w-14 h-8 rounded-full transition-all duration-300 relative shadow-inner ${storeSettings?.notificationsEnabled ? 'bg-amber-500' : 'bg-gray-200'}`}
+                 >
+                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 shadow-md ${storeSettings?.notificationsEnabled ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                </button>
+             </div>
+        </Card>
+
+        {/* 5. NAS / Local Server Configuration */}
+        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+             <div className="bg-white p-4 border-b border-gray-100 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                    <HardDrive size={20} className="text-purple-600"/>
+                    <h2 className="font-bold text-gray-800">NAS / Server Facility</h2>
+                </div>
+                {!isEditingNas ? (
+                    <button onClick={handleStartEditNas} className="text-blue-600 text-xs font-bold hover:underline">CONFIGURE</button>
+                ) : (
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsEditingNas(false)} className="text-gray-400 text-xs font-bold hover:text-gray-600">CANCEL</button>
+                        <button onClick={handleSaveNas} className="text-green-600 text-xs font-bold hover:text-green-700 flex items-center gap-1"><Save size={12}/> SAVE</button>
+                    </div>
+                )}
+             </div>
+             
+             {isEditingNas ? (
+                 <div className="p-5 space-y-4 animate-in fade-in bg-purple-50/50">
+                     <div className="flex items-center gap-3 mb-2">
+                         <div className="p-2 bg-purple-100 rounded-lg text-purple-700"><Server size={20}/></div>
+                         <div className="text-sm text-gray-600">
+                             Enable syncing to a local Network Attached Storage (NAS) or custom server URL.
+                         </div>
+                     </div>
+                     <div>
+                        <label className="text-xs font-bold text-gray-500 uppercase block mb-1">NAS / Server URL</label>
+                        <Input 
+                            value={tempNas.nasUrl} 
+                            onChange={e => setTempNas({...tempNas, nasUrl: e.target.value})} 
+                            className="!py-3 !px-4 bg-white border-2 border-purple-200 focus:border-purple-500 shadow-sm"
+                            placeholder="http://192.168.1.50:3000/api/storage"
+                        />
+                        <p className="text-[10px] text-gray-400 mt-1 ml-1">Example: http://localhost:3000/api/storage</p>
+                     </div>
+                     <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-purple-100">
+                         <span className="font-bold text-gray-700 text-sm">Sync Data to NAS</span>
+                         <button 
+                            onClick={() => setTempNas({...tempNas, syncToNas: !tempNas.syncToNas})}
+                            className={`w-12 h-7 rounded-full transition-all duration-300 relative shadow-inner ${tempNas.syncToNas ? 'bg-purple-600' : 'bg-gray-200'}`}
+                         >
+                            <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform duration-300 shadow-md ${tempNas.syncToNas ? 'translate-x-6' : 'translate-x-1'}`}></div>
+                         </button>
+                     </div>
+                 </div>
+             ) : (
+                 <div className="p-5">
+                     {storeSettings?.syncToNas ? (
+                         <div className="flex items-center justify-between">
+                             <div className="flex items-center gap-3">
+                                 <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center">
+                                     <Cloud size={20}/>
+                                 </div>
+                                 <div>
+                                     <div className="font-bold text-gray-800 text-sm">NAS Active</div>
+                                     <div className="text-xs text-gray-500 truncate max-w-[200px]">{storeSettings.nasUrl}</div>
+                                 </div>
+                             </div>
+                             <div className="px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded border border-green-200 uppercase">Connected</div>
+                         </div>
+                     ) : (
+                         <div className="text-sm text-gray-400 italic text-center py-2">NAS facility disabled.</div>
+                     )}
+                 </div>
+             )}
+        </Card>
+
+        {/* 6. Staff Sharing */}
+        {googleProfile && (
+            <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+                <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
+                    <Users size={20} className="text-indigo-600"/>
+                    <h2 className="font-bold text-gray-800">Staff Access & Sharing</h2>
+                </div>
+                <div className="p-5">
+                    <div className="mb-4">
+                        <p className="text-sm text-gray-600 mb-2">Invite staff members to access this store database. They must log in with their Google Account.</p>
+                    </div>
+                    <div className="flex gap-2">
+                        <Input 
+                            placeholder="staff.member@gmail.com" 
+                            value={inviteEmail} 
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                            className="flex-1 !py-2.5"
+                        />
+                        <Button 
+                            onClick={handleInviteStaff} 
+                            disabled={isInviting || !inviteEmail}
+                            className="bg-indigo-600 hover:bg-indigo-700 w-28 flex items-center justify-center"
+                        >
+                            {isInviting ? <Loader2 size={18} className="animate-spin" /> : <><UserPlus size={18} className="mr-2"/> Invite</>}
+                        </Button>
+                    </div>
+                    {showShareSuccess && (
+                        <div className="mt-3 p-2 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                            <CheckSquare size={16}/> Invitation sent successfully!
+                        </div>
+                    )}
+                </div>
+            </Card>
+        )}
+
+        {/* 7. Sync Status */}
+        <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
+            <div className="bg-white p-5">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center shadow-sm border border-green-100">
+                         <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="w-7 h-7" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-gray-900 text-lg">Database Synced</h3>
+                        <p className="text-sm text-gray-500">
+                           Last saved: {lastBackup || 'Just now'}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                <div className="flex items-center gap-1 font-mono">
+                    <CheckSquare size={12} className="text-green-500"/> 
+                    {googleProfile?.email || 'Connected'}
+                </div>
+                <div>StoreManager_DB</div>
+            </div>
+        </Card>
+
+        {/* 8. Actions */}
         <div className="pt-4 flex flex-col gap-3">
             <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider px-2">Data Management</h3>
             
@@ -191,11 +589,18 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
                 </div>
                 <ChevronRight size={18} className="text-gray-300"/>
             </button>
+
+            <button onClick={() => setShowResetConfirm(true)} className="w-full bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between group hover:border-red-300 hover:bg-red-50 transition-all mt-2">
+                <div className="flex items-center gap-3">
+                    <AlertTriangle size={20} className="text-red-400"/>
+                    <span className="font-medium text-red-600">Factory Reset App</span>
+                </div>
+            </button>
             
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
         </div>
 
-        {/* Recycle Bin Card */}
+        {/* 8. Recycle Bin Card (Moved Here) */}
         <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5 hover:ring-blue-200 transition-all cursor-pointer mt-4" onClick={() => setShowRecycleBin(true)}>
              <div className="bg-white p-4 border-b border-gray-100 flex items-center justify-between">
                  <div className="flex items-center gap-2">
@@ -218,7 +623,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
              </div>
         </Card>
 
-        {/* Support & Legal */}
+        {/* 9. Support & Legal */}
         <div className="pt-2 flex flex-col gap-3">
             <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider px-2">Support & Legal</h3>
             
@@ -278,77 +683,131 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
             </div>
         </div>
 
-        {/* Factory Reset */}
-        <div className="pt-4">
-            <button onClick={() => setShowResetConfirm(true)} className="w-full bg-white p-4 rounded-xl border border-red-200 shadow-sm flex items-center justify-between group hover:bg-red-50 transition-all">
-                <div className="flex items-center gap-3">
-                    <AlertTriangle size={20} className="text-red-400 group-hover:text-red-600"/>
-                    <span className="font-medium text-red-600">Factory Reset App</span>
-                </div>
-            </button>
-        </div>
-
         {/* Recycle Bin Modal */}
-        <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Recycle Bin">
-             <div 
-                className="h-full flex flex-col"
+        <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Recycle Bin" className="!max-w-4xl h-[80vh] flex flex-col p-0">
+            <div 
+                className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50"
                 onTouchStart={onTouchStart} 
                 onTouchMove={onTouchMove} 
                 onTouchEnd={onTouchEnd}
-             >
-                 <div className="flex justify-between items-center mb-4 shrink-0">
-                     <p className="text-sm text-gray-500">Items are auto-deleted after {recycleRetention} days.</p>
-                     {deletedItems.length > 0 && (
-                         <Button size="sm" variant="danger" onClick={handleEmptyBin} className="text-xs">Empty Bin</Button>
-                     )}
-                 </div>
-                 
-                 <div className="space-y-3 max-h-[60vh] overflow-y-auto flex-1">
-                     {deletedItems.length === 0 ? (
-                         <div className="text-center py-10 text-gray-400">
-                             <Trash2 size={32} className="mx-auto mb-2 opacity-20"/>
-                             <p>Recycle bin is empty.</p>
-                         </div>
-                     ) : (
-                         deletedItems.map(item => (
-                             <div key={item.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 flex justify-between items-center">
-                                 <div>
-                                     <div className="font-bold text-gray-800 text-sm">
-                                         {item.type === 'sale' ? `Sale #${item.originalId.slice(0,5)}` : (item.data.name || 'Unknown')}
-                                     </div>
-                                     <div className="text-xs text-gray-500 capitalize">
-                                         {item.type} • Deleted {new Date(item.deletedAt).toLocaleDateString()}
-                                     </div>
-                                 </div>
-                                 <div className="flex gap-2">
-                                     <button onClick={() => handleRestore(item.id)} className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="Restore"><RotateCcw size={16}/></button>
-                                     <button onClick={() => handlePermanentDelete(item.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Delete Forever"><X size={16}/></button>
-                                 </div>
-                             </div>
-                         ))
-                     )}
-                 </div>
-                 <div className="text-center text-xs text-gray-300 mt-2">Swipe right to go back</div>
-             </div>
-        </Modal>
-
-        {/* Reset Confirm Modal */}
-        <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="Factory Reset">
-            <div className="text-center py-4">
-                <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                    <AlertTriangle size={32} />
+            >
+                {/* Modal Header Actions */}
+                <div className="px-6 py-4 bg-white border-b border-gray-200 flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-500 font-bold">Auto-delete after:</span>
+                        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                            {[7, 15, 30].map(days => (
+                                <button
+                                    key={days}
+                                    onClick={() => handleSaveRetention(days)}
+                                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${recycleRetention === days ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+                                >
+                                    {days} days
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {deletedItems.length > 0 && (
+                        <Button size="sm" variant="danger" onClick={handleEmptyBin} className="bg-red-100 text-red-600 border border-red-200 shadow-none hover:bg-red-200">
+                            Empty Bin
+                        </Button>
+                    )}
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">Are you absolutely sure?</h3>
-                <p className="text-sm text-gray-500 mb-6 px-4">
-                    This action will <strong>permanently delete all data</strong> (products, sales, customers) from this device. If not backed up to Google Drive, data will be lost.
-                </p>
-                <div className="flex gap-3">
-                    <Button variant="neutral" className="flex-1" onClick={() => setShowResetConfirm(false)}>Cancel</Button>
-                    <Button variant="danger" className="flex-1" onClick={handleFactoryReset}>Yes, Reset</Button>
+
+                {/* List Content */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {deletedItems.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                            <Trash2 size={48} className="mb-4 opacity-20"/>
+                            <p>Recycle bin is empty.</p>
+                        </div>
+                    ) : (
+                        Object.entries(groupedDeletedItems).map(([dateLabel, items]) => (
+                            <div key={dateLabel}>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Calendar size={16} className="text-gray-400"/>
+                                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{dateLabel}</h3>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {(items as DeletedItem[]).map(item => {
+                                        let Icon = Box;
+                                        let name = "Unknown";
+                                        let detail = "";
+                                        let colorClass = "bg-blue-100 text-blue-600";
+
+                                        if (item.type === 'product') {
+                                            Icon = Box;
+                                            name = item.data.name;
+                                            detail = `Stock: ${item.data.stock}`;
+                                            colorClass = "bg-blue-100 text-blue-600";
+                                        } else if (item.type === 'customer') {
+                                            Icon = Users;
+                                            name = item.data.name;
+                                            detail = item.data.phone;
+                                            colorClass = "bg-purple-100 text-purple-600";
+                                        } else if (item.type === 'sale') {
+                                            Icon = Receipt;
+                                            name = `Invoice #${item.data.id.slice(0,6).toUpperCase()}`;
+                                            detail = `Amount: ₹${item.data.total}`;
+                                            colorClass = "bg-green-100 text-green-600";
+                                        }
+
+                                        return (
+                                            <div key={item.id} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center group hover:border-blue-300 transition-colors">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${colorClass}`}>
+                                                        <Icon size={20}/>
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="font-bold text-gray-800 text-sm truncate">{name}</div>
+                                                        <div className="text-xs text-gray-500 truncate">{detail}</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button 
+                                                        onClick={() => handleRestoreItem(item.id)}
+                                                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
+                                                        title="Restore"
+                                                    >
+                                                        <RotateCcw size={16}/>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handlePermanentDelete(item.id)}
+                                                        className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
+                                                        title="Delete Forever"
+                                                    >
+                                                        <Trash2 size={16}/>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
         </Modal>
 
+        {/* Reset Confirm Modal */}
+        <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="Factory Reset">
+            <div className="text-center">
+                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <AlertTriangle size={32}/>
+                </div>
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Are you absolutely sure?</h3>
+                <p className="text-sm text-gray-600 mb-6">
+                    This action will delete all products, sales history, and customer data from this device.
+                </p>
+                <div className="flex gap-3">
+                    <Button variant="neutral" className="flex-1" onClick={() => setShowResetConfirm(false)}>Cancel</Button>
+                    <Button variant="danger" className="flex-1" onClick={handleReset}>Yes, Reset</Button>
+                </div>
+            </div>
+        </Modal>
+
+        <div className="text-center text-xs text-gray-400 pt-8 pb-4">Noor POS v1.5.0 • Connected</div>
     </div>
   );
 };

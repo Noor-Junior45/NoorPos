@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Customer, Sale } from '../types';
+import { Customer, Sale, Payment } from '../types';
 import { StoreService } from '../services/storeService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle } from 'lucide-react';
+import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone } from 'lucide-react';
 
 interface CustomersProps {
   initialAction?: string;
@@ -17,6 +17,13 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [searchTerm, setSearchTerm] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Customer>>({});
+
+  // Payment Modal State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<string>('');
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
+  const [paymentNote, setPaymentNote] = useState<string>('');
 
   // Input Refs for Enter Key Navigation
   const nameRef = useRef<HTMLInputElement>(null);
@@ -109,6 +116,41 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       const message = `Hello ${customer.name},%0A%0AWe appreciate your business with Noor Store.%0A%0ATotal Spent: ₹${customer.totalSpent.toLocaleString()}%0AVisits: ${customer.visitCount}`;
       const url = `https://wa.me/${customer.phone.replace(/[^0-9]/g, '')}?text=${message}`;
       window.open(url, '_blank');
+  };
+
+  // --- Payment Handlers ---
+  const openPaymentModal = (customer: Customer) => {
+      setPaymentAmount(customer.totalDues.toString());
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentMethod('Cash');
+      setPaymentNote('');
+      setShowPaymentModal(true);
+  };
+
+  const handleRecordPayment = async () => {
+      if (!selectedCustomer || !paymentAmount) return;
+      const amount = parseFloat(paymentAmount);
+      if (isNaN(amount) || amount <= 0) {
+          alert("Please enter a valid amount");
+          return;
+      }
+
+      await StoreService.addCustomerPayment(
+          selectedCustomer.id,
+          amount,
+          paymentMethod,
+          paymentNote,
+          paymentDate // Pass the selected date
+      );
+
+      // Refresh Data
+      const updatedCustomers = await StoreService.getCustomers();
+      const updatedSelf = updatedCustomers.find(c => c.id === selectedCustomer.id);
+      
+      setCustomers(updatedCustomers);
+      if (updatedSelf) setSelectedCustomer(updatedSelf);
+      
+      setShowPaymentModal(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLInputElement> | null, isSubmit = false) => {
@@ -221,7 +263,29 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       </div>
   );
 
-  const renderCustomerDetails = (customer: Customer, isMobile: boolean) => (
+  const renderCustomerDetails = (customer: Customer, isMobile: boolean) => {
+      // Merge Sales and Payments for unified history
+      const historyItems: Array<{ type: 'sale' | 'payment', date: string, data: Sale | Payment }> = [];
+      
+      // Add Sales
+      customer.history.forEach(saleId => {
+          const sale = sales.find(s => s.id === saleId);
+          if (sale) {
+              historyItems.push({ type: 'sale', date: sale.timestamp, data: sale });
+          }
+      });
+
+      // Add Payments
+      if (customer.payments) {
+          customer.payments.forEach(payment => {
+              historyItems.push({ type: 'payment', date: payment.date, data: payment });
+          });
+      }
+
+      // Sort Descending
+      historyItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      return (
       <div className={`h-full bg-white overflow-y-auto ${isMobile ? 'animate-in slide-in-from-bottom-full duration-300' : 'rounded-2xl border border-gray-100 shadow-sm'}`}>
           {/* Header */}
           <div className="p-4">
@@ -295,7 +359,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
               </div>
 
               <div className="bg-gray-50 rounded-2xl p-4">
-                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">History</h3>
+                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Financials</h3>
                    <div className="grid grid-cols-3 gap-3 mb-4">
                         <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
                             <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Total Spent</div>
@@ -305,31 +369,66 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                             <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Visits</div>
                             <div className="font-bold text-blue-600">{customer.visitCount}</div>
                         </div>
-                        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
+                        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
                             <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Dues</div>
                             <div className="font-bold text-red-500">₹{customer.totalDues || 0}</div>
+                            {(customer.totalDues || 0) > 0 && (
+                                <button 
+                                    onClick={() => openPaymentModal(customer)}
+                                    className="mt-1 w-full bg-red-100 text-red-700 text-[10px] font-bold py-1 rounded hover:bg-red-200 transition-colors"
+                                >
+                                    PAY
+                                </button>
+                            )}
                         </div>
                    </div>
                    
-                   {customer.history.length > 0 ? (
+                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 mt-6">Timeline</h3>
+                   {historyItems.length > 0 ? (
                        <div className="space-y-3">
-                           {customer.history.slice().reverse().map(saleId => {
-                               const sale = sales.find(s => s.id === saleId);
-                               if (!sale) return null;
-                               return (
-                                   <div key={saleId} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
-                                       <div className="flex items-center gap-3">
-                                           <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500">
-                                               <Clock size={16}/>
+                           {historyItems.map((item, idx) => {
+                               if (item.type === 'sale') {
+                                   const sale = item.data as Sale;
+                                   return (
+                                       <div key={`sale-${sale.id}`} className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
+                                           <div className="flex items-center gap-3">
+                                               <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500">
+                                                   <Clock size={16}/>
+                                               </div>
+                                               <div>
+                                                   <div className="text-sm font-bold text-gray-800">
+                                                       Sale 
+                                                       <span className="text-xs font-normal text-gray-400 ml-1">#{sale.id.slice(0,5).toUpperCase()}</span>
+                                                   </div>
+                                                   <div className="text-[10px] text-gray-500">{new Date(sale.timestamp).toLocaleDateString()}</div>
+                                               </div>
                                            </div>
-                                           <div>
+                                           <div className="text-right">
                                                <div className="text-sm font-bold text-gray-800">₹{sale.total.toFixed(0)}</div>
-                                               <div className="text-[10px] text-gray-500">{new Date(sale.timestamp).toLocaleDateString()}</div>
+                                               <div className="text-[10px] text-gray-400">{sale.items.length} Items</div>
                                            </div>
                                        </div>
-                                       <div className="text-xs text-gray-400">{sale.items.length} Items</div>
-                                   </div>
-                               );
+                                   );
+                               } else {
+                                   const payment = item.data as Payment;
+                                   return (
+                                       <div key={`pay-${payment.id}`} className="flex justify-between items-center bg-white p-3 rounded-xl border border-green-100 shadow-sm">
+                                           <div className="flex items-center gap-3">
+                                               <div className="w-8 h-8 rounded bg-green-100 flex items-center justify-center text-green-600">
+                                                   <CheckCircle2 size={16}/>
+                                               </div>
+                                               <div>
+                                                   <div className="text-sm font-bold text-green-700">Payment Received</div>
+                                                   <div className="text-[10px] text-gray-500">{new Date(payment.date).toLocaleDateString()} • {payment.method}</div>
+                                               </div>
+                                           </div>
+                                           <div className="text-right">
+                                               <div className="text-sm font-bold text-green-600">-₹{payment.amount.toLocaleString()}</div>
+                                               {payment.note && <div className="text-[10px] text-gray-400 italic max-w-[80px] truncate">{payment.note}</div>}
+                                           </div>
+                                       </div>
+                                   );
+                               }
                            })}
                        </div>
                    ) : (
@@ -338,17 +437,23 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
               </div>
           </div>
       </div>
-  );
+      );
+  };
 
   return (
     <div className="flex flex-col h-full pb-20 animate-in fade-in">
+      <style>{`
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+      `}</style>
       
       {/* Main Content Area */}
       <div className="flex-1 min-h-0 relative">
           {renderContacts()}
       </div>
 
-      {/* Floating Action Button (FAB) - Moved outside the animated container */}
+      {/* Floating Action Button (FAB) */}
       <button 
          onClick={handleAddClick}
          className="fixed bottom-24 right-6 w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-xl flex items-center justify-center z-40 transition-transform active:scale-95 hover:bg-blue-700 hover:scale-105"
@@ -357,7 +462,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
          <Plus size={28} />
       </button>
 
-      {/* Mobile Detail View Overlay (Google Contacts Style) */}
+      {/* Mobile Detail View Overlay */}
       {selectedCustomer && (
           <div className="md:hidden fixed inset-0 z-50 bg-white animate-in slide-in-from-bottom-10 duration-200">
                {renderCustomerDetails(selectedCustomer, true)}
@@ -470,6 +575,76 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                   {customerToDelete?.name} has outstanding dues of ₹{customerToDelete?.totalDues}. Please clear the dues before deleting this contact.
               </p>
               <Button className="w-full" onClick={() => setShowDuesError(false)}>Okay</Button>
+          </div>
+      </Modal>
+
+      {/* Record Payment Modal */}
+      <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Record Payment">
+          <div className="space-y-4">
+              <div className="bg-green-50 p-3 rounded-lg border border-green-100 text-center mb-4">
+                  <span className="text-xs text-green-700 uppercase font-bold tracking-wider block mb-1">Current Due</span>
+                  <span className="text-2xl font-bold text-green-800">₹{selectedCustomer?.totalDues || 0}</span>
+              </div>
+
+              <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Payment Amount</label>
+                  <div className="flex items-center relative">
+                      <span className="absolute left-3 text-gray-500 font-bold">₹</span>
+                      <Input 
+                          type="number"
+                          className="pl-8 text-lg font-bold !bg-white"
+                          value={paymentAmount}
+                          onChange={(e) => setPaymentAmount(e.target.value)}
+                          placeholder="0.00"
+                          onWheel={(e) => e.currentTarget.blur()}
+                      />
+                  </div>
+              </div>
+
+              <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Payment Date</label>
+                  <Input 
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                  />
+              </div>
+
+              <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Payment Method</label>
+                  <div className="grid grid-cols-3 gap-2">
+                      {['Cash', 'UPI', 'Card'].map(method => (
+                          <button
+                              key={method}
+                              onClick={() => setPaymentMethod(method)}
+                              className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${
+                                  paymentMethod === method 
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                          >
+                              {method === 'Cash' && <Banknote size={20} className="mb-1"/>}
+                              {method === 'UPI' && <Smartphone size={20} className="mb-1"/>}
+                              {method === 'Card' && <CreditCard size={20} className="mb-1"/>}
+                              <span className="text-xs font-bold">{method}</span>
+                          </button>
+                      ))}
+                  </div>
+              </div>
+
+              <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Note (Optional)</label>
+                  <Input 
+                      placeholder="e.g. Paid via GPay transaction..."
+                      value={paymentNote}
+                      onChange={(e) => setPaymentNote(e.target.value)}
+                  />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                  <Button variant="neutral" className="flex-1" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
+                  <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={handleRecordPayment}>Clear Amount</Button>
+              </div>
           </div>
       </Modal>
 
