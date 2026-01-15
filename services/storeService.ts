@@ -32,6 +32,8 @@ const defaultSettings: StoreSettings = {
   notificationsEnabled: false,
   currencySymbol: '₹',
   recycleBinRetentionDays: 30,
+  directPrintEnabled: false,
+  scannerPreference: 'both', // Default to both
   nasUrl: 'http://localhost:3000/api/storage',
   syncToNas: false
 };
@@ -75,7 +77,14 @@ const StoreService = {
 
   sendBrowserNotification(title: string, body: string) {
       if (cache?.settings?.notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification(title, { body, icon: '/vite.svg' });
+          try {
+              new Notification(title, { 
+                  body, 
+                  icon: 'https://lh3.googleusercontent.com/p/AF1QipPlp0QUwcp2FOnTGiGNf5fqWnskinCj4QxRKa3o=s1360-w1360-h1020-rw' 
+              });
+          } catch (e) {
+              console.warn("Failed to trigger notification:", e);
+          }
       }
   },
 

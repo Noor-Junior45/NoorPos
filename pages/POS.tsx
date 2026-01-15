@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, CartItem, Customer, Sale, Tag, StoreSettings } from '../types';
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, CheckSquare, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2, Pencil, Edit3, CheckCircle } from 'lucide-react';
+import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, CheckSquare, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2, Pencil, Edit3, CheckCircle, UserPlus, Info } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 // Extended interface for local POS state to handle discounts and custom pricing
@@ -41,7 +40,10 @@ export const POS: React.FC = () => {
       expiryAlertDays: 7, 
       lowStockDefault: 10, 
       soundEnabled: true, 
-      currencySymbol: '₹'
+      currencySymbol: '₹',
+      recycleBinRetentionDays: 30,
+      directPrintEnabled: false,
+      scannerPreference: 'both'
   });
   
   // Cart & Transaction State
@@ -50,12 +52,18 @@ export const POS: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [partialPaidAmount, setPartialPaidAmount] = useState<string>(''); // String to handle empty input
   
+  // Quick Customer (Inside Payment Popup)
+  const [quickCustName, setQuickCustName] = useState('');
+  const [quickCustPhone, setQuickCustPhone] = useState('');
+  const [showCheckoutWarning, setShowCheckoutWarning] = useState(false);
+  const [shakeError, setShakeError] = useState(false);
+
   // UI State
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [isNewCustomerMode, setIsNewCustomerMode] = useState(false);
 
-  // New Customer Form
+  // New Customer Form (Main UI)
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
@@ -105,6 +113,9 @@ export const POS: React.FC = () => {
   const prodBuyRef = useRef<HTMLInputElement>(null);
   const prodStockRef = useRef<HTMLInputElement>(null);
   const prodCatRef = useRef<HTMLSelectElement>(null);
+
+  // Quick Reg Refs
+  const quickNameRef = useRef<HTMLInputElement>(null);
 
   // Long Press Hook Logic
   const longPressTimerRef = useRef<any>(null);
@@ -242,16 +253,14 @@ export const POS: React.FC = () => {
       let newTax = 0;
       
       updatedItems.forEach(item => {
-          // Simple recalculation based on sellPrice (assuming unit price)
-          // Note: In real app, we might need original unit price if sellPrice was discounted
-          const lineTotal = item.sellPrice * item.quantity; 
-          // Re-approximate tax if taxRate present
+          const price = item.sellPrice;
+          const lineTotal = price * item.quantity; 
           const taxAmt = item.taxRate ? (lineTotal * (item.taxRate / 100)) : 0;
           newSubtotal += lineTotal;
           newTax += taxAmt;
       });
 
-      const newTotal = newSubtotal + newTax; // Simplified for this edit mode
+      const newTotal = newSubtotal + newTax; 
 
       setEditingSaleData({
           ...editingSaleData,
@@ -264,13 +273,7 @@ export const POS: React.FC = () => {
 
   const saveEditedSale = async () => {
       if (!editingSaleData) return;
-      
-      // Validate Paid amount vs Total
-      const paid = editingSaleData.amountPaid || 0;
-      // Just save it, store service handles diffs
-      
       await StoreService.updateSale(editingSaleData);
-      
       setIsEditingSale(false);
       setEditingSaleData(null);
       loadData();
@@ -311,7 +314,6 @@ export const POS: React.FC = () => {
       setCustomers(prev => [...prev, newCust]);
       setSelectedCustomer(newCust);
       setIsNewCustomerMode(false);
-      // Reset form
       setNewCustName(''); setNewCustPhone(''); setNewCustAddress(''); setNewCustEmail('');
   };
 
@@ -325,7 +327,6 @@ export const POS: React.FC = () => {
       return [...prev, { ...product, quantity: 1, discount: 0, customPrice: product.sellPrice }];
     });
     setInlineSearch('');
-    // Keep focus on search input
     setTimeout(() => inlineSearchRef.current?.focus(), 10);
   };
 
@@ -347,13 +348,11 @@ export const POS: React.FC = () => {
       if (!inlineSearch) return [];
       const term = inlineSearch.toLowerCase();
       
-      // Filter Logic
       const matches = products.filter(p => 
           p.name.toLowerCase().includes(term) || 
           p.sku.toLowerCase().includes(term)
       );
 
-      // Sort Logic: Starts With [A] comes first
       return matches.sort((a, b) => {
           const aName = a.name.toLowerCase();
           const bName = b.name.toLowerCase();
@@ -363,7 +362,7 @@ export const POS: React.FC = () => {
           if (aStarts && !bStarts) return -1;
           if (!aStarts && bStarts) return 1;
           return aName.localeCompare(bName);
-      }).slice(0, 15); // Limit dropdown size
+      }).slice(0, 15);
   }, [products, inlineSearch]);
 
   // --- Product Creation Logic ---
@@ -427,10 +426,13 @@ export const POS: React.FC = () => {
 
   const totals = calculateTotals();
 
-  // Reset partial payment amount when opening modal
   useEffect(() => {
       if (showCheckout) {
           setPartialPaidAmount(totals.net.toFixed(2));
+          setQuickCustName('');
+          setQuickCustPhone('');
+          setShowCheckoutWarning(false);
+          setShakeError(false);
       }
   }, [showCheckout, totals.net]);
 
@@ -443,40 +445,57 @@ export const POS: React.FC = () => {
       }
   };
 
+  const triggerErrorState = () => {
+      setShowCheckoutWarning(true);
+      setShakeError(true);
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      setTimeout(() => setShakeError(false), 500);
+      quickNameRef.current?.focus();
+  };
+
   const handleCheckout = async (action: 'save' | 'print' | 'share') => {
     if (cart.length === 0) return;
 
-    // Parse numeric value of paid amount
     const paidAmountValue = parseFloat(partialPaidAmount) || 0;
     const dueAmount = totals.net - paidAmountValue;
 
-    // Validation: Require customer for any dues
-    if (dueAmount > 1 && !selectedCustomer) { // 1 rupee buffer for rounding issues
-        alert("Please select a customer to assign the pending balance.");
-        setTimeout(() => {
-            setShowCheckout(false);
-            customerSearchInputRef.current?.focus();
-        }, 100);
-        return;
+    let activeCustomer = selectedCustomer;
+
+    if (dueAmount > 1 && !activeCustomer) { 
+        if (!quickCustName || !quickCustPhone) {
+            triggerErrorState();
+            return;
+        }
+
+        const phoneFormatted = quickCustPhone.startsWith('+') ? quickCustPhone : `+91 ${quickCustPhone}`;
+        activeCustomer = await StoreService.upsertCustomer({
+            name: quickCustName,
+            phone: phoneFormatted,
+            totalSpent: 0,
+            totalDues: 0,
+            visitCount: 0,
+            history: []
+        });
+        
+        setCustomers(prev => [...prev, activeCustomer!]);
     }
 
-    const customerName = selectedCustomer ? selectedCustomer.name : 'Walk-in Customer';
+    const customerName = activeCustomer ? activeCustomer.name : 'Walk-in Customer';
     
     const finalItems = cart.map(item => {
         const price = item.customPrice ?? item.sellPrice;
-        const effectiveTotal = ((price * item.quantity) - item.discount) + (((price * item.quantity) - item.discount) * ((item.taxRate||0)/100));
-        const effectiveUnit = effectiveTotal / item.quantity;
         return {
             ...item,
-            sellPrice: effectiveUnit
+            sellPrice: price, 
+            discount: item.discount 
         };
     });
 
     const sale = await StoreService.createSale({
       items: finalItems,
       customerName,
-      customerId: selectedCustomer?.id,
-      subtotal: totals.gross - totals.discount,
+      customerId: activeCustomer?.id,
+      subtotal: totals.gross, 
       tax: totals.tax,
       total: totals.net,
       amountPaid: paidAmountValue,
@@ -486,14 +505,14 @@ export const POS: React.FC = () => {
     if (action === 'print') {
         generateInvoicePDF(sale);
     } else if (action === 'share') {
-        const hasPhone = selectedCustomer && selectedCustomer.phone;
+        const hasPhone = activeCustomer && activeCustomer.phone;
         if (hasPhone) {
             const storeName = settings.storeName || "Noor Store";
             const itemsList = sale.items.map(i => `• ${i.name} x${i.quantity}`).join('%0A');
-            const link = `${window.location.origin}/?invoiceId=${sale.id}`; // Simulated link
+            const link = `${window.location.origin}/?invoiceId=${sale.id}`; 
             const message = `*${storeName}*%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ₹${sale.total.toFixed(0)}*%0A*Invoice:* ${link}`;
             
-            const phone = selectedCustomer.phone.replace(/[^0-9]/g, '');
+            const phone = activeCustomer.phone.replace(/[^0-9]/g, '');
             const url = `https://wa.me/${phone}?text=${message}`;
             window.open(url, '_blank');
         }
@@ -503,10 +522,11 @@ export const POS: React.FC = () => {
     setShowCheckout(false);
     setSelectedCustomer(null);
     setPaymentMethod('Cash'); 
+    setQuickCustName('');
+    setQuickCustPhone('');
     loadData();
   };
 
-  // --- Scanner Logic ---
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
     if (showScanner) {
@@ -517,7 +537,6 @@ export const POS: React.FC = () => {
                 { facingMode: "environment" },
                 { fps: 10, qrbox: { width: 250, height: 150 } },
                 (decodedText) => {
-                    // Play sound
                     if (settings.soundEnabled) {
                         new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {});
                     }
@@ -544,7 +563,6 @@ export const POS: React.FC = () => {
     }
   }, [showScanner, products, settings.soundEnabled]);
 
-  // --- Helpers ---
   const preventWheelChange = (e: React.WheelEvent<HTMLInputElement>) => {
       e.currentTarget.blur();
   };
@@ -555,12 +573,9 @@ export const POS: React.FC = () => {
       }
   };
 
-  // --- RENDER ---
-
   if (viewMode === 'HISTORY') {
       return (
           <div className="bg-white min-h-screen animate-in slide-in-from-right-10 flex flex-col">
-              {/* Header */}
               <div className="sticky top-0 bg-white border-b border-gray-100 z-10 px-4 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                       <button onClick={closeHistory} className="p-2 -ml-2 hover:bg-gray-50 rounded-full">
@@ -615,7 +630,6 @@ export const POS: React.FC = () => {
                   </div>
               </div>
 
-              {/* Selection Header (When Mode Active) */}
               {isSelectionMode && (
                   <div className="bg-gray-50 px-4 py-3 flex items-center gap-3 border-b border-gray-100 sticky top-[73px] z-10">
                        <button onClick={toggleSelectAll} className="flex items-center gap-2 text-sm font-bold text-gray-600">
@@ -629,14 +643,12 @@ export const POS: React.FC = () => {
                   </div>
               )}
 
-              {/* List / Grid */}
               <div className={`${historyLayout === 'grid' ? 'grid grid-cols-2 gap-3 p-4' : 'p-4 space-y-3'} pb-24`}>
                   {recentSales.map(sale => {
                       const isSelected = selectedSales.has(sale.id);
-                      // Determine if sale has pending dues
                       const paid = sale.amountPaid !== undefined ? sale.amountPaid : (sale.paymentMethod === 'Pay Later' ? 0 : sale.total);
                       const balance = sale.total - paid;
-                      const isDue = balance > 1; // Tolerance for floats
+                      const isDue = balance > 1; 
                       
                       const handleInteraction = () => {
                           if (isSelectionMode) {
@@ -749,7 +761,6 @@ export const POS: React.FC = () => {
                   })}
               </div>
 
-              {/* Delete Confirmation Modal */}
               <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} title="Confirm Deletion">
                   <div className="text-center py-4">
                       <h3 className="text-lg font-bold text-gray-900 mb-2">Delete {selectedSales.size} Records?</h3>
@@ -760,7 +771,6 @@ export const POS: React.FC = () => {
                   </div>
               </Modal>
 
-              {/* Dues Error Modal (Similar to Customers Tab) */}
               <Modal isOpen={showDuesError} onClose={() => setShowDuesError(false)} title="Restricted Action">
                   <div className="text-center py-4">
                       <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -774,15 +784,13 @@ export const POS: React.FC = () => {
                   </div>
               </Modal>
 
-              {/* Sale Details Modal */}
               <Modal isOpen={!!saleDetail} onClose={() => setSaleDetail(null)} title="Sale Details" className="!max-w-lg">
                   {saleDetail && (
                       <div className="animate-in fade-in zoom-in-95">
-                          {/* Payment Status Header */}
                           {(() => {
                               const paid = saleDetail.amountPaid !== undefined ? saleDetail.amountPaid : (saleDetail.paymentMethod === 'Pay Later' ? 0 : saleDetail.total);
                               const due = saleDetail.total - paid;
-                              const isUnpaid = due > 1; // buffer
+                              const isUnpaid = due > 1; 
                               return (
                                   <div className={`p-4 rounded-xl mb-4 text-center border-2 ${isUnpaid ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
                                       <div className="text-xs font-bold uppercase tracking-wider mb-1 text-gray-500">Status</div>
@@ -796,7 +804,6 @@ export const POS: React.FC = () => {
                               );
                           })()}
 
-                          {/* Customer & Meta */}
                           <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                               <div>
                                   <div className="text-xs text-gray-400 font-bold uppercase mb-1">Customer</div>
@@ -809,17 +816,15 @@ export const POS: React.FC = () => {
                               </div>
                           </div>
 
-                          {/* Items List */}
                           <div className="space-y-2 mb-6 max-h-60 overflow-y-auto bg-gray-50 p-3 rounded-lg border border-gray-200">
                               {saleDetail.items.map((item, i) => (
                                   <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-200 last:border-0">
                                       <span>{item.name} <span className="text-gray-400 text-xs">x{item.quantity}</span></span>
-                                      <span className="font-bold text-gray-700">₹{(item.sellPrice * item.quantity).toFixed(2)}</span>
+                                      <span className="font-bold text-gray-700">₹{((item.sellPrice * item.quantity) - (item.discount || 0)).toFixed(2)}</span>
                                   </div>
                               ))}
                           </div>
 
-                          {/* Actions */}
                           <div className="grid grid-cols-2 gap-3">
                               <Button variant="neutral" onClick={initiateEditSale} className="flex items-center justify-center gap-2 border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300">
                                   <Edit3 size={18} /> Edit
@@ -832,7 +837,6 @@ export const POS: React.FC = () => {
                   )}
               </Modal>
 
-              {/* Edit Warning Modal */}
               <Modal isOpen={showEditWarning} onClose={() => setShowEditWarning(false)} title="Warning: Outstanding Dues">
                   <div className="text-center py-4">
                       <div className="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -849,89 +853,145 @@ export const POS: React.FC = () => {
                   </div>
               </Modal>
 
-              {/* Edit Sale Form Modal */}
-              <Modal isOpen={isEditingSale} onClose={() => setIsEditingSale(false)} title="Edit Sale" className="!max-w-2xl">
+              <Modal 
+                  isOpen={isEditingSale} 
+                  onClose={() => setIsEditingSale(false)} 
+                  title="Edit Transaction" 
+                  className="!max-w-3xl !p-0 overflow-hidden border-0 shadow-2xl bg-white"
+              >
                   {editingSaleData && (
-                      <div className="animate-in fade-in space-y-4">
-                          {/* Financials Edit */}
-                          <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Customer Name</label>
-                                  <Input 
-                                      value={editingSaleData.customerName}
-                                      onChange={(e) => setEditingSaleData({...editingSaleData, customerName: e.target.value})}
-                                      className="bg-gray-50"
-                                  />
+                      <div className="animate-in fade-in flex flex-col h-full">
+                          <div className="bg-indigo-600 px-6 py-5 text-white">
+                              <div className="flex items-center gap-2 text-indigo-100 text-[10px] font-extrabold uppercase tracking-widest mb-1">
+                                  <Edit3 size={12}/> Editing Record
                               </div>
-                              <div>
-                                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Payment Method</label>
-                                  <select 
-                                      className="w-full rounded-lg px-4 py-2.5 bg-gray-50 border-2 border-gray-200 text-gray-900 focus:outline-none focus:border-blue-500"
-                                      value={editingSaleData.paymentMethod}
-                                      onChange={(e) => setEditingSaleData({...editingSaleData, paymentMethod: e.target.value})}
-                                  >
-                                      {['Cash', 'UPI', 'Card', 'Pay Later'].map(m => <option key={m} value={m}>{m}</option>)}
-                                  </select>
-                              </div>
+                              <h2 className="text-xl font-bold"># {editingSaleData.id.slice(0,12).toUpperCase()}</h2>
                           </div>
 
-                          <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center justify-between">
-                              <div>
-                                  <label className="text-xs font-bold text-blue-700 uppercase">Amount Paid</label>
-                                  <div className="text-xs text-blue-500">Update if payment settled later</div>
-                              </div>
-                              <div className="flex items-center bg-white border border-blue-200 rounded-lg px-3 py-1 w-32">
-                                  <span className="text-gray-400 font-bold mr-1">₹</span>
-                                  <input 
-                                      type="number"
-                                      className="w-full outline-none font-bold text-gray-800 text-lg"
-                                      value={editingSaleData.amountPaid ?? editingSaleData.total}
-                                      onChange={(e) => setEditingSaleData({...editingSaleData, amountPaid: parseFloat(e.target.value) || 0})}
-                                  />
-                              </div>
-                          </div>
+                          <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100">
+                                      <label className="text-[10px] font-extrabold text-blue-400 uppercase tracking-widest block mb-2">Billing Customer</label>
+                                      <div className="flex items-center gap-3">
+                                          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+                                              <User size={20}/>
+                                          </div>
+                                          <Input 
+                                              value={editingSaleData.customerName}
+                                              onChange={(e) => setEditingSaleData({...editingSaleData, customerName: e.target.value})}
+                                              className="!bg-white !border-blue-200 !py-2 !px-3 font-bold"
+                                              placeholder="Customer Name"
+                                              onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                      e.currentTarget.blur();
+                                                  }
+                                              }}
+                                          />
+                                      </div>
+                                  </div>
 
-                          {/* Items Edit Table */}
-                          <div className="border border-gray-200 rounded-lg overflow-hidden">
-                              <table className="w-full text-sm">
-                                  <thead className="bg-gray-100 text-gray-500 font-bold text-xs uppercase">
-                                      <tr>
-                                          <th className="px-3 py-2 text-left">Item</th>
-                                          <th className="px-3 py-2 text-center w-20">Qty</th>
-                                          <th className="px-3 py-2 text-right w-24">Total</th>
-                                      </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
+                                  <div className="bg-purple-50 p-4 rounded-2xl border-2 border-purple-100">
+                                      <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest block mb-2">Original Method</label>
+                                      <div className="flex items-center gap-3">
+                                          <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white shrink-0">
+                                              <Banknote size={20}/>
+                                          </div>
+                                          <select 
+                                              className="w-full rounded-lg px-3 py-2 bg-white border-2 border-purple-200 text-gray-900 font-bold focus:outline-none focus:border-purple-500 appearance-none"
+                                              value={editingSaleData.paymentMethod}
+                                              onChange={(e) => setEditingSaleData({...editingSaleData, paymentMethod: e.target.value})}
+                                          >
+                                              {['Cash', 'UPI', 'Card', 'Pay Later'].map(m => <option key={m} value={m}>{m}</option>)}
+                                          </select>
+                                      </div>
+                                  </div>
+                              </div>
+
+                              <div className="bg-green-600 p-5 rounded-2xl text-white shadow-lg shadow-green-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                                  <div className="text-center md:text-left">
+                                      <div className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Amount Actually Paid</div>
+                                      <div className="text-xs text-green-200 opacity-80 mt-0.5">Update if balance was settled outside this POS</div>
+                                  </div>
+                                  <div className="flex items-center bg-white rounded-xl px-4 py-2 w-full md:w-48 shadow-inner">
+                                      <span className="text-green-600 font-black text-xl mr-2">₹</span>
+                                      <input 
+                                          type="number"
+                                          className="w-full outline-none font-black text-green-700 text-2xl bg-transparent"
+                                          value={editingSaleData.amountPaid ?? editingSaleData.total}
+                                          onChange={(e) => setEditingSaleData({...editingSaleData, amountPaid: parseFloat(e.target.value) || 0})}
+                                          onKeyDown={(e) => {
+                                              if (e.key === 'Enter') {
+                                                  e.currentTarget.blur();
+                                              }
+                                          }}
+                                      />
+                                  </div>
+                              </div>
+
+                              <div className="space-y-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                      <ShoppingCart size={16} className="text-gray-400" />
+                                      <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Purchased Items</h3>
+                                  </div>
+                                  
+                                  <div className="space-y-3">
                                       {editingSaleData.items.map((item, idx) => (
-                                          <tr key={idx} className="bg-white">
-                                              <td className="px-3 py-2 font-medium text-gray-800">{item.name}</td>
-                                              <td className="px-3 py-2">
-                                                  <input 
-                                                      type="number" 
-                                                      className="w-full bg-gray-50 border border-gray-200 rounded px-1 text-center font-bold"
-                                                      value={item.quantity}
-                                                      onChange={(e) => handleUpdateEditingSaleItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                                                  />
-                                              </td>
-                                              <td className="px-3 py-2 text-right font-bold text-gray-700">
-                                                  ₹{(item.sellPrice * item.quantity).toFixed(0)}
-                                              </td>
-                                          </tr>
+                                          <div key={idx} className="bg-white border-2 border-indigo-50 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-indigo-200 transition-all">
+                                              <div className="min-w-0 flex-1">
+                                                  <div className="font-bold text-gray-800 text-lg group-hover:text-indigo-600 transition-colors truncate">{item.name}</div>
+                                                  <div className="text-xs text-gray-400 font-medium">Unit Price: ₹{item.sellPrice.toFixed(2)}</div>
+                                              </div>
+                                              
+                                              <div className="flex items-center gap-6 shrink-0 bg-indigo-50/50 p-2 md:p-0 rounded-xl md:bg-transparent">
+                                                  <div className="flex flex-col items-center">
+                                                      <label className="text-[9px] font-black text-indigo-400 uppercase mb-1">Qty</label>
+                                                      <input 
+                                                          type="number" 
+                                                          className="w-16 bg-white border-2 border-indigo-100 rounded-lg py-1.5 text-center font-black text-indigo-700 focus:border-indigo-500 outline-none"
+                                                          value={item.quantity}
+                                                          onChange={(e) => handleUpdateEditingSaleItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                                                          onKeyDown={(e) => {
+                                                              if (e.key === 'Enter') {
+                                                                  e.currentTarget.blur();
+                                                              }
+                                                          }}
+                                                      />
+                                                  </div>
+                                                  
+                                                  <div className="flex flex-col items-end min-w-[80px]">
+                                                      <label className="text-[9px] font-black text-gray-400 uppercase mb-1">Subtotal</label>
+                                                      <div className="font-black text-gray-800 text-lg">
+                                                          ₹{((item.sellPrice * item.quantity) - (item.discount || 0)).toFixed(0)}
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                          </div>
                                       ))}
-                                  </tbody>
-                              </table>
-                          </div>
+                                  </div>
+                              </div>
 
-                          <div className="flex justify-between items-center pt-2">
-                              <div className="text-right w-full">
-                                  <span className="text-gray-500 text-sm mr-2">New Total:</span>
-                                  <span className="text-2xl font-extrabold text-gray-900">₹{editingSaleData.total.toFixed(2)}</span>
+                              <div className="pt-6 border-t-2 border-dashed border-gray-100 flex flex-col items-end">
+                                  <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-1">Revised Transaction Total</div>
+                                  <div className="text-4xl font-black text-gray-900">
+                                      ₹{editingSaleData.total.toFixed(2)}
+                                  </div>
                               </div>
                           </div>
 
-                          <div className="flex gap-3 pt-4 border-t border-gray-100">
-                              <Button variant="neutral" onClick={() => setIsEditingSale(false)} className="flex-1">Cancel</Button>
-                              <Button onClick={saveEditedSale} className="flex-1 bg-green-600 hover:bg-green-700 shadow-lg shadow-green-200">Save Changes</Button>
+                          <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row gap-3">
+                              <Button 
+                                  variant="neutral" 
+                                  onClick={() => setIsEditingSale(false)} 
+                                  className="flex-1 !py-4 font-bold border-2 border-gray-200 text-gray-500 hover:bg-white"
+                              >
+                                  Discard Changes
+                              </Button>
+                              <Button 
+                                  onClick={saveEditedSale} 
+                                  className="flex-1 !py-4 font-bold bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-2"
+                              >
+                                  <Save size={20}/> Save Record
+                              </Button>
                           </div>
                       </div>
                   )}
@@ -946,11 +1006,17 @@ export const POS: React.FC = () => {
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
+        
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+          20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .shake-element { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
       `}</style>
 
       <div className="w-full max-w-5xl mx-auto bg-white md:rounded-xl md:shadow-xl md:border border-gray-100 min-h-[85vh] flex flex-col">
           
-          {/* Header - Flex Row on all screens to keep History opposite Invoice */}
           <div className="p-4 md:p-8 border-b border-gray-100 flex flex-row justify-between items-center gap-4 relative z-30">
               <div className="flex flex-col justify-between">
                   <div>
@@ -962,7 +1028,6 @@ export const POS: React.FC = () => {
                   </div>
               </div>
               
-              {/* History Button on the right */}
               <div className="flex gap-3">
                   <Button variant="neutral" onClick={openHistory} className="!px-3" title="History">
                       <History size={18}/>
@@ -970,7 +1035,6 @@ export const POS: React.FC = () => {
               </div>
           </div>
 
-          {/* Bill To Section */}
           <div className="p-4 md:px-8 bg-gray-50/50 border-b border-gray-100">
               <div className="flex-1 max-w-md relative group">
                   {!selectedCustomer ? (
@@ -989,6 +1053,11 @@ export const POS: React.FC = () => {
                                           setShowCustomerDropdown(true);
                                       }}
                                       onFocus={() => setShowCustomerDropdown(true)}
+                                      onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && filteredCustomers.length > 0) {
+                                              handleCustomerSelect(filteredCustomers[0]);
+                                          }
+                                      }}
                                   />
                                   {showCustomerDropdown && customerSearch && (
                                       <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden max-h-60 overflow-y-auto z-50">
@@ -1106,21 +1175,26 @@ export const POS: React.FC = () => {
               </div>
           </div>
 
-          {/* Scanner Button Section (Below Bill To) */}
           <div className="px-4 md:px-8 py-3 bg-white">
-               <button 
-                  onClick={() => setShowScanner(true)} 
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 text-white rounded-lg shadow-sm active:scale-95 transition-all hover:bg-gray-800"
-               >
-                   <Scan size={20}/>
-                   <span className="font-bold text-sm">Scan Barcode</span>
-               </button>
+               {/* Conditional rendering for scanner preference */}
+               {(settings.scannerPreference === 'phone' || settings.scannerPreference === 'both') ? (
+                   <button 
+                      onClick={() => setShowScanner(true)} 
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-gray-900 text-white rounded-lg shadow-sm active:scale-95 transition-all hover:bg-gray-800"
+                   >
+                       <Scan size={20}/>
+                       <span className="font-bold text-sm">Scan Barcode</span>
+                   </button>
+               ) : (
+                   <div className="w-full p-3 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-center">
+                       <p className="text-xs text-gray-500 font-bold">Physical Scanner Mode Enabled</p>
+                       <p className="text-[10px] text-gray-400 italic">Ready to accept machine scans...</p>
+                   </div>
+               )}
           </div>
 
-          {/* 3. INVOICE TABLE (Unified, Responsive, Always Visible Headers) */}
           <div className="flex-1 overflow-x-auto min-h-[400px] flex flex-col">
               <div className="min-w-[600px] w-full">
-                  {/* Persistent Header */}
                   <div className="grid grid-cols-[40px_2fr_80px_60px_60px_80px_40px] gap-2 px-4 md:px-8 py-3 bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider sticky top-0 z-20">
                       <div className="text-center">#</div>
                       <div>Item Details</div>
@@ -1131,7 +1205,6 @@ export const POS: React.FC = () => {
                       <div></div>
                   </div>
 
-                  {/* Cart Items */}
                   <div className="divide-y divide-gray-100">
                       {cart.map((item, index) => {
                          const lineTotal = ((item.customPrice ?? item.sellPrice) * item.quantity) - item.discount;
@@ -1139,7 +1212,6 @@ export const POS: React.FC = () => {
                              <div key={item.id} className="grid grid-cols-[40px_2fr_80px_60px_60px_80px_40px] gap-2 items-center px-4 md:px-8 py-3 hover:bg-gray-50/50 transition-colors group">
                                  <div className="text-center text-gray-400 font-medium text-sm">{index + 1}</div>
                                  <div>
-                                     {/* Editable Name */}
                                      <input 
                                          className="w-full font-bold text-gray-900 text-sm bg-transparent border-b border-transparent hover:border-gray-200 focus:border-blue-500 outline-none transition-colors"
                                          value={item.name}
@@ -1190,7 +1262,6 @@ export const POS: React.FC = () => {
                          );
                       })}
 
-                      {/* INLINE ADD ROW (The "Always Visible" Search Box) */}
                       <div className="grid grid-cols-[40px_2fr_80px_60px_60px_80px_40px] gap-2 items-start px-4 md:px-8 py-3 bg-white relative">
                           <div className="text-center text-gray-300 font-medium text-sm pt-2">{cart.length + 1}</div>
                           <div className="relative">
@@ -1209,7 +1280,6 @@ export const POS: React.FC = () => {
                                   />
                               </div>
                               
-                              {/* Search Dropdown */}
                               {inlineSearch && (
                                   <div className="absolute top-full left-0 w-full mt-1 bg-white rounded-lg shadow-xl border border-gray-100 max-h-60 overflow-y-auto z-50">
                                       {filteredInlineProducts.length > 0 ? (
@@ -1239,7 +1309,6 @@ export const POS: React.FC = () => {
                                   </div>
                               )}
                           </div>
-                          {/* Empty cells for alignment */}
                           <div className="text-right pt-2 text-gray-300 text-sm">-</div>
                           <div className="text-center pt-2 text-gray-300 text-sm">-</div>
                           <div className="text-center pt-2 text-gray-300 text-sm">-</div>
@@ -1250,7 +1319,6 @@ export const POS: React.FC = () => {
               </div>
           </div>
 
-          {/* Footer Totals */}
           <div className="bg-gray-50 p-6 md:p-8 border-t border-gray-200">
               <div className="flex flex-col md:flex-row gap-8 items-end justify-between">
                   <div className="w-full md:w-auto text-xs text-gray-400 hidden md:block">
@@ -1286,9 +1354,6 @@ export const POS: React.FC = () => {
           </div>
       </div>
 
-      {/* --- MODALS --- */}
-      
-      {/* Create Product Modal (Simplified trigger via inline search) */}
       <Modal isOpen={showProductLookup && isCreatingProduct} onClose={() => { setShowProductLookup(false); setIsCreatingProduct(false); }} title="Add New Product" className="!max-w-2xl !bg-[#fdfdfc] !shadow-2xl border-0">
             <div className="animate-in fade-in slide-in-from-right-4">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -1300,7 +1365,9 @@ export const POS: React.FC = () => {
                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Barcode / SKU</label>
                          <div className="flex w-full">
                             <Input ref={prodSkuRef} onKeyDown={(e) => handleKeyDown(e, prodSellRef)} placeholder="Scan or type" value={newProduct.sku} onChange={e => setNewProduct({...newProduct, sku: e.target.value})} className="!bg-white !border-gray-200 rounded-r-none"/>
-                            <button onClick={() => setShowScanner(true)} className="px-3 bg-white border border-gray-200 border-l-0 rounded-r-lg text-gray-600 hover:bg-gray-50"><Scan size={20}/></button>
+                            {(settings.scannerPreference === 'phone' || settings.scannerPreference === 'both') && (
+                                <button onClick={() => setShowScanner(true)} className="px-3 bg-white border border-gray-200 border-l-0 rounded-r-lg text-gray-600 hover:bg-gray-50"><Scan size={20}/></button>
+                            )}
                         </div>
                     </div>
                     <div>
@@ -1313,7 +1380,7 @@ export const POS: React.FC = () => {
                     </div>
                     <div>
                         <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 block">Stock Quantity</label>
-                        <Input ref={prodStockRef} onKeyDown={(e) => handleKeyDown(e, prodCatRef)} type="number" placeholder="Qty" value={newProduct.stock || ''} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} className="!bg-white !border-gray-200 flex-1"/>
+                        <Input ref={prodStockRef} onKeyDown={(e) => handleKeyDown(e, null, handleSaveProduct)} type="number" placeholder="Qty" value={newProduct.stock || ''} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} className="!bg-white !border-gray-200 flex-1"/>
                     </div>
                  </div>
                  <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
@@ -1323,26 +1390,58 @@ export const POS: React.FC = () => {
             </div>
       </Modal>
 
-      {/* Checkout Confirm */}
       <Modal isOpen={showCheckout} onClose={() => setShowCheckout(false)} title="Payment">
         <div className="text-center px-4 pb-4">
             <h2 className="text-4xl font-extrabold text-gray-900 mb-2">₹{totals.net.toFixed(2)}</h2>
             <p className="text-gray-500 text-sm mb-6">Total Amount Due</p>
-            <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-6 border border-gray-100">
-                {selectedCustomer && (
+            
+            <div className={`bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-6 border transition-all relative overflow-hidden ${showCheckoutWarning ? 'border-red-400 ring-4 ring-red-100 bg-red-50/50' : 'border-gray-100'} ${shakeError ? 'shake-element' : ''}`}>
+                {selectedCustomer ? (
                     <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Customer</span>
                         <span className="font-bold text-gray-900">{selectedCustomer.name}</span>
                     </div>
+                ) : (
+                    <div className="animate-in fade-in">
+                        <div className={`flex items-center gap-2 mb-3 ${showCheckoutWarning ? 'text-red-600' : 'text-blue-600'}`}>
+                            {showCheckoutWarning ? <AlertTriangle size={18} className="animate-pulse"/> : <UserPlus size={16} />}
+                            <span className="text-xs font-bold uppercase tracking-wider">{showCheckoutWarning ? 'Details Required for Dues!' : 'Quick Register Customer'}</span>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            <div className="relative">
+                                <User size={14} className={`absolute left-3 top-3 ${showCheckoutWarning ? 'text-red-400' : 'text-gray-400'}`} />
+                                <input 
+                                    ref={quickNameRef}
+                                    className={`w-full pl-9 pr-3 py-2 text-sm bg-white border rounded-lg focus:border-blue-500 outline-none transition-all placeholder-gray-400 ${showCheckoutWarning && !quickCustName ? 'border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.2)]' : 'border-gray-200'}`}
+                                    placeholder="Enter Customer Name"
+                                    value={quickCustName}
+                                    onChange={(e) => {setQuickCustName(e.target.value); if(e.target.value) setShowCheckoutWarning(false);}}
+                                />
+                            </div>
+                            <div className="relative">
+                                <Phone size={14} className={`absolute left-3 top-3 ${showCheckoutWarning ? 'text-red-400' : 'text-gray-400'}`} />
+                                <input 
+                                    className={`w-full pl-9 pr-3 py-2 text-sm bg-white border rounded-lg focus:border-blue-500 outline-none transition-all placeholder-gray-400 ${showCheckoutWarning && !quickCustPhone ? 'border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.2)]' : 'border-gray-200'}`}
+                                    placeholder="Enter Phone Number"
+                                    value={quickCustPhone}
+                                    onChange={(e) => {setQuickCustPhone(e.target.value.replace(/\D/g, '')); if(e.target.value) setShowCheckoutWarning(false);}}
+                                    maxLength={10}
+                                />
+                            </div>
+                            <p className={`text-[10px] italic font-medium ${showCheckoutWarning ? 'text-red-500' : 'text-gray-400'}`}>
+                                {showCheckoutWarning ? 'You must assign this debt to a person.' : 'Assigning a name allows tracking dues if payment is partial.'}
+                            </p>
+                        </div>
+                    </div>
                 )}
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm border-t border-gray-200 pt-3 mt-3">
                     <span className="text-gray-500">Total Items</span>
                     <span className="font-bold text-gray-900">{cart.length}</span>
                 </div>
             </div>
             
             <div className="mb-6">
-                {/* --- Paying Now Input (Moved Above) --- */}
                 <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-left mb-6">
                     <div className="flex justify-between items-center mb-1">
                         <label className="text-xs font-bold text-blue-800 uppercase tracking-wider">Paying Now</label>
@@ -1359,15 +1458,14 @@ export const POS: React.FC = () => {
                         />
                     </div>
                     
-                    {/* Dynamic Balance Display */}
                     {(() => {
                         const paid = parseFloat(partialPaidAmount) || 0;
                         const due = totals.net - paid;
-                        if (due > 1) { // Allow slight float variance
+                        if (due > 1) {
                             return (
                                 <div className="mt-2 flex items-start gap-2 text-xs text-red-600 font-medium animate-in fade-in">
                                     <AlertTriangle size={14} className="mt-0.5 shrink-0"/>
-                                    <span>Balance <strong>₹{due.toFixed(2)}</strong> will be added to {selectedCustomer ? selectedCustomer.name.split(' ')[0] + "'s" : "Customer"} dues.</span>
+                                    <span>Balance <strong>₹{due.toFixed(2)}</strong> will be added to {selectedCustomer ? selectedCustomer.name.split(' ')[0] + "'s" : (quickCustName || "Customer")} dues.</span>
                                 </div>
                             );
                         }
@@ -1387,23 +1485,166 @@ export const POS: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-                <Button onClick={() => handleCheckout('share')} className="col-span-1 py-3 font-bold bg-[#25D366] hover:bg-[#128C7E] text-white shadow-[#25D366]/20 flex items-center justify-center gap-2">
-                    {selectedCustomer?.phone ? <WhatsAppLogo /> : <CheckCircle size={20}/>}
-                    {selectedCustomer?.phone ? 'Share & Save' : 'Save Only'}
-                </Button>
-                <Button onClick={() => handleCheckout('print')} className="col-span-1 py-3 font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-200 flex items-center justify-center gap-2">
+                <Button onClick={() => handleCheckout('print')} className="col-span-1 py-3 font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-200 flex items-center justify-center gap-2 transition-transform active:scale-95">
                     <Printer size={20}/> Save & Print
+                </Button>
+                <Button onClick={() => handleCheckout('share')} className="col-span-1 py-3 font-bold bg-[#25D366] hover:bg-[#128C7E] text-white shadow-[#25D366]/20 flex items-center justify-center gap-2 transition-transform active:scale-95">
+                    {(selectedCustomer?.phone || quickCustPhone) ? <WhatsAppLogo /> : <CheckCircle size={20}/>}
+                    {(selectedCustomer?.phone || quickCustPhone) ? 'Share & Save' : 'Save Only'}
                 </Button>
             </div>
         </div>
       </Modal>
 
-      {/* Scanner */}
       <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode">
          <div className="relative bg-black rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center">
              <div id="pos-reader" className="w-full h-full"></div>
              <p className="absolute bottom-4 text-white text-xs bg-black/50 px-2 py-1 rounded z-10">Align barcode within frame</p>
          </div>
+      </Modal>
+
+      <Modal 
+          isOpen={isEditingSale} 
+          onClose={() => setIsEditingSale(false)} 
+          title="Edit Transaction" 
+          className="!max-w-3xl !p-0 overflow-hidden border-0 shadow-2xl bg-white"
+      >
+          {editingSaleData && (
+              <div className="animate-in fade-in flex flex-col h-full">
+                  <div className="bg-indigo-600 px-6 py-5 text-white">
+                      <div className="flex items-center gap-2 text-indigo-100 text-[10px] font-extrabold uppercase tracking-widest mb-1">
+                          <Edit3 size={12}/> Editing Record
+                      </div>
+                      <h2 className="text-xl font-bold"># {editingSaleData.id.slice(0,12).toUpperCase()}</h2>
+                  </div>
+
+                  <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100">
+                              <label className="text-[10px] font-extrabold text-blue-400 uppercase tracking-widest block mb-2">Billing Customer</label>
+                              <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0">
+                                      <User size={20}/>
+                                  </div>
+                                  <Input 
+                                      value={editingSaleData.customerName}
+                                      onChange={(e) => setEditingSaleData({...editingSaleData, customerName: e.target.value})}
+                                      className="!bg-white !border-blue-200 !py-2 !px-3 font-bold"
+                                      placeholder="Customer Name"
+                                      onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                              e.currentTarget.blur();
+                                          }
+                                      }}
+                                  />
+                              </div>
+                          </div>
+
+                          <div className="bg-purple-50 p-4 rounded-2xl border-2 border-purple-100">
+                              <label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest block mb-2">Original Method</label>
+                              <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white shrink-0">
+                                      <Banknote size={20}/>
+                                  </div>
+                                  <select 
+                                      className="w-full rounded-lg px-3 py-2 bg-white border-2 border-purple-200 text-gray-900 font-bold focus:outline-none focus:border-purple-500 appearance-none"
+                                      value={editingSaleData.paymentMethod}
+                                      onChange={(e) => setEditingSaleData({...editingSaleData, paymentMethod: e.target.value})}
+                                  >
+                                      {['Cash', 'UPI', 'Card', 'Pay Later'].map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                              </div>
+                          </div>
+                      </div>
+
+                      <div className="bg-green-600 p-5 rounded-2xl text-white shadow-lg shadow-green-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div className="text-center md:text-left">
+                              <div className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Amount Actually Paid</div>
+                              <div className="text-xs text-green-200 opacity-80 mt-0.5">Update if balance was settled outside this POS</div>
+                          </div>
+                          <div className="flex items-center bg-white rounded-xl px-4 py-2 w-full md:w-48 shadow-inner">
+                              <span className="text-green-600 font-black text-xl mr-2">₹</span>
+                              <input 
+                                  type="number"
+                                  className="w-full outline-none font-black text-green-700 text-2xl bg-transparent"
+                                  value={editingSaleData.amountPaid ?? editingSaleData.total}
+                                  onChange={(e) => setEditingSaleData({...editingSaleData, amountPaid: parseFloat(e.target.value) || 0})}
+                                  onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                          e.currentTarget.blur();
+                                      }
+                                  }}
+                              />
+                          </div>
+                      </div>
+
+                      <div className="space-y-3">
+                          <div className="flex items-center gap-2 mb-2">
+                              <ShoppingCart size={16} className="text-gray-400" />
+                              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Purchased Items</h3>
+                          </div>
+                          
+                          <div className="space-y-3">
+                              {editingSaleData.items.map((item, idx) => (
+                                  <div key={idx} className="bg-white border-2 border-indigo-50 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:border-indigo-200 transition-all">
+                                      <div className="min-w-0 flex-1">
+                                          <div className="font-bold text-gray-800 text-lg group-hover:text-indigo-600 transition-colors truncate">{item.name}</div>
+                                          <div className="text-xs text-gray-400 font-medium">Unit Price: ₹{item.sellPrice.toFixed(2)}</div>
+                                      </div>
+                                      
+                                      <div className="flex items-center gap-6 shrink-0 bg-indigo-50/50 p-2 md:p-0 rounded-xl md:bg-transparent">
+                                          <div className="flex flex-col items-center">
+                                              <label className="text-[9px] font-black text-indigo-400 uppercase mb-1">Qty</label>
+                                              <input 
+                                                  type="number" 
+                                                  className="w-16 bg-white border-2 border-indigo-100 rounded-lg py-1.5 text-center font-black text-indigo-700 focus:border-indigo-500 outline-none"
+                                                  value={item.quantity}
+                                                  onChange={(e) => handleUpdateEditingSaleItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                                                  onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                          e.currentTarget.blur();
+                                                      }
+                                                  }}
+                                              />
+                                          </div>
+                                          
+                                          <div className="flex flex-col items-end min-w-[80px]">
+                                              <label className="text-[9px] font-black text-gray-400 uppercase mb-1">Subtotal</label>
+                                              <div className="font-black text-gray-800 text-lg">
+                                                  ₹{((item.sellPrice * item.quantity) - (item.discount || 0)).toFixed(0)}
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      </div>
+
+                      <div className="pt-6 border-t-2 border-dashed border-gray-100 flex flex-col items-end">
+                          <div className="text-[10px] font-extrabold text-gray-400 uppercase tracking-widest mb-1">Revised Transaction Total</div>
+                          <div className="text-4xl font-black text-gray-900">
+                              ₹{editingSaleData.total.toFixed(2)}
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row gap-3">
+                      <Button 
+                          variant="neutral" 
+                          onClick={() => setIsEditingSale(false)} 
+                          className="flex-1 !py-4 font-bold border-2 border-gray-200 text-gray-500 hover:bg-white"
+                      >
+                          Discard Changes
+                      </Button>
+                      <Button 
+                          onClick={saveEditedSale} 
+                          className="flex-1 !py-4 font-bold bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-2"
+                      >
+                          <Save size={20}/> Save Record
+                      </Button>
+                  </div>
+              </div>
+          )}
       </Modal>
 
     </div>

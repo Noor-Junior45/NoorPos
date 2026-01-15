@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon, Check } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon, Check, Smartphone } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -64,7 +63,7 @@ interface WarehouseProps {
 
 export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearAction }) => {
   const [activeTab, setActiveTab] = useState<SubTab>(SubTab.DASHBOARD);
-  const [viewMode, setViewMode] = useState<'WAREHOUSE' | 'REVIEW'>('WAREHOUSE'); // New View Mode State
+  const [viewMode, setViewMode] = useState<'WAREHOUSE' | 'REVIEW'>('WAREHOUSE');
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -76,17 +75,18 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       expiryAlertDays: 7, 
       lowStockDefault: 10, 
       soundEnabled: true, 
-      currencySymbol: '₹' 
+      currencySymbol: '₹',
+      recycleBinRetentionDays: 30,
+      directPrintEnabled: false,
+      scannerPreference: 'both'
   });
   const [loading, setLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Grouping State
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  // Product Form State
   const [newProduct, setNewProduct] = useState<Partial<Product>>({ 
     name: '', sku: '', stock: 0, unit: 'pcs', capacity: '', 
     buyPrice: 0, sellPrice: 0, wholesalePrice: 0, 
@@ -94,26 +94,21 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     expiryDate: '', manufacturingDate: ''
   });
 
-  // Batch Calculator State
   const [batchConfig, setBatchConfig] = useState({ packs: '', perPack: '' });
-
   const [showTagModal, setShowTagModal] = useState(false);
   const [newTag, setNewTag] = useState<Partial<Tag>>({ name: '', color: '#3b82f6' });
   const [itemToDelete, setItemToDelete] = useState<{ id: string, type: 'product' | 'tag' | 'bulk_products', name: string } | null>(null);
   
-  // Scanner State
   const [showScanner, setShowScanner] = useState(false);
   const [isScanningToAdd, setIsScanningToAdd] = useState(false);
 
   const [activeFilter, setActiveFilter] = useState<ProductFilter>(ProductFilter.ALL);
   const [settingsSearch, setSettingsSearch] = useState('');
 
-  // Swipe State
   const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
   const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
   const minSwipeDistance = 50;
 
-  // Invoice Parsing State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isParsingInvoice, setIsParsingInvoice] = useState(false);
@@ -122,7 +117,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const [showSourceOptions, setShowSourceOptions] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
-  // --- Editor Input Refs (Navigation) ---
   const editNameRef = useRef<HTMLInputElement>(null);
   const editSkuRef = useRef<HTMLInputElement>(null);
   const editCategoryRef = useRef<HTMLSelectElement>(null);
@@ -136,7 +130,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   useEffect(() => { loadData(); }, []);
 
-  // Handle Initial Actions (from Dashboard)
   useEffect(() => {
     if (initialAction === 'add') {
         handleOpenAdd();
@@ -164,7 +157,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     setLoading(false);
   };
   
-  // Barcode Scanner Logic
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
     if (showScanner) {
@@ -180,17 +172,14 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     if (settings.soundEnabled) { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play().catch(() => {}); }
                     
                     if (isScanningToAdd) {
-                        // Scan to Add Mode
                         setNewProduct(prev => ({ ...prev, sku: decodedText }));
                         setShowScanner(false);
                         setIsEditorOpen(true);
                         setIsScanningToAdd(false);
                     } else if (isEditorOpen) { 
-                        // Just filling the field in an open form
                         setNewProduct(prev => ({ ...prev, sku: decodedText })); 
                         setShowScanner(false);
                     } else { 
-                        // Scan to Search
                         setSearchTerm(decodedText); 
                         setActiveTab(SubTab.PRODUCTS); 
                         setShowScanner(false);
@@ -286,13 +275,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     return counts;
   }, [groupedProducts]);
 
-  const getUnitBadgeStyle = (unitString: string, isMultiVariant: boolean) => {
-      if (!isMultiVariant) return "bg-gray-100 text-gray-600 border-gray-200";
-      const colors = ['bg-orange-100 text-orange-800 border-orange-200', 'bg-blue-100 text-blue-800 border-blue-200', 'bg-purple-100 text-purple-800 border-purple-200', 'bg-rose-100 text-rose-800 border-rose-200', 'bg-emerald-100 text-emerald-800 border-emerald-200', 'bg-indigo-100 text-indigo-800 border-indigo-200', 'bg-cyan-100 text-cyan-800 border-cyan-200'];
-      let hash = 0; for (let i = 0; i < unitString.length; i++) { hash = unitString.charCodeAt(i) + ((hash << 5) - hash); }
-      return colors[Math.abs(hash) % colors.length];
-  };
-
   const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY }); };
   const onTouchMove = (e: React.TouchEvent) => { setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY }); };
   const onTouchEnd = () => {
@@ -376,7 +358,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   const renderEditor = () => (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 pb-24">
-        
         <div className="flex items-center gap-4 mb-6">
             <button onClick={() => setIsEditorOpen(false)} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
             <h2 className="text-2xl font-bold text-gray-800">{isEditing ? 'Edit Product' : 'Add New Product'}</h2>
@@ -412,12 +393,14 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                             placeholder="Scan or type" 
                             value={newProduct.sku} 
                             onChange={e => setNewProduct({...newProduct, sku: e.target.value})}
-                            className="w-full border-2 border-blue-200 focus:border-blue-500 bg-blue-50/10 rounded-l-lg rounded-r-none !py-3 border-r-0 !px-6"
+                            className={`w-full border-2 border-blue-200 focus:border-blue-500 bg-blue-50/10 !py-3 !px-6 ${settings.scannerPreference !== 'machine' ? 'rounded-l-lg border-r-0' : 'rounded-lg'}`}
                             autoComplete="off"
                         />
-                        <button onClick={() => setShowScanner(true)} className="px-4 bg-blue-50 text-blue-600 rounded-r-lg border-2 border-blue-200 hover:bg-blue-100 transition-colors border-l-0">
-                            <Scan size={20}/>
-                        </button>
+                        {(settings.scannerPreference === 'phone' || settings.scannerPreference === 'both') && (
+                            <button onClick={() => setShowScanner(true)} className="px-4 bg-blue-50 text-blue-600 rounded-r-lg border-2 border-blue-200 hover:bg-blue-100 transition-colors border-l-0">
+                                <Scan size={20}/>
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -551,7 +534,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         className="w-full border-2 border-purple-200 focus:border-purple-500 bg-purple-50/10 rounded-lg !py-3 !px-6"
                     />
                     
-                    {/* Batch Calculator */}
                     <div className="flex items-center gap-2 bg-purple-50/50 p-2 rounded-lg border border-purple-100 mt-1">
                         <Calculator size={14} className="text-purple-400" />
                         <div className="flex items-center gap-2 flex-1">
@@ -622,35 +604,31 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   );
 
   const renderDashboard = () => {
-    // Note: Stock Value Chart logic moved to main Dashboard as requested.
     const totalValue = products.reduce((acc, p) => acc + (p.stock * p.sellPrice), 0);
     const totalUnits = products.reduce((acc, p) => acc + p.stock, 0);
     const lowStockItems = products.filter(p => p.stock < p.lowStockThreshold);
-    const outOfStockItems = products.filter(p => p.stock === 0);
-    
-    // EXPIRED/EXPIRING LOGIC MOVED TO MAIN DASHBOARD - Removed from here to simplify.
-
     const allProductsSorted = [...products].sort((a, b) => a.name.localeCompare(b.name));
 
     return (
       <div className="space-y-6 animate-in fade-in relative">
-        {/* Floating Scan Button */}
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
-            <button
-                onClick={handleAnalyzeClick}
-                disabled={isParsingInvoice}
-                className="flex items-center gap-3 pl-4 pr-6 py-3 bg-gradient-to-b from-red-500 to-red-700 text-white rounded-full shadow-[0_10px_25px_-5px_rgba(220,38,38,0.5)] border-t border-red-400/50 active:scale-95 hover:scale-105 transition-all duration-300 group hover:shadow-[0_15px_30px_-5px_rgba(220,38,38,0.6)]"
-            >
-                <div className="p-1.5 bg-red-800/30 rounded-full shadow-inner">
-                    {isParsingInvoice ? (
-                        <Loader2 size={18} className="animate-spin text-white"/>
-                    ) : (
-                        <Scan size={18} className="text-white group-hover:rotate-12 transition-transform"/>
-                    )}
-                </div>
-                <span className="font-bold text-sm tracking-wide drop-shadow-md">Scan to Add</span>
-            </button>
-        </div>
+        {(settings.scannerPreference === 'phone' || settings.scannerPreference === 'both') && (
+            <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+                <button
+                    onClick={handleAnalyzeClick}
+                    disabled={isParsingInvoice}
+                    className="flex items-center gap-3 pl-4 pr-6 py-3 bg-gradient-to-b from-red-500 to-red-700 text-white rounded-full shadow-[0_10px_25px_-5px_rgba(220,38,38,0.5)] border-t border-red-400/50 active:scale-95 hover:scale-105 transition-all duration-300 group hover:shadow-[0_15px_30px_-5px_rgba(220,38,38,0.6)]"
+                >
+                    <div className="p-1.5 bg-red-800/30 rounded-full shadow-inner">
+                        {isParsingInvoice ? (
+                            <Loader2 size={18} className="animate-spin text-white"/>
+                        ) : (
+                            <Scan size={18} className="text-white group-hover:rotate-12 transition-transform"/>
+                        )}
+                    </div>
+                    <span className="font-bold text-sm tracking-wide drop-shadow-md">Scan to Add</span>
+                </button>
+            </div>
+        )}
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="border-2 border-sky-600 shadow-sm hover:shadow-md transition-shadow">
@@ -670,8 +648,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
              <div className="text-3xl font-bold mt-1 text-gray-900">{totalUnits.toLocaleString()}</div>
           </Card>
         </div>
-        
-        {/* ALERTS MOVED TO MAIN DASHBOARD */}
 
         <Card className="border-t-4 border-t-gray-800 shadow-md">
             <h3 className="font-bold text-xl text-gray-900 mb-4 flex items-center gap-2">
@@ -742,7 +718,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const renderProducts = () => {
     const isSearching = searchTerm.trim().length > 0;
 
-    // Use a function to render the grouped structure to keep code clean
     const renderGroupedSection = (sectionTitle: string | null, sectionIcon: React.ReactNode, items: {key: string, items: Product[]}[], color?: string) => {
         if (items.length === 0) return null;
         return (
@@ -756,7 +731,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <span className="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-full font-bold">{items.length} Products</span>
                     </div>
                 )}
-                {/* UPDATED GRID for laptop screens: lg:grid-cols-4 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                     {items.map(({ key, items }) => renderProductGroup(key, items))}
                 </div>
@@ -766,7 +740,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
     return (
     <div className="space-y-6 animate-in fade-in pb-24">
-        {/* Hidden File Input for Invoice Upload */}
         <input 
             type="file" 
             ref={fileInputRef} 
@@ -798,17 +771,18 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                             <X size={20} />
                         </button>
                     )}
-                    <button 
-                        onClick={() => setShowScanner(true)}
-                        className="pr-6 pl-2 text-gray-400 hover:text-blue-600 transition-colors tooltip"
-                        title="Scan Barcode"
-                    >
-                        <Scan size={22} />
-                    </button>
+                    {(settings.scannerPreference === 'phone' || settings.scannerPreference === 'both') && (
+                        <button 
+                            onClick={() => setShowScanner(true)}
+                            className="pr-6 pl-2 text-gray-400 hover:text-blue-600 transition-colors tooltip"
+                            title="Scan Barcode"
+                        >
+                            <Scan size={22} />
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {/* Mobile Action Buttons */}
             <div className="w-full md:hidden px-1 flex gap-2">
                 <button 
                     onClick={handleOpenAdd} 
@@ -863,7 +837,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
             </div>
         </div>
 
-        {/* SEARCH RESULT SECTION (Dedicated Top Area) */}
         {isSearching && groupedSearchResults.length > 0 && (
              <div className="animate-in fade-in slide-in-from-top-4 duration-300 mb-8 p-6 bg-blue-50/50 border border-blue-100 rounded-2xl shadow-sm">
                 <h3 className="text-sm font-bold text-blue-600 mb-4 uppercase tracking-wider flex items-center gap-2">
@@ -889,15 +862,11 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 )}
             </div>
         ) : (
-             /* Categorized View (Always visible, pushed down by search results) */
              <div className="space-y-12 animate-in fade-in transition-all duration-300">
-                {/* Tag Groups */}
                 {tags.map(t => {
                     const groupItems = groupedProducts.filter(g => g.items[0].tagId === t.id);
                     return renderGroupedSection(t.name, null, groupItems, t.color);
                 })}
-
-                {/* Uncategorized */}
                 {(() => {
                     const uncategorizedItems = groupedProducts.filter(g => !g.items[0].tagId);
                     return renderGroupedSection("Uncategorized", <Layers size={20} className="text-gray-400"/>, uncategorizedItems);
@@ -918,9 +887,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 <Card 
                     key={t.id} 
                     className="flex justify-between items-center group hover:shadow-lg transition-all border border-gray-100 cursor-pointer active:scale-95 relative"
-                    onClick={() => {
-                        setActiveTab(SubTab.PRODUCTS);
-                    }}
+                    onClick={() => { setActiveTab(SubTab.PRODUCTS); }}
                 >
                     <div className="flex items-center gap-4 flex-1">
                         <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gray-50 border border-gray-100">
@@ -933,11 +900,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     </div>
                     <div className="relative z-10">
                         <button 
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                console.log("Deleting tag:", t.name);
-                                setItemToDelete({ id: t.id, type: 'tag', name: t.name });
-                            }} 
+                            onClick={(e) => { e.stopPropagation(); setItemToDelete({ id: t.id, type: 'tag', name: t.name }); }} 
                             className="text-gray-400 hover:text-red-600 p-2.5 transition-colors bg-white hover:bg-red-50 rounded-full border border-transparent hover:border-red-100"
                         >
                             <Trash2 size={18} />
@@ -1008,7 +971,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 <h3 className="font-bold text-gray-800 flex items-center gap-2">
                     <Bell size={18} className="text-amber-500"/> Alert Configuration
                 </h3>
-                {/* Search for filtering the lists below */}
                 <div className="relative">
                     <Search className="absolute left-2.5 top-1.5 text-gray-400" size={14}/>
                     <input 
@@ -1021,7 +983,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
             </div>
             
             <div className="divide-y divide-gray-50">
-                {/* Low Stock Section */}
                 <div className="p-4 sm:p-6 hover:bg-gray-50/30 transition-colors">
                     <div className="flex gap-4 mb-6">
                         <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0 mt-1">
@@ -1048,7 +1009,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         </div>
                     </div>
 
-                    {/* Product Specific Low Stock List */}
                     <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
                         <div className="px-4 py-2 bg-gray-100/50 border-b border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-wide">
                              <span>Individual Product Thresholds</span>
@@ -1073,7 +1033,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     </div>
                 </div>
 
-                {/* Expiry Section */}
                 <div className="p-4 sm:p-6 hover:bg-gray-50/30 transition-colors">
                     <div className="flex gap-4 mb-6">
                         <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-1">
@@ -1126,11 +1085,9 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     </div>
   );
 
-  // --- REVIEW PAGE COMPONENT (Full Screen) ---
   if (viewMode === 'REVIEW') {
       return (
           <div className="fixed inset-0 bg-white z-[60] flex flex-col animate-in slide-in-from-right duration-300">
-              {/* Header */}
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white shadow-sm shrink-0">
                   <div className="flex items-center gap-3">
                       <button onClick={handleCloseReview} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -1146,9 +1103,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                   </Button>
               </div>
 
-              {/* Body */}
               <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-gray-50">
-                  {/* Left: Image (Desktop) / Top (Mobile) */}
                   <div className="md:w-1/2 p-4 flex items-center justify-center bg-gray-900 relative group overflow-hidden shrink-0 h-1/3 md:h-full">
                         {invoiceImage ? (
                             <img src={invoiceImage} className="max-w-full max-h-full object-contain" alt="Invoice Preview" />
@@ -1160,7 +1115,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         )}
                   </div>
 
-                  {/* Right: List */}
                   <div className="flex-1 overflow-y-auto p-4 bg-white">
                       <table className="w-full text-sm">
                         <thead className="bg-white text-gray-500 font-bold text-xs uppercase sticky top-0 z-10 shadow-sm">
@@ -1233,14 +1187,13 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                                 </tr>
                             ))}
                         </tbody>
-                    </table>
+                      </table>
                   </div>
               </div>
           </div>
       );
   }
 
-  // --- MAIN RENDER ---
   return (
     <div 
         className="pb-32 min-h-[80vh]" 
@@ -1287,7 +1240,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           </main>
       )}
 
-      {/* ... Existing Modals ... */}
       <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="Create New Tag">
           <div className="space-y-4">
               <div>
@@ -1367,7 +1319,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           </div>
       </Modal>
 
-      {/* --- Source Selection Modal --- */}
       <Modal isOpen={showSourceOptions} onClose={() => setShowSourceOptions(false)} title="Analyze Image" className="!max-w-xs">
           <div className="space-y-3">
               <p className="text-gray-500 text-sm mb-4">Choose how you want to add items.</p>
@@ -1394,13 +1345,10 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           </div>
       </Modal>
 
-      {/* --- Camera Modal (Full Screen Overlay) --- */}
       {showCamera && (
           <div className="fixed inset-0 z-[100] bg-black flex flex-col">
               <div className="relative flex-1 bg-black">
                   <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover"></video>
-                  
-                  {/* Overlay Guides */}
                   <div className="absolute inset-0 border-2 border-white/20 m-8 rounded-lg pointer-events-none">
                       <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-white"></div>
                       <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-white"></div>
@@ -1409,7 +1357,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                   </div>
               </div>
               
-              {/* Camera Controls */}
               <div className="h-32 bg-black flex items-center justify-around px-8 pb-8 pt-4">
                   <button onClick={() => setShowCamera(false)} className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20">
                       <X size={24}/>
@@ -1423,4 +1370,11 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       )}
     </div>
   );
+};
+
+const getUnitBadgeStyle = (unitString: string, isMultiVariant: boolean) => {
+    if (!isMultiVariant) return "bg-gray-100 text-gray-600 border-gray-200";
+    const colors = ['bg-orange-100 text-orange-800 border-orange-200', 'bg-blue-100 text-blue-800 border-blue-200', 'bg-purple-100 text-purple-800 border-purple-200', 'bg-rose-100 text-rose-800 border-rose-200', 'bg-emerald-100 text-emerald-800 border-emerald-200', 'bg-indigo-100 text-indigo-800 border-indigo-200', 'bg-cyan-100 text-cyan-800 border-cyan-200'];
+    let hash = 0; for (let i = 0; i < unitString.length; i++) { hash = unitString.charCodeAt(i) + ((hash << 5) - hash); }
+    return colors[Math.abs(hash) % colors.length];
 };

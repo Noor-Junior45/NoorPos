@@ -1,22 +1,8 @@
 import { Sale, Customer } from "../types";
 import { StoreService } from "./storeService";
 
-// Define interface for the library since we are using a global CDN in index.html
-interface JsPDFInstance {
-    text: (text: string, x: number, y: number, options?: any) => any;
-    setFontSize: (size: number) => any;
-    setTextColor: (r: number, g: number, b: number) => any;
-    setFont: (fontName: string, fontStyle?: string) => any;
-    save: (filename: string) => any;
-    autoTable: (options: any) => any;
-    addImage: (data: string, format: string, x: number, y: number, w: number, h: number) => any;
-    line: (x1: number, y1: number, x2: number, y2: number) => any;
-    setDrawColor: (r: number, g: number, b: number) => any;
-    rect: (x: number, y: number, w: number, h: number, style?: string) => any;
-}
-
 export const generateInvoicePDF = async (sale: Sale) => {
-    // @ts-ignore - Check if library is loaded (from CDN) on window object
+    // @ts-ignore
     const jspdf = window.jspdf;
 
     if (typeof jspdf === 'undefined') {
@@ -24,191 +10,184 @@ export const generateInvoicePDF = async (sale: Sale) => {
         return;
     }
 
-    // Fetch dynamic settings
     const settings = await StoreService.getSettings();
-
     const { jsPDF } = jspdf;
     // @ts-ignore
     const doc = new jsPDF();
-    const pageWidth = 210; // A4 width in mm
+    const pageWidth = 210;
     
-    // Theme Colors (Terra Cotta / Bronze accent)
-    const accentColor = [204, 122, 80]; // #cc7a50 style
-    const darkColor = [31, 41, 55]; // Slate-800
+    // Brand Colors
+    const darkHeader = [31, 41, 55]; // Slate-800
+    const accentText = [79, 70, 229]; // Indigo-600
+    const lightText = [107, 114, 128]; // Slate-500
 
-    // --- Header Section ---
-    
-    // 1. Logo or Company Name (Left)
-    if (settings.logo) {
-        try {
-            // Aspect ratio math would be better here, but for now we fit into a box
-            doc.addImage(settings.logo, 'JPEG', 14, 15, 30, 30);
-            
-            // Company info below logo if logo exists
-            doc.setFontSize(14);
-            doc.setFont("helvetica", "bold");
-            doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-            doc.text(settings.storeName || "Company Name", 14, 52);
-        } catch (e) {
-             // Fallback if image fails
-             doc.setFontSize(24);
-             doc.setFont("helvetica", "bold");
-             doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-             doc.text(settings.storeName || "Company Name", 14, 25);
-        }
-    } else {
-        doc.setFontSize(24);
-        doc.setFont("helvetica", "bold");
-        doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-        doc.text(settings.storeName || "Company Name", 14, 25);
-    }
+    // --- 1. Top Header: INVOICE ---
+    doc.setFontSize(28);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(darkHeader[0], darkHeader[1], darkHeader[2]);
+    doc.text("INVOICE", 14, 25);
 
-    // Company Details (Below Name/Logo)
-    let yPos = settings.logo ? 60 : 35;
+    // --- 2. Company Details (Left) ---
     doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 116, 139); // Slate-500
+    doc.setFont("helvetica", "bold");
+    doc.text(settings.storeName || "Company Name", 14, 35);
     
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
+    let currentY = 40;
     if (settings.storeAddress) {
-        doc.text(settings.storeAddress, 14, yPos);
-        yPos += 5;
+        doc.text(settings.storeAddress, 14, currentY);
+        currentY += 5;
     }
     if (settings.storePhone) {
-        doc.text(`Phone: ${settings.storePhone}`, 14, yPos);
-        yPos += 5;
+        doc.text(`Phone: ${settings.storePhone}`, 14, currentY);
+        currentY += 5;
     }
     if (settings.storeEmail) {
-        doc.text(settings.storeEmail, 14, yPos);
+        doc.text(settings.storeEmail, 14, currentY);
     }
 
-
-    // 2. Invoice Title & Meta (Right)
-    doc.setFontSize(32);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-    doc.text("INVOICE", pageWidth - 14, 30, { align: 'right' });
-
+    // --- 3. Bill To & Date (Right) ---
+    const rightColX = pageWidth - 14;
     doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    doc.setTextColor(darkHeader[0], darkHeader[1], darkHeader[2]);
+    doc.text("BILL TO:", rightColX - 50, 35);
     
-    const metaX = pageWidth - 45;
-    const valueX = pageWidth - 14;
-    let metaY = 45;
-
-    // Invoice #
-    doc.text("Invoice #", metaX, metaY, { align: 'right' });
     doc.setFont("helvetica", "normal");
-    doc.text(sale.id.slice(0, 8).toUpperCase(), valueX, metaY, { align: 'right' });
-    metaY += 6;
-
-    // Date
+    doc.text(sale.customerName, rightColX, 35, { align: 'right' });
+    
     doc.setFont("helvetica", "bold");
-    doc.text("Invoice Date", metaX, metaY, { align: 'right' });
+    doc.text("INVOICE #:", rightColX - 50, 45);
     doc.setFont("helvetica", "normal");
-    doc.text(new Date(sale.timestamp).toLocaleDateString(), valueX, metaY, { align: 'right' });
-    metaY += 6;
-
-    // Due Date (Calculated as +14 days default)
-    const dueDate = new Date(sale.timestamp);
-    dueDate.setDate(dueDate.getDate() + 14);
+    doc.text(sale.id.slice(0, 10).toUpperCase(), rightColX, 45, { align: 'right' });
     
     doc.setFont("helvetica", "bold");
-    doc.text("Due Date", metaX, metaY, { align: 'right' });
+    doc.text("DATE:", rightColX - 50, 52);
     doc.setFont("helvetica", "normal");
-    doc.text(dueDate.toLocaleDateString(), valueX, metaY, { align: 'right' });
+    doc.text(new Date(sale.timestamp).toLocaleDateString(), rightColX, 52, { align: 'right' });
 
+    // --- 4. Main Table ---
+    const tableHeaders = [["#", "ITEM DETAILS", "PRICE", "DISCOUNT", "QTY", "TOTAL"]];
+    const tableRows = sale.items.map((item, idx) => {
+        const disc = item.discount || 0;
+        const lineTotal = (item.sellPrice * item.quantity) - disc;
+        return [
+            (idx + 1).toString(),
+            item.name,
+            `${settings.currencySymbol} ${item.sellPrice.toFixed(2)}`,
+            disc > 0 ? `${settings.currencySymbol} ${disc.toFixed(2)}` : "-",
+            item.quantity.toString(),
+            `${settings.currencySymbol} ${lineTotal.toFixed(2)}`
+        ];
+    });
 
-    // --- Bill To Section ---
-    const billToY = Math.max(yPos + 15, 80); // Ensure it doesn't overlap header
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-    doc.text("Bill To", 14, billToY);
-    
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
-    doc.text(sale.customerName || "Walk-in Customer", 14, billToY + 6);
-    
-    
-    // --- Table ---
-    // Columns: QTY | Description | Unit Price | Amount
-    const tableColumn = ["QTY", "Description", "Unit Price", "Amount"];
-    const tableRows = sale.items.map(item => [
-        item.quantity.toString(),
-        item.name, // Description
-        `${settings.currencySymbol} ${item.sellPrice.toFixed(2)}`,
-        `${settings.currencySymbol} ${(item.sellPrice * item.quantity).toFixed(2)}`
-    ]);
-
-    // @ts-ignore - autoTable is a plugin
+    // @ts-ignore
     doc.autoTable({
-        startY: billToY + 15,
-        head: [tableColumn],
+        startY: 65,
+        head: tableHeaders,
         body: tableRows,
-        theme: 'plain', // Clean look
-        styles: {
-            font: 'helvetica',
-            fontSize: 10,
-            cellPadding: 3,
-            textColor: darkColor
-        },
+        theme: 'striped',
         headStyles: {
-            fillColor: accentColor,
+            fillColor: darkHeader,
             textColor: 255,
+            fontSize: 9,
             fontStyle: 'bold',
-            halign: 'left' // Match prompt alignment
+            halign: 'center'
+        },
+        styles: {
+            fontSize: 9,
+            cellPadding: 4,
+            textColor: [50, 50, 50]
         },
         columnStyles: {
-            0: { halign: 'center', fontStyle: 'bold' }, // QTY
-            2: { halign: 'right' }, // Price
-            3: { halign: 'right' }  // Amount
-        },
-        alternateRowStyles: {
-             fillColor: [249, 250, 251] // Very light gray stripe
+            0: { halign: 'center', cellWidth: 10 },
+            1: { halign: 'left' },
+            2: { halign: 'right' },
+            3: { halign: 'right' },
+            4: { halign: 'center' },
+            5: { halign: 'right', fontStyle: 'bold' }
         }
     });
 
-    // --- Totals Section ---
+    // --- 5. Footer Calculations ---
     // @ts-ignore
-    const finalY = (doc as any).lastAutoTable.finalY + 10;
-    const totalsX = pageWidth - 60; // Label X
-    const totalsValueX = pageWidth - 14; // Value X (Right aligned)
-    let currentTotalY = finalY;
+    let finalY = doc.lastAutoTable.finalY + 10;
+    const totalsLabelX = pageWidth - 60;
+    const totalsValueX = pageWidth - 14;
 
-    // Subtotal
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(darkColor[0], darkColor[1], darkColor[2]);
+    const totalDiscount = sale.items.reduce((acc, item) => acc + (item.discount || 0), 0);
+
+    const drawTotalRow = (label: string, value: string, isBold = false) => {
+        doc.setFontSize(10);
+        doc.setFont("helvetica", isBold ? "bold" : "normal");
+        doc.setTextColor(darkHeader[0], darkHeader[1], darkHeader[2]);
+        doc.text(label, totalsLabelX, finalY);
+        doc.text(value, totalsValueX, finalY, { align: 'right' });
+        finalY += 6;
+    };
+
+    drawTotalRow("Gross Total:", `${settings.currencySymbol} ${sale.subtotal.toFixed(2)}`);
+    if (totalDiscount > 0) {
+        doc.setTextColor(220, 38, 38); // Red
+        drawTotalRow("Total Discounts:", `- ${settings.currencySymbol} ${totalDiscount.toFixed(2)}`);
+    }
+    drawTotalRow("Tax:", `${settings.currencySymbol} ${sale.tax.toFixed(2)}`);
     
-    doc.text("Subtotal", totalsX, currentTotalY, { align: 'left' });
-    doc.text(`${settings.currencySymbol} ${sale.subtotal.toFixed(2)}`, totalsValueX, currentTotalY, { align: 'right' });
-    currentTotalY += 6;
+    finalY += 2;
+    doc.setDrawColor(200, 200, 200);
+    doc.line(totalsLabelX, finalY, totalsValueX, finalY);
+    finalY += 8;
 
-    // Tax
-    doc.text(`Sales Tax`, totalsX, currentTotalY, { align: 'left' });
-    doc.text(`${settings.currencySymbol} ${sale.tax.toFixed(2)}`, totalsValueX, currentTotalY, { align: 'right' });
-    currentTotalY += 2;
+    doc.setFontSize(14);
+    drawTotalRow("Net Payable:", `${settings.currencySymbol} ${sale.total.toFixed(2)}`, true);
 
-    // Divider Line
-    doc.setDrawColor(accentColor[0], accentColor[1], accentColor[2]);
-    doc.line(totalsX - 5, currentTotalY + 3, pageWidth - 14, currentTotalY + 3);
-    currentTotalY += 10;
+    finalY += 4;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(lightText[0], lightText[1], lightText[2]);
 
-    // Grand Total
+    const paid = sale.amountPaid !== undefined ? sale.amountPaid : sale.total;
+    const due = sale.total - paid;
+
+    let payText = `Payment Mode: ${sale.paymentMethod || 'Cash'}`;
+    if (due > 0.01) {
+        payText += ` | Paid: ${settings.currencySymbol}${paid.toFixed(2)} | Balance Due: ${settings.currencySymbol}${due.toFixed(2)}`;
+    } else {
+        payText += ` | Fully Paid`;
+    }
+    doc.text(payText, totalsValueX, finalY, { align: 'right' });
+
+    // --- 6. Final Thank You ---
+    finalY = Math.max(finalY + 30, 270);
     doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(accentColor[0], accentColor[1], accentColor[2]);
-    doc.text("Total (USD)", totalsX, currentTotalY, { align: 'left' }); // Or Currency Symbol
-    doc.text(`${settings.currencySymbol} ${sale.total.toFixed(2)}`, totalsValueX, currentTotalY, { align: 'right' });
+    doc.setFont("helvetica", "bold italic");
+    doc.setTextColor(darkHeader[0], darkHeader[1], darkHeader[2]);
+    doc.text("Thank you for your business!", pageWidth / 2, finalY, { align: 'center' });
 
-    doc.save(`invoice_${sale.id.slice(0, 8)}.pdf`);
+    // --- 7. Output Logic ---
+    if (settings.directPrintEnabled) {
+        // Direct Print: Use blob URL and print
+        const blob = doc.output('blob');
+        const url = URL.createObjectURL(blob);
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = url;
+        document.body.appendChild(iframe);
+        iframe.onload = () => {
+            iframe.contentWindow?.print();
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+                URL.revokeObjectURL(url);
+            }, 1000);
+        };
+    } else {
+        // Standard Download
+        doc.save(`Invoice_${sale.id.slice(0, 8).toUpperCase()}.pdf`);
+    }
 };
 
 export const generateCustomerStatementPDF = async (customer: Customer, sales: Sale[]) => {
-    // Legacy support for statement, updated to match simple clean style
     // @ts-ignore
     const jspdf = window.jspdf;
     if (typeof jspdf === 'undefined') return;
@@ -219,36 +198,34 @@ export const generateCustomerStatementPDF = async (customer: Customer, sales: Sa
     const doc = new jsPDF();
     const pageWidth = 210;
 
-    // Header
     doc.setFontSize(22);
-    doc.setTextColor(204, 122, 80);
-    doc.text(settings.storeName || "Company", 14, 20);
-    
-    doc.setFontSize(16);
-    doc.setTextColor(0,0,0);
-    doc.text("Statement of Account", 14, 30);
+    doc.setTextColor(31, 41, 55);
+    doc.text("Statement of Account", 14, 20);
 
-    // Customer Info
     doc.setFontSize(10);
-    doc.text(`Customer: ${customer.name}`, 14, 45);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 50);
+    doc.text(`Customer: ${customer.name}`, 14, 35);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 40);
 
-    // Table
-    const tableColumn = ["Date", "Inv #", "Amount"];
-    const tableRows = sales.map(sale => [
-        new Date(sale.timestamp).toLocaleDateString(),
-        sale.id.slice(0, 8).toUpperCase(),
-        `${settings.currencySymbol} ${sale.total.toFixed(2)}`
-    ]);
+    const tableColumn = ["Date", "Invoice #", "Status", "Amount"];
+    const tableRows = sales.map(sale => {
+        const paid = sale.amountPaid !== undefined ? sale.amountPaid : sale.total;
+        const due = sale.total - paid;
+        return [
+            new Date(sale.timestamp).toLocaleDateString(),
+            sale.id.slice(0, 8).toUpperCase(),
+            due > 0.01 ? "Pending" : "Paid",
+            `${settings.currencySymbol} ${sale.total.toFixed(2)}`
+        ];
+    });
 
     // @ts-ignore
     doc.autoTable({
-        startY: 60,
+        startY: 50,
         head: [tableColumn],
         body: tableRows,
         theme: 'grid',
-        headStyles: { fillColor: [204, 122, 80] },
+        headStyles: { fillColor: [31, 41, 55] },
     });
 
-    doc.save(`statement_${customer.name}.pdf`);
+    doc.save(`Statement_${customer.name.replace(/\s+/g, '_')}.pdf`);
 };

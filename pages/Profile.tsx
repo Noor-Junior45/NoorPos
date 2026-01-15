@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { User, StoreSettings, DeletedItem } from '../types';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock } from 'lucide-react';
+import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils } from '../utils/googleDrive';
 
@@ -178,15 +178,51 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
               alert("This browser does not support desktop notifications");
               return;
           }
-          const permission = await Notification.requestPermission();
-          if (permission !== 'granted') {
-              alert("Notification permission denied");
+          if (Notification.permission === 'denied') {
+              alert("Notification permission was previously denied. Please enable it in your browser site settings to receive alerts.");
               return;
           }
-          new Notification("Notifications Enabled", { body: "You will now receive alerts for low stock." });
+          try {
+              const permission = await Notification.requestPermission();
+              if (permission !== 'granted') {
+                  alert("Notification permission denied. You won't receive stock alerts.");
+                  return;
+              }
+              new Notification("Notifications Enabled", { 
+                  body: "You will now receive alerts for low stock and important inventory events.",
+                  icon: "https://lh3.googleusercontent.com/p/AF1QipPlp0QUwcp2FOnTGiGNf5fqWnskinCj4QxRKa3o=s1360-w1360-h1020-rw"
+              });
+          } catch (e) {
+              console.warn("Failed to request notification permission:", e);
+          }
       }
 
       const newSettings = { ...storeSettings, notificationsEnabled: newState };
+      await StoreService.saveSettings(newSettings);
+      setStoreSettings(newSettings);
+  };
+
+  const handleRequestPrinterPermission = async () => {
+      if (!storeSettings) return;
+      
+      if (confirm("Allow Noor POS to access your local printing machines? This will open the print dialog immediately when clicking 'Print' instead of downloading files.")) {
+          const newSettings = { ...storeSettings, directPrintEnabled: true };
+          await StoreService.saveSettings(newSettings);
+          setStoreSettings(newSettings);
+          alert("Printer permission granted. Bills will now be sent directly to your system's print queue.");
+      }
+  };
+
+  const handleToggleDirectPrint = async () => {
+       if (!storeSettings) return;
+       const newSettings = { ...storeSettings, directPrintEnabled: !storeSettings.directPrintEnabled };
+       await StoreService.saveSettings(newSettings);
+       setStoreSettings(newSettings);
+  };
+
+  const handleScannerPreferenceChange = async (pref: 'phone' | 'machine' | 'both') => {
+      if (!storeSettings) return;
+      const newSettings = { ...storeSettings, scannerPreference: pref };
       await StoreService.saveSettings(newSettings);
       setStoreSettings(newSettings);
   };
@@ -270,9 +306,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       if (!touchStart || !touchEnd) return;
       const distanceX = touchStart.x - touchEnd.x;
       const distanceY = touchStart.y - touchEnd.y;
-      const isRightSwipe = distanceX < -minSwipeDistance; // Swipe Right (Back)
+      const isRightSwipe = distanceX < -minSwipeDistance; 
       
-      // Ensure horizontal swipe dominant
       if (isRightSwipe && Math.abs(distanceX) > Math.abs(distanceY)) {
           setShowRecycleBin(false);
       }
@@ -289,7 +324,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 {googleProfile?.picture ? (
                     <img src={googleProfile.picture} alt="Profile" className="w-16 h-16 rounded-full shadow-lg border-2 border-white shrink-0" />
                 ) : (
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shrink-0">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-50 to-purple-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shrink-0">
                         {user.name.charAt(0)}
                     </div>
                 )}
@@ -326,7 +361,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             <div className="p-5">
                 {isEditingProfile ? (
                     <div className="space-y-5 animate-in fade-in">
-                        {/* Logo Upload */}
                         <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
                              <div className="w-20 h-20 rounded-lg bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
                                  {tempProfile.logo ? (
@@ -424,7 +458,80 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </Card>
 
-        {/* 4. Notifications */}
+        {/* 3. Printer Configuration */}
+        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+             <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
+                 <Printer size={20} className="text-gray-700"/>
+                 <h2 className="font-bold text-gray-800">Printer Configuration</h2>
+             </div>
+             <div className="p-5 space-y-4">
+                 <div className="flex items-center justify-between">
+                     <div>
+                         <div className="font-semibold text-gray-800">Direct Thermal Printing</div>
+                         <p className="text-sm text-gray-500">Automatically trigger print dialog without downloading PDF.</p>
+                     </div>
+                     <button 
+                        onClick={handleToggleDirectPrint}
+                        className={`w-14 h-8 rounded-full transition-all duration-300 relative shadow-inner ${storeSettings?.directPrintEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                     >
+                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 shadow-md ${storeSettings?.directPrintEnabled ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                    </button>
+                 </div>
+                 
+                 {!storeSettings?.directPrintEnabled && (
+                     <div className="pt-2">
+                         <Button onClick={handleRequestPrinterPermission} variant="neutral" className="w-full flex items-center justify-center gap-2 border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100">
+                             <CheckSquare size={18} /> Grant Printer Access
+                         </Button>
+                         <p className="text-[10px] text-gray-400 mt-2 text-center italic">Enabling this prevents cluttering your 'Downloads' folder with invoice PDFs.</p>
+                     </div>
+                 )}
+             </div>
+        </Card>
+
+        {/* 4. Barcode Scanner Preference */}
+        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
+             <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
+                 <Scan size={20} className="text-red-500"/>
+                 <h2 className="font-bold text-gray-800">Scanner Configuration</h2>
+             </div>
+             <div className="p-5 space-y-4">
+                 <p className="text-sm text-gray-500">Choose how you want to input barcodes in POS and Warehouse.</p>
+                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                     {[
+                         { id: 'phone', label: 'Phone Camera', icon: Smartphone },
+                         { id: 'machine', label: 'External Machine', icon: Printer },
+                         { id: 'both', label: 'Both Services', icon: Scan }
+                     ].map(pref => (
+                         <button
+                            key={pref.id}
+                            onClick={() => handleScannerPreferenceChange(pref.id as any)}
+                            className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all gap-2 ${
+                                storeSettings?.scannerPreference === pref.id 
+                                ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' 
+                                : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'
+                            }`}
+                         >
+                            <pref.icon size={24} />
+                            <span className="text-xs font-bold text-center">{pref.label}</span>
+                            {storeSettings?.scannerPreference === pref.id && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                            )}
+                         </button>
+                     ))}
+                 </div>
+                 {storeSettings?.scannerPreference === 'machine' && (
+                     <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex gap-2 items-start animate-in zoom-in-95">
+                         <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0"/>
+                         <p className="text-[10px] text-amber-800 font-medium">
+                            Physical scanners behave like keyboards. Ensure the input box is focused before scanning. Camera scanning will be hidden to save battery.
+                         </p>
+                     </div>
+                 )}
+             </div>
+        </Card>
+
+        {/* 5. Notifications */}
         <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
              <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
                  <Bell size={20} className="text-amber-500"/>
@@ -444,7 +551,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
              </div>
         </Card>
 
-        {/* 5. NAS / Local Server Configuration */}
+        {/* 6. NAS / Local Server Configuration */}
         <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
              <div className="bg-white p-4 border-b border-gray-100 flex justify-between items-center">
                 <div className="flex items-center gap-2">
@@ -511,7 +618,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
              )}
         </Card>
 
-        {/* 6. Staff Sharing */}
+        {/* 7. Staff Sharing */}
         {googleProfile && (
             <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
                 <div className="bg-white p-4 border-b border-gray-100 flex items-center gap-2">
@@ -546,7 +653,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </Card>
         )}
 
-        {/* 7. Sync Status */}
+        {/* 8. Sync Status */}
         <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
             <div className="bg-white p-5">
                 <div className="flex items-center gap-4">
@@ -570,7 +677,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </Card>
 
-        {/* 8. Actions */}
+        {/* 9. Data Management Actions */}
         <div className="pt-4 flex flex-col gap-3">
             <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider px-2">Data Management</h3>
             
@@ -600,7 +707,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".json" />
         </div>
 
-        {/* 8. Recycle Bin Card (Moved Here) */}
+        {/* Recycle Bin Card */}
         <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5 hover:ring-blue-200 transition-all cursor-pointer mt-4" onClick={() => setShowRecycleBin(true)}>
              <div className="bg-white p-4 border-b border-gray-100 flex items-center justify-between">
                  <div className="flex items-center gap-2">
@@ -623,32 +730,21 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
              </div>
         </Card>
 
-        {/* 9. Support & Legal */}
+        {/* Support & Legal */}
         <div className="pt-2 flex flex-col gap-3">
             <h3 className="font-bold text-gray-400 text-xs uppercase tracking-wider px-2">Support & Legal</h3>
-            
             <div className="overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm hover:border-blue-300 transition-all">
-                <button 
-                    onClick={() => setShowTermsDropdown(!showTermsDropdown)} 
-                    className="w-full p-4 flex items-center justify-between group bg-white"
-                >
+                <button onClick={() => setShowTermsDropdown(!showTermsDropdown)} className="w-full p-4 flex items-center justify-between group bg-white">
                     <div className="flex items-center gap-3">
                         <FileText size={20} className="text-gray-400 group-hover:text-blue-500"/>
                         <span className="font-medium text-gray-700">Terms & Conditions</span>
                     </div>
                     {showTermsDropdown ? <ChevronDown size={18} className="text-gray-500"/> : <ChevronRight size={18} className="text-gray-300"/>}
                 </button>
-                
                 {showTermsDropdown && (
                     <div className="px-4 pb-4 pt-0 bg-white animate-in slide-in-from-top-2">
                         <div className="pt-3 border-t border-gray-100">
-                            <p className="text-xs text-gray-400 mb-2">Read our policies:</p>
-                            <a 
-                                href="https://terms-conditions-store.vercel.app" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                            >
+                            <a href="https://terms-conditions-store.vercel.app" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors">
                                 <ExternalLink size={16} className="text-gray-500"/>
                                 <span className="text-sm font-bold text-gray-800">View Online</span>
                             </a>
@@ -658,21 +754,16 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
 
             <div className="overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-all">
-                <button 
-                    onClick={() => setShowContactDropdown(!showContactDropdown)} 
-                    className="w-full p-4 flex items-center justify-between group bg-white"
-                >
+                <button onClick={() => setShowContactDropdown(!showContactDropdown)} className="w-full p-4 flex items-center justify-between group bg-white">
                     <div className="flex items-center gap-3">
                         <Headphones size={20} className="text-gray-400 group-hover:text-green-500"/>
                         <span className="font-medium text-gray-700">Contact Support</span>
                     </div>
                     {showContactDropdown ? <ChevronDown size={18} className="text-gray-500"/> : <ChevronRight size={18} className="text-gray-300"/>}
                 </button>
-                
                 {showContactDropdown && (
                     <div className="px-4 pb-4 pt-0 bg-white animate-in slide-in-from-top-2">
                         <div className="pt-3 border-t border-gray-100">
-                            <p className="text-xs text-gray-400 mb-2">Reach us at:</p>
                             <a href="mailto:newluckypharmacy@gmail.com" className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors">
                                 <Mail size={16} className="text-gray-500"/>
                                 <span className="text-sm font-bold text-gray-800">newluckypharmacy@gmail.com</span>
@@ -685,99 +776,46 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
         {/* Recycle Bin Modal */}
         <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Recycle Bin" className="!max-w-4xl h-[80vh] flex flex-col p-0">
-            <div 
-                className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50"
-                onTouchStart={onTouchStart} 
-                onTouchMove={onTouchMove} 
-                onTouchEnd={onTouchEnd}
-            >
-                {/* Modal Header Actions */}
+            <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
                 <div className="px-6 py-4 bg-white border-b border-gray-200 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-500 font-bold">Auto-delete after:</span>
                         <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                             {[7, 15, 30].map(days => (
-                                <button
-                                    key={days}
-                                    onClick={() => handleSaveRetention(days)}
-                                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${recycleRetention === days ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-                                >
-                                    {days} days
-                                </button>
+                                <button key={days} onClick={() => handleSaveRetention(days)} className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${recycleRetention === days ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>{days} days</button>
                             ))}
                         </div>
                     </div>
                     {deletedItems.length > 0 && (
-                        <Button size="sm" variant="danger" onClick={handleEmptyBin} className="bg-red-100 text-red-600 border border-red-200 shadow-none hover:bg-red-200">
-                            Empty Bin
-                        </Button>
+                        <Button size="sm" variant="danger" onClick={handleEmptyBin} className="bg-red-100 text-red-600 border border-red-200 shadow-none hover:bg-red-200">Empty Bin</Button>
                     )}
                 </div>
-
-                {/* List Content */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     {deletedItems.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                            <Trash2 size={48} className="mb-4 opacity-20"/>
-                            <p>Recycle bin is empty.</p>
+                            <Trash2 size={48} className="mb-4 opacity-20"/><p>Recycle bin is empty.</p>
                         </div>
                     ) : (
                         Object.entries(groupedDeletedItems).map(([dateLabel, items]) => (
                             <div key={dateLabel}>
                                 <div className="flex items-center gap-2 mb-3">
-                                    <Calendar size={16} className="text-gray-400"/>
-                                    <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{dateLabel}</h3>
+                                    <Calendar size={16} className="text-gray-400"/><h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">{dateLabel}</h3>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {(items as DeletedItem[]).map(item => {
-                                        let Icon = Box;
-                                        let name = "Unknown";
-                                        let detail = "";
-                                        let colorClass = "bg-blue-100 text-blue-600";
-
-                                        if (item.type === 'product') {
-                                            Icon = Box;
-                                            name = item.data.name;
-                                            detail = `Stock: ${item.data.stock}`;
-                                            colorClass = "bg-blue-100 text-blue-600";
-                                        } else if (item.type === 'customer') {
-                                            Icon = Users;
-                                            name = item.data.name;
-                                            detail = item.data.phone;
-                                            colorClass = "bg-purple-100 text-purple-600";
-                                        } else if (item.type === 'sale') {
-                                            Icon = Receipt;
-                                            name = `Invoice #${item.data.id.slice(0,6).toUpperCase()}`;
-                                            detail = `Amount: ₹${item.data.total}`;
-                                            colorClass = "bg-green-100 text-green-600";
-                                        }
-
+                                        let Icon = Box; let name = "Unknown"; let detail = ""; let colorClass = "bg-blue-100 text-blue-600";
+                                        if (item.type === 'product') { Icon = Box; name = item.data.name; detail = `Stock: ${item.data.stock}`; colorClass = "bg-blue-100 text-blue-600"; }
+                                        else if (item.type === 'customer') { Icon = Users; name = item.data.name; detail = item.data.phone; colorClass = "bg-purple-100 text-purple-600"; }
+                                        else if (item.type === 'sale') { Icon = Receipt; name = `Invoice #${item.data.id.slice(0,6).toUpperCase()}`; detail = `Amount: ₹${item.data.total}`; colorClass = "bg-green-100 text-green-600"; }
                                         return (
                                             <div key={item.id} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center group hover:border-blue-300 transition-colors">
                                                 <div className="flex items-center gap-3 overflow-hidden">
-                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${colorClass}`}>
-                                                        <Icon size={20}/>
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                        <div className="font-bold text-gray-800 text-sm truncate">{name}</div>
-                                                        <div className="text-xs text-gray-500 truncate">{detail}</div>
-                                                    </div>
+                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${colorClass}`}><Icon size={20}/></div>
+                                                    <div className="min-w-0"><div className="font-bold text-gray-800 text-sm truncate">{name}</div><div className="text-xs text-gray-400 truncate">{detail}</div></div>
                                                 </div>
                                                 <div className="flex items-center gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button 
-                                                        onClick={() => handleRestoreItem(item.id)}
-                                                        className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"
-                                                        title="Restore"
-                                                    >
-                                                        <RotateCcw size={16}/>
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => handlePermanentDelete(item.id)}
-                                                        className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
-                                                        title="Delete Forever"
-                                                    >
-                                                        <Trash2 size={16}/>
-                                                    </button>
+                                                    <button onClick={() => handleRestoreItem(item.id)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors"><RotateCcw size={16}/></button>
+                                                    <button onClick={() => handlePermanentDelete(item.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"><Trash2 size={16}/></button>
                                                 </div>
                                             </div>
                                         );
@@ -793,17 +831,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         {/* Reset Confirm Modal */}
         <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="Factory Reset">
             <div className="text-center">
-                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <AlertTriangle size={32}/>
-                </div>
+                <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Are you absolutely sure?</h3>
-                <p className="text-sm text-gray-600 mb-6">
-                    This action will delete all products, sales history, and customer data from this device.
-                </p>
-                <div className="flex gap-3">
-                    <Button variant="neutral" className="flex-1" onClick={() => setShowResetConfirm(false)}>Cancel</Button>
-                    <Button variant="danger" className="flex-1" onClick={handleReset}>Yes, Reset</Button>
-                </div>
+                <p className="text-sm text-gray-600 mb-6">This action will delete all products, sales history, and customer data from this device.</p>
+                <div className="flex gap-3"><Button variant="neutral" className="flex-1" onClick={() => setShowResetConfirm(false)}>Cancel</Button><Button variant="danger" className="flex-1" onClick={handleReset}>Yes, Reset</Button></div>
             </div>
         </Modal>
 

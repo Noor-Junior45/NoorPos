@@ -1,4 +1,3 @@
-
 export interface Tag {
   id: string;
   name: string;
@@ -14,46 +13,46 @@ export interface Product {
   lowStockThreshold: number;
   buyPrice: number;
   sellPrice: number;
-  wholesalePrice?: number; // New field for wholesale
-  taxRate?: number; // Percentage
-  expiryDate?: string; // ISO Date string YYYY-MM-DD
-  manufacturingDate?: string; // ISO Date string YYYY-MM-DD
-  createdAt?: string; // ISO Date string for registration time
+  wholesalePrice?: number;
+  taxRate?: number;
+  expiryDate?: string;
+  manufacturingDate?: string;
+  createdAt?: string;
   location?: string;
-  tagId?: string; // Links to Tag entity
-  category?: string; // Legacy support
+  tagId?: string;
+  category?: string;
   capacity?: string;
 }
 
 export interface StoreSettings {
-  // Store Profile
   storeName: string;
   storeAddress: string;
   storePhone: string;
   storeEmail?: string;
-  logo?: string; // Base64 string of the logo
+  logo?: string;
   
-  // App Config
-  expiryAlertDays: number; // Days before expiry to warn
-  lowStockDefault: number; // Default threshold for new products
+  expiryAlertDays: number;
+  lowStockDefault: number;
   soundEnabled: boolean;
   notificationsEnabled: boolean;
   currencySymbol: string;
-  recycleBinRetentionDays: number; // 7, 15, or 30
+  recycleBinRetentionDays: number;
+  directPrintEnabled: boolean;
+  scannerPreference: 'phone' | 'machine' | 'both'; // New: Scanner preference
 
-  // NAS / Local Server Config
   nasUrl?: string;
   syncToNas?: boolean;
 }
 
 export interface CartItem extends Product {
   quantity: number;
+  discount?: number; // Cash discount per line item
 }
 
 export interface Payment {
   id: string;
   amount: number;
-  date: string; // ISO string
+  date: string;
   method: string;
   note?: string;
 }
@@ -65,16 +64,16 @@ export interface Customer {
   email?: string;
   location?: string;
   totalSpent: number;
-  totalDues: number; // Added for Pay Later functionality
+  totalDues: number;
   visitCount: number;
-  history: string[]; // Sale IDs
-  payments?: Payment[]; // Payment history
+  history: string[];
+  payments?: Payment[];
 }
 
 export interface User {
   id: string;
   username: string;
-  pin: string; // Simple PIN for POS access
+  pin: string;
   role: 'admin' | 'staff';
   name: string;
   lastLogin?: string;
@@ -82,24 +81,24 @@ export interface User {
 
 export interface Sale {
   id: string;
-  customerId?: string; // Optional if guest
+  customerId?: string;
   customerName: string;
   items: CartItem[];
   subtotal: number;
   tax: number;
   total: number;
-  amountPaid?: number; // Amount paid at time of sale (for partial payments)
-  timestamp: string; // ISO string
-  servedBy?: string; // User Name
-  paymentMethod?: string; // 'Cash', 'UPI', 'Card', 'Pay Later', etc.
+  amountPaid?: number;
+  timestamp: string;
+  servedBy?: string;
+  paymentMethod?: string;
 }
 
 export interface DeletedItem {
-  id: string; // Unique ID for the deleted record
+  id: string;
   originalId: string;
   type: 'product' | 'customer' | 'sale' | 'tag';
-  data: any; // The full object
-  deletedAt: string; // ISO string
+  data: any;
+  deletedAt: string;
 }
 
 export enum Tab {
