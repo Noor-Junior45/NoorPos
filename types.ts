@@ -39,6 +39,7 @@ export interface StoreSettings {
   soundEnabled: boolean;
   notificationsEnabled: boolean;
   currencySymbol: string;
+  recycleBinRetentionDays: number; // 7, 15, or 30
 
   // NAS / Local Server Config
   nasUrl?: string;
@@ -82,6 +83,14 @@ export interface Sale {
   timestamp: string; // ISO string
   servedBy?: string; // User Name
   paymentMethod?: string; // 'Cash', 'UPI', 'Card', 'Pay Later', etc.
+}
+
+export interface DeletedItem {
+  id: string; // Unique ID for the deleted record
+  originalId: string;
+  type: 'product' | 'customer' | 'sale' | 'tag';
+  data: any; // The full object
+  deletedAt: string; // ISO string
 }
 
 export enum Tab {

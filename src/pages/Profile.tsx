@@ -1,14 +1,13 @@
-
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, DeletedItem, StoreSettings } from '../types';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Card, Button, Modal, Badge, Input } from '../components/UI';
+import { Card, Button, Modal, Badge } from '../components/UI';
 import { 
   Download, Upload, ChevronRight, Trash2, Clock, 
   FileText, ChevronDown, ExternalLink, Headphones, 
   Mail, AlertTriangle, LogOut, RotateCcw, Cloud, 
-  CheckCircle, X, ShieldCheck, Save, Image as ImageIcon, MapPin, Phone
+  CheckCircle, X, ShieldCheck 
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -25,11 +24,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
   const [showContactDropdown, setShowContactDropdown] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [isGoogleLinked, setIsGoogleLinked] = useState(false);
-  
-  // Gesture State
-  const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
-  const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
-  const minSwipeDistance = 50;
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,28 +99,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
   const handleLogout = async () => {
       await StoreService.logout();
       onLogout();
-  };
-
-  // --- Gesture Handlers ---
-  const onTouchStart = (e: React.TouchEvent) => {
-      setTouchEnd(null);
-      setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-      setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
-  };
-
-  const onTouchEnd = () => {
-      if (!touchStart || !touchEnd) return;
-      const distanceX = touchStart.x - touchEnd.x;
-      const distanceY = touchStart.y - touchEnd.y;
-      const isRightSwipe = distanceX < -minSwipeDistance; // Swipe Right (Back)
-      
-      // Ensure horizontal swipe dominant and we are in modal
-      if (isRightSwipe && Math.abs(distanceX) > Math.abs(distanceY) && showRecycleBin) {
-          setShowRecycleBin(false);
-      }
   };
 
   const recycleRetention = settings?.recycleBinRetentionDays || 30;
@@ -290,45 +262,37 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout }) => {
 
         {/* Recycle Bin Modal */}
         <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Recycle Bin">
-             <div 
-                className="h-full flex flex-col"
-                onTouchStart={onTouchStart} 
-                onTouchMove={onTouchMove} 
-                onTouchEnd={onTouchEnd}
-             >
-                 <div className="flex justify-between items-center mb-4 shrink-0">
-                     <p className="text-sm text-gray-500">Items are auto-deleted after {recycleRetention} days.</p>
-                     {deletedItems.length > 0 && (
-                         <Button size="sm" variant="danger" onClick={handleEmptyBin} className="text-xs">Empty Bin</Button>
-                     )}
-                 </div>
-                 
-                 <div className="space-y-3 max-h-[60vh] overflow-y-auto flex-1">
-                     {deletedItems.length === 0 ? (
-                         <div className="text-center py-10 text-gray-400">
-                             <Trash2 size={32} className="mx-auto mb-2 opacity-20"/>
-                             <p>Recycle bin is empty.</p>
-                         </div>
-                     ) : (
-                         deletedItems.map(item => (
-                             <div key={item.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 flex justify-between items-center">
-                                 <div>
-                                     <div className="font-bold text-gray-800 text-sm">
-                                         {item.type === 'sale' ? `Sale #${item.originalId.slice(0,5)}` : (item.data.name || 'Unknown')}
-                                     </div>
-                                     <div className="text-xs text-gray-500 capitalize">
-                                         {item.type} • Deleted {new Date(item.deletedAt).toLocaleDateString()}
-                                     </div>
+             <div className="flex justify-between items-center mb-4">
+                 <p className="text-sm text-gray-500">Items are auto-deleted after {recycleRetention} days.</p>
+                 {deletedItems.length > 0 && (
+                     <Button size="sm" variant="danger" onClick={handleEmptyBin} className="text-xs">Empty Bin</Button>
+                 )}
+             </div>
+             
+             <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                 {deletedItems.length === 0 ? (
+                     <div className="text-center py-10 text-gray-400">
+                         <Trash2 size={32} className="mx-auto mb-2 opacity-20"/>
+                         <p>Recycle bin is empty.</p>
+                     </div>
+                 ) : (
+                     deletedItems.map(item => (
+                         <div key={item.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 flex justify-between items-center">
+                             <div>
+                                 <div className="font-bold text-gray-800 text-sm">
+                                     {item.type === 'sale' ? `Sale #${item.originalId.slice(0,5)}` : (item.data.name || 'Unknown')}
                                  </div>
-                                 <div className="flex gap-2">
-                                     <button onClick={() => handleRestore(item.id)} className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="Restore"><RotateCcw size={16}/></button>
-                                     <button onClick={() => handlePermanentDelete(item.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Delete Forever"><X size={16}/></button>
+                                 <div className="text-xs text-gray-500 capitalize">
+                                     {item.type} • Deleted {new Date(item.deletedAt).toLocaleDateString()}
                                  </div>
                              </div>
-                         ))
-                     )}
-                 </div>
-                 <div className="text-center text-xs text-gray-300 mt-2">Swipe right to go back</div>
+                             <div className="flex gap-2">
+                                 <button onClick={() => handleRestore(item.id)} className="p-1.5 bg-blue-100 text-blue-600 rounded hover:bg-blue-200" title="Restore"><RotateCcw size={16}/></button>
+                                 <button onClick={() => handlePermanentDelete(item.id)} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Delete Forever"><X size={16}/></button>
+                             </div>
+                         </div>
+                     ))
+                 )}
              </div>
         </Modal>
 
