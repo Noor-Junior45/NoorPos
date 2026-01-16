@@ -324,31 +324,143 @@ export const GoogleDriveUtils = {
   },
 
   /**
-   * Loads data from the Sheet. Preferentially reads 'RawData' for full fidelity.
+   * Loads data from the Sheet. 
+   * Strategy:
+   * 1. Attempt to read 'RawData' (Full JSON blob) for complete state fidelity.
+   * 2. If 'RawData' is missing/empty (e.g. manual sheet edit or partial save), fallback to reading individual sheets (Products, Customers, etc) and reconstructing state.
    */
   loadFromSheet: async (accessToken: string, spreadsheetId: string) => {
-      // Try reading RawData first
-      const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RawData!A1`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      // 1. Try Fast Load (Raw JSON Blob)
+      try {
+          const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RawData!A1`, {
+              headers: { Authorization: `Bearer ${accessToken}` }
+          });
 
-      if (!res.ok) {
-          console.warn("Load failed details:", res.status, res.statusText);
-          throw new Error(`Cloud fetch failed: ${res.statusText}`);
-      }
-      
-      const json = await res.json();
-      
-      if (json.values && json.values[0] && json.values[0][0]) {
-          try {
-              return JSON.parse(json.values[0][0]);
-          } catch (e) {
-              console.error("Failed to parse remote JSON", e);
-              // We return null here to indicate empty/corrupt data, handled by caller
-              return null;
+          if (res.ok) {
+              const json = await res.json();
+              if (json.values && json.values[0] && json.values[0][0]) {
+                  try {
+                      const data = JSON.parse(json.values[0][0]);
+                      // Basic validation to ensure it's not junk
+                      if (data && (Array.isArray(data.products) || Array.isArray(data.customers))) {
+                          return data;
+                      }
+                  } catch (e) {
+                      console.warn("RawData JSON parse failed, trying fallback...", e);
+                  }
+              }
+          } else {
+              console.warn("RawData fetch failed:", res.statusText);
           }
+      } catch (e) {
+          console.warn("RawData fetch error:", e);
       }
-      return null;
+
+      // 2. Fallback: Reconstruct from Rows
+      console.log("Attempting to reconstruct data from visible sheet rows...");
+      
+      try {
+          const ranges = ['Products!A2:G', 'Customers!A2:G', 'Sales!A2:F', 'Settings!A2:E'];
+          const batchRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?majorDimension=ROWS&ranges=${ranges.join('&ranges=')}`, {
+              headers: { Authorization: `Bearer ${accessToken}` }
+          });
+
+          if (!batchRes.ok) {
+              throw new Error(`Fallback fetch failed: ${batchRes.statusText}`);
+          }
+          
+          const batchData = await batchRes.json();
+          const valueRanges = batchData.valueRanges; // Order matches requested ranges
+
+          const getRows = (index: number) => valueRanges[index].values || [];
+
+          // Map Products
+          const products = getRows(0).map((r: any[]) => ({
+              id: r[0] || `gen_${Math.random().toString(36).substr(2, 9)}`,
+              name: r[1] || 'Unknown',
+              sku: r[2] || '',
+              sellPrice: parseFloat(r[3]) || 0,
+              stock: parseFloat(r[4]) || 0,
+              unit: r[5] || 'pcs',
+              category: r[6] || '',
+              // Defaults for lost fields
+              buyPrice: 0, 
+              lowStockThreshold: 10,
+              location: 'Warehouse'
+          }));
+
+          // Map Customers
+          const customers = getRows(1).map((r: any[]) => ({
+              id: r[0] || `gen_${Math.random().toString(36).substr(2, 9)}`,
+              name: r[1] || 'Unknown',
+              phone: r[2] || '',
+              totalSpent: parseFloat(r[3]) || 0,
+              totalDues: parseFloat(r[4]) || 0,
+              visitCount: parseInt(r[5]) || 0,
+              isWholesaler: r[6] === 'Yes',
+              history: [] // Lost history linkage in simple view
+          }));
+
+          // Map Sales (Basic info only)
+          const sales = getRows(2).map((r: any[]) => ({
+              id: r[0] || `gen_${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: r[1] ? new Date(r[1]).toISOString() : new Date().toISOString(), 
+              customerName: r[2] || 'Unknown',
+              total: parseFloat(r[3]) || 0,
+              paymentMethod: r[4] || 'Cash',
+              items: [], // Lost item details
+              subtotal: parseFloat(r[3]) || 0,
+              tax: 0,
+              amountPaid: parseFloat(r[3]) || 0 
+          }));
+
+          // Map Settings
+          const sRow = getRows(3)[0] || [];
+          const settings = {
+              storeName: sRow[0] || '',
+              storeAddress: sRow[1] || '',
+              storePhone: sRow[2] || '',
+              storeEmail: sRow[3] || '',
+              currencySymbol: '₹',
+              expiryAlertDays: 7,
+              lowStockDefault: 10,
+              soundEnabled: true,
+              notificationsEnabled: true,
+              recycleBinRetentionDays: 30,
+              directPrintEnabled: false,
+              scannerPreference: 'both' as const,
+              nasUrl: '',
+              syncToNas: false
+          };
+
+          // Reconstruct Tags from Product Categories
+          const uniqueCategories = Array.from(new Set(products.map((p: any) => p.category).filter((c: any) => c)));
+          const tags = uniqueCategories.map((name: any) => ({
+              id: `tag_${name.replace(/\s+/g, '_').toLowerCase()}`,
+              name: name,
+              color: '#3b82f6'
+          }));
+          
+          // Link products to tags
+          products.forEach((p: any) => {
+              const t = tags.find((tag: any) => tag.name === p.category);
+              if (t) p.tagId = t.id;
+          });
+
+          return {
+              products,
+              customers,
+              sales,
+              settings,
+              tags,
+              users: [],
+              deletedItems: []
+          };
+
+      } catch (e) {
+          console.error("Critical: Failed to reconstruct data from rows", e);
+          return null; // Return null to indicate complete failure (empty or error)
+      }
   },
 
   saveSession: (data: GoogleUser) => {

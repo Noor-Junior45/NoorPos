@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { User, StoreSettings, DeletedItem } from '../types';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone } from 'lucide-react';
+import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone, RefreshCw } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils } from '../utils/googleDrive';
 
@@ -34,6 +34,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [isInviting, setIsInviting] = useState(false);
   const [showShareSuccess, setShowShareSuccess] = useState(false);
   
+  // Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // Gesture State
   const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
   const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
@@ -292,6 +295,19 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       await StoreService.factoryReset();
   };
 
+  const handleForceSync = async () => {
+      setIsSyncing(true);
+      try {
+          await StoreService.forceSync();
+          await loadData();
+          alert("Cloud data synchronized successfully!");
+      } catch (e) {
+          alert("Sync failed. Check internet connection.");
+      } finally {
+          setIsSyncing(false);
+      }
+  };
+
   // --- Gesture Handlers ---
   const onTouchStart = (e: React.TouchEvent) => {
       setTouchEnd(null);
@@ -455,6 +471,38 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                         </div>
                     </div>
                 )}
+            </div>
+        </Card>
+
+        {/* 8. Sync Status */}
+        <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
+            <div className="bg-white p-5 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center shadow-sm border border-green-100">
+                         <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="w-7 h-7" />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-gray-900 text-lg">Database Synced</h3>
+                        <p className="text-sm text-gray-500">
+                           Last saved: {lastBackup || 'Just now'}
+                        </p>
+                    </div>
+                </div>
+                <button 
+                    onClick={handleForceSync} 
+                    disabled={isSyncing}
+                    className={`p-2.5 rounded-full border transition-all ${isSyncing ? 'bg-gray-100 text-gray-400' : 'bg-white text-blue-600 border-blue-100 hover:bg-blue-50 shadow-sm active:scale-95'}`}
+                    title="Force Cloud Sync"
+                >
+                    <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
+                </button>
+            </div>
+            <div className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                <div className="flex items-center gap-1 font-mono">
+                    <CheckSquare size={12} className="text-green-500"/> 
+                    {googleProfile?.email || 'Connected'}
+                </div>
+                <div>StoreManager_DB</div>
             </div>
         </Card>
 
@@ -652,30 +700,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 </div>
             </Card>
         )}
-
-        {/* 8. Sync Status */}
-        <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
-            <div className="bg-white p-5">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center shadow-sm border border-green-100">
-                         <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="w-7 h-7" />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-gray-900 text-lg">Database Synced</h3>
-                        <p className="text-sm text-gray-500">
-                           Last saved: {lastBackup || 'Just now'}
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                <div className="flex items-center gap-1 font-mono">
-                    <CheckSquare size={12} className="text-green-500"/> 
-                    {googleProfile?.email || 'Connected'}
-                </div>
-                <div>StoreManager_DB</div>
-            </div>
-        </Card>
 
         {/* 9. Data Management Actions */}
         <div className="pt-4 flex flex-col gap-3">

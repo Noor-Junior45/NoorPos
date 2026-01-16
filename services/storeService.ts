@@ -89,6 +89,30 @@ const StoreService = {
       }
   },
 
+  // NEW: Manual Cloud Sync
+  async forceSync(): Promise<boolean> {
+      const session = GoogleDriveUtils.getSession();
+      if (!session) return false;
+
+      // Reset cache to force reload
+      cache = null;
+      loadPromise = null;
+      
+      try {
+          // This will trigger a fresh fetch from Google Drive
+          await this.loadData();
+          
+          // Check if the load resulted in a healthy cloud state
+          if (!isCloudSyncHealthy) {
+              throw new Error("Cloud sync failed. Check internet connection.");
+          }
+          return true;
+      } catch (e) {
+          console.error("Force sync failed", e);
+          throw e;
+      }
+  },
+
   // Core: Load data
   async loadData(): Promise<StoreData> {
     if (cache) return cache;
@@ -106,16 +130,16 @@ const StoreService = {
             console.log("Loading from Google Sheet...");
             try {
                 remoteData = await GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId);
-                if (!remoteData) {
-                    // If loadFromSheet returns null but didn't throw, it might be an empty sheet.
-                    // However, we must be careful not to overwrite if it was a fetch error.
-                    console.log("Cloud data was empty or unparseable.");
-                }
-                isCloudSyncHealthy = true;
+                
+                // If loadFromSheet returns data, we are good.
+                // If it returns null, it usually means the sheet is empty or completely unreadable.
+                
+                isCloudSyncHealthy = true; // Assume healthy if no error thrown
             } catch (err) {
                 console.error("Cloud load CRITICAL FAILURE:", err);
                 // IMPORTANT: If cloud load fails, we mark sync as unhealthy to prevent auto-saving empty local data over cloud data.
                 isCloudSyncHealthy = false;
+                
                 // If we have local backup, use it, but warn user
                 const local = localStorage.getItem(LS_BACKUP_KEY);
                 if (local) {
