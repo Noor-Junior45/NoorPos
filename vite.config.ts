@@ -10,5 +10,18 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-charts': ['recharts'],
+          'vendor-icons': ['lucide-react'],
+          'vendor-utils': ['jspdf', 'jspdf-autotable', 'html5-qrcode'],
+          'vendor-ai': ['@google/genai']
+        }
+      }
+    }
   }
 });

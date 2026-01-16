@@ -1,13 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Tab, User } from './types';
-import { Warehouse } from './pages/Warehouse';
-import { POS } from './pages/POS';
-import { Dashboard } from './pages/Dashboard';
-import { Customers } from './pages/Customers';
-import { Profile } from './pages/Profile';
-import { Auth } from './pages/Auth';
 import { Package, ShoppingCart, Users, User as UserIcon, LayoutDashboard } from 'lucide-react';
 import { GoogleDriveUtils } from './utils/googleDrive';
+import { LoadingSpinner } from './components/UI';
+
+// Lazy Load Pages
+const Warehouse = React.lazy(() => import('./pages/Warehouse').then(module => ({ default: module.Warehouse })));
+const POS = React.lazy(() => import('./pages/POS').then(module => ({ default: module.POS })));
+const Dashboard = React.lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
+const Customers = React.lazy(() => import('./pages/Customers').then(module => ({ default: module.Customers })));
+const Profile = React.lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
+const Auth = React.lazy(() => import('./pages/Auth').then(module => ({ default: module.Auth })));
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
@@ -50,18 +53,24 @@ const App: React.FC = () => {
   if (isCheckingAuth) return null; // Or a splash screen
 
   if (!currentUser) {
-      return <Auth onLogin={handleLogin} />;
+      return (
+        <Suspense fallback={<div className="h-screen flex items-center justify-center"><LoadingSpinner/></div>}>
+            <Auth onLogin={handleLogin} />
+        </Suspense>
+      );
   }
 
   return (
     <div className="min-h-screen bg-[#fdfdfc] text-gray-800 selection:bg-yellow-500/30">
       {/* Main Content Area */}
       <main className="p-4 md:p-6 w-full max-w-[1920px] mx-auto min-h-screen">
-        {activeTab === Tab.WAREHOUSE && <Warehouse initialAction={pendingAction} onClearAction={() => setPendingAction(undefined)} />}
-        {activeTab === Tab.POS && <POS />}
-        {activeTab === Tab.DASHBOARD && <Dashboard onNavigate={handleNavigate} />}
-        {activeTab === Tab.CUSTOMERS && <Customers initialAction={pendingAction} onClearAction={() => setPendingAction(undefined)} />}
-        {activeTab === Tab.PROFILE && <Profile user={currentUser} onLogin={handleLogin} onLogout={handleLogout} />}
+        <Suspense fallback={<LoadingSpinner />}>
+            {activeTab === Tab.WAREHOUSE && <Warehouse initialAction={pendingAction} onClearAction={() => setPendingAction(undefined)} />}
+            {activeTab === Tab.POS && <POS />}
+            {activeTab === Tab.DASHBOARD && <Dashboard onNavigate={handleNavigate} />}
+            {activeTab === Tab.CUSTOMERS && <Customers initialAction={pendingAction} onClearAction={() => setPendingAction(undefined)} />}
+            {activeTab === Tab.PROFILE && <Profile user={currentUser} onLogin={handleLogin} onLogout={handleLogout} />}
+        </Suspense>
       </main>
 
       {/* Bottom Navbar (Glossmorphism) */}

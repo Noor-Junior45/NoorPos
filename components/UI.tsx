@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 
 export const Card: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({ children, className = '', ...props }) => (
   <div className={`bg-white rounded-2xl p-4 shadow-sm border border-gray-100 ${className}`} {...props}>
@@ -61,3 +61,10 @@ export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
     </div>
   );
 };
+
+export const LoadingSpinner: React.FC = () => (
+  <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-gray-400">
+    <Loader2 size={40} className="animate-spin mb-4 text-blue-500" />
+    <p className="text-sm font-medium animate-pulse">Loading Module...</p>
+  </div>
+);
