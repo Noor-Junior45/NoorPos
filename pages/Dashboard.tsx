@@ -541,7 +541,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 {stats.lowStockItems.map(p => (
                                     <div key={p.id} className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border border-orange-100 shadow-sm hover:shadow-md transition-shadow">
                                         <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
-                                        <span className="font-bold text-xs text-orange-600">{p.stock} {p.unit} left</span>
+                                        <span className="font-bold text-xs text-orange-600">{p.stock} pcs left</span>
                                     </div>
                                 ))}
                             </div>
