@@ -379,7 +379,7 @@ const StoreService = {
   // --- Recycle Bin Logic ---
   async getDeletedItems(): Promise<DeletedItem[]> {
       const data = await this.loadData();
-      return data.deletedItems || [];
+      return [...(data.deletedItems || [])];
   },
 
   async restoreItem(deletedItemId: string): Promise<void> {
@@ -469,7 +469,7 @@ const StoreService = {
   },
 
   // --- Inventory ---
-  async getInventory(): Promise<Product[]> { const data = await this.loadData(); return data.products; },
+  async getInventory(): Promise<Product[]> { const data = await this.loadData(); return [...data.products]; },
 
   async addProduct(product: Omit<Product, 'id'>): Promise<Product> {
     const data = await this.loadData();
@@ -535,14 +535,28 @@ const StoreService = {
   },
 
   // --- Tags ---
-  async getTags(): Promise<Tag[]> { const data = await this.loadData(); return data.tags; },
+  async getTags(): Promise<Tag[]> { const data = await this.loadData(); return [...data.tags]; },
 
   async addTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
     const data = await this.loadData();
-    const newTag = { ...tag, id: generateId() };
+    // Check for duplicate tag names (case insensitive) to prevent "doubling"
+    const trimmedName = tag.name.trim();
+    const existing = data.tags.find(t => t.name.toLowerCase() === trimmedName.toLowerCase());
+    if (existing) return existing;
+
+    const newTag = { ...tag, name: trimmedName, id: generateId() };
     data.tags.push(newTag);
     this.saveData();
     return newTag;
+  },
+
+  async updateTag(id: string, updates: Partial<Tag>): Promise<void> {
+    const data = await this.loadData();
+    const index = data.tags.findIndex(t => t.id === id);
+    if (index !== -1) {
+      data.tags[index] = { ...data.tags[index], ...updates };
+      this.saveData();
+    }
   },
 
   async deleteTag(id: string): Promise<void> {
@@ -557,13 +571,21 @@ const StoreService = {
             data: tag,
             deletedAt: new Date().toISOString()
         });
+        
+        // FIX: Unlink products associated with this tag so they become "Uncategorized" instead of deleting them
+        data.products.forEach(p => {
+            if (p.tagId === id) {
+                p.tagId = undefined; // Unlink the tag
+            }
+        });
+
         data.tags = data.tags.filter(t => t.id !== id);
         this.saveData();
     }
   },
 
   // --- Sales ---
-  async getSales(): Promise<Sale[]> { const data = await this.loadData(); return data.sales; },
+  async getSales(): Promise<Sale[]> { const data = await this.loadData(); return [...data.sales]; },
 
   async createSale(saleData: any): Promise<Sale> {
     const data = await this.loadData();
@@ -654,7 +676,7 @@ const StoreService = {
   },
 
   // --- Customers ---
-  async getCustomers(): Promise<Customer[]> { const data = await this.loadData(); return data.customers; },
+  async getCustomers(): Promise<Customer[]> { const data = await this.loadData(); return [...data.customers]; },
 
   async upsertCustomer(customer: Partial<Customer>): Promise<Customer> {
     const data = await this.loadData();
