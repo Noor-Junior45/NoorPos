@@ -40,6 +40,11 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [showDuesError, setShowDuesError] = useState(false);
 
+  // Gesture State
+  const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
+  const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
+  const minSwipeDistance = 50;
+
   useEffect(() => {
     loadData();
   }, []);
@@ -66,6 +71,36 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
     const sData = await StoreService.getSales();
     setCustomers([...cData]);
     setSales(sData);
+  };
+
+  // --- Gesture Handlers ---
+  const onTouchStart = (e: React.TouchEvent) => {
+      setTouchEnd(null);
+      setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+      setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+  };
+
+  const onTouchEnd = (action: () => void, direction: 'right' | 'down') => {
+      if (!touchStart || !touchEnd) return;
+      const xDiff = touchStart.x - touchEnd.x;
+      const yDiff = touchStart.y - touchEnd.y;
+      const absX = Math.abs(xDiff);
+      const absY = Math.abs(yDiff);
+
+      if (direction === 'right') {
+          // Swipe Right (xDiff is negative: start < end)
+          if (absX > absY && xDiff < -minSwipeDistance) {
+              action();
+          }
+      } else if (direction === 'down') {
+          // Swipe Down (yDiff is negative: start < end)
+          if (absY > absX && yDiff < -minSwipeDistance) {
+              action();
+          }
+      }
   };
 
   const handleEditClick = (customer: Customer) => {
@@ -490,14 +525,24 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
       {/* Mobile Detail View Overlay */}
       {selectedCustomer && (
-          <div className="md:hidden fixed inset-0 z-50 bg-white animate-in slide-in-from-bottom-10 duration-200">
+          <div 
+            className="md:hidden fixed inset-0 z-50 bg-white animate-in slide-in-from-bottom-10 duration-200"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={() => onTouchEnd(() => setSelectedCustomer(null), 'right')}
+          >
                {renderCustomerDetails(selectedCustomer, true)}
           </div>
       )}
 
       {/* Edit/Add Modal */}
       <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title={formData.id ? 'Edit Contact' : 'Create Contact'}>
-         <div className="space-y-4">
+         <div 
+            className="space-y-4"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={() => onTouchEnd(() => setShowEditModal(false), 'down')}
+         >
              <div className="flex justify-center mb-4">
                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 relative">
                      <User size={32}/>
@@ -587,6 +632,11 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
              
              <div className="flex justify-end pt-4">
                  <Button className="w-full" onClick={handleSave}>Save</Button>
+             </div>
+             
+             {/* Hint for gesture */}
+             <div className="flex justify-center pt-2 md:hidden">
+                 <div className="w-12 h-1 bg-gray-200 rounded-full"></div>
              </div>
          </div>
       </Modal>
