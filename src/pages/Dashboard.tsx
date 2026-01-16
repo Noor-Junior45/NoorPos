@@ -3,8 +3,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
 import { Customer, Sale, Product, Tab, Tag } from '../types';
 import { Card, Badge, Button } from '../components/UI';
-import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers, Loader2, X } from 'lucide-react';
+import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Layers, DollarSign as Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Loader2, X, Eye, Camera, Image as ImageIcon } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface DashboardProps {
   onNavigate: (tab: Tab, action?: string) => void;
@@ -12,6 +13,29 @@ interface DashboardProps {
 
 // Use 'any' cast for the custom element to bypass IntrinsicElements check robustly
 const AmpAd = 'amp-ad' as any;
+
+const ProductSettingRow: React.FC<{ 
+    product: Product; 
+    type: 'stock'; 
+    onUpdate: (id: string, updates: Partial<Product>) => void 
+}> = ({ product, type, onUpdate }) => {
+    return (
+        <div className="flex justify-between items-center p-3 border-b border-gray-100 last:border-0 hover:bg-gray-50 transition-colors">
+            <div className="flex-1 min-w-0 pr-4">
+                <div className="font-bold text-gray-800 text-sm truncate">{product.name}</div>
+                <div className="text-xs text-gray-400">Current Stock: {product.stock} {product.unit}</div>
+            </div>
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-100 transition-all w-24">
+                <input 
+                    type="number"
+                    className="w-full text-center font-bold text-gray-700 outline-none text-sm bg-white [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={product.lowStockThreshold}
+                    onChange={(e) => onUpdate(product.id, { lowStockThreshold: parseInt(e.target.value) || 0 })}
+                />
+            </div>
+        </div>
+    );
+};
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -733,14 +757,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
         {/* Ad Unit (AMP) */}
         <div className="mt-8 mb-20 flex justify-center">
+            {/* Custom Element Usage with safe component alias */}
             <AmpAd width="100vw" height="320"
                  type="adsense"
                  data-ad-client="ca-pub-5865716270182311"
                  data-ad-slot="2691818269"
                  data-auto-format="rspv"
                  data-full-width="">
-              {/* @ts-ignore */}
-              <div overflow=""></div>
+              {/* Using spread with any cast to bypass detailed prop check for 'overflow' */}
+              <div {...{ overflow: "" } as any}></div>
             </AmpAd>
         </div>
     </div>
