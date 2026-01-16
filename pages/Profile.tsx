@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { User, StoreSettings, DeletedItem } from '../types';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone, RefreshCw, ArchiveRestore } from 'lucide-react';
+import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone, RefreshCw, ArchiveRestore, ShieldCheck, CloudOff } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
 
@@ -22,6 +22,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showContactDropdown, setShowContactDropdown] = useState(false);
   const [showTermsDropdown, setShowTermsDropdown] = useState(false);
+  const [showPrivacyDropdown, setShowPrivacyDropdown] = useState(false);
   const [lastBackup, setLastBackup] = useState<string | null>(null);
   
   // Recycle Bin State
@@ -36,6 +37,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   
   // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Cloud Backup State
   const [showBackupModal, setShowBackupModal] = useState(false);
@@ -272,6 +274,29 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       }
   };
   
+  const handleGoogleConnect = async () => {
+      setIsConnecting(true);
+      try {
+          const accessToken = await GoogleDriveUtils.initGoogleLogin(CLIENT_ID);
+          const sheetId = await GoogleDriveUtils.findOrCreateBackend(accessToken);
+          const profile = await GoogleDriveUtils.getUserProfile(accessToken);
+          
+          GoogleDriveUtils.saveSession({
+            accessToken,
+            spreadsheetId: sheetId,
+            profile
+          });
+          
+          alert("Account Connected! Your data will now sync to Google Drive.");
+          window.location.reload(); 
+      } catch (err: any) {
+          console.error("Connect error:", err);
+          alert("Failed to connect: " + (err.message || "Unknown error"));
+      } finally {
+          setIsConnecting(false);
+      }
+  };
+  
   const handleExport = async () => {
       const data = await StoreService.getRawData();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -306,6 +331,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   };
 
   const handleForceSync = async () => {
+      if (!googleProfile) {
+          alert("Please connect a Google account first.");
+          return;
+      }
       setIsSyncing(true);
       try {
           await StoreService.forceSync();
@@ -319,6 +348,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   };
 
   const handleOpenBackupModal = async () => {
+      if (!googleProfile) {
+          alert("Cloud backups require a connected Google account.");
+          return;
+      }
       setShowBackupModal(true);
       setIsLoadingBackups(true);
       try {
@@ -430,6 +463,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
   if (!user) return null;
 
+  const isGuest = user.id === 'guest' || !googleProfile;
+
   return (
     <div className="max-w-2xl mx-auto space-y-6 pb-32 animate-in fade-in">
         
@@ -455,6 +490,36 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 <LogOut size={18} className="mr-2 inline"/> Sign Out
             </Button>
         </div>
+
+        {/* 1.5 Guest Connect CTA */}
+        {isGuest && (
+            <Card className="bg-indigo-600 text-white border-0 shadow-lg relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-16 bg-white/10 rounded-full -mr-8 -mt-8 blur-2xl group-hover:scale-110 transition-transform duration-700"></div>
+                <div className="relative z-10 p-5">
+                    <div className="flex items-start gap-4">
+                        <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm shrink-0">
+                            <Cloud size={24} className="text-white"/>
+                        </div>
+                        <div className="flex-1">
+                            <h3 className="font-bold text-lg leading-tight">Sync your Data</h3>
+                            <p className="text-indigo-100 text-sm mt-1 mb-4 leading-relaxed">Connect your Google Account to backup data and access it from multiple devices.</p>
+                            <Button 
+                                onClick={handleGoogleConnect} 
+                                disabled={isConnecting}
+                                className="bg-white text-indigo-600 hover:bg-indigo-50 border-0 font-bold w-full sm:w-auto shadow-md flex items-center justify-center gap-3"
+                            >
+                                {isConnecting ? (
+                                    <Loader2 size={18} className="animate-spin"/>
+                                ) : (
+                                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
+                                )}
+                                <span>{isConnecting ? 'Connecting...' : 'Sign In with Google'}</span>
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </Card>
+        )}
 
         {/* 2. Store Settings */}
         <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5">
@@ -577,28 +642,35 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
             <div className="bg-white p-5 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center shadow-sm border border-green-100">
-                         <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="w-7 h-7" />
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm border ${googleProfile ? 'bg-green-50 border-green-100' : 'bg-gray-100 border-gray-200'}`}>
+                         {googleProfile ? (
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="w-7 h-7" />
+                         ) : (
+                            <CloudOff size={24} className="text-gray-400"/>
+                         )}
                     </div>
                     <div>
-                        <h3 className="font-bold text-gray-900 text-lg">Database Synced</h3>
+                        <h3 className="font-bold text-gray-900 text-lg">
+                            {googleProfile ? 'Database Synced' : 'Drive Unconnected'}
+                        </h3>
                         <p className="text-sm text-gray-500">
-                           Last saved: {lastBackup || 'Just now'}
+                           {googleProfile ? `Last saved: ${lastBackup || 'Just now'}` : 'Local storage only'}
                         </p>
                     </div>
                 </div>
                 <div className="flex gap-2">
                     <button 
                         onClick={handleOpenBackupModal} 
-                        className="p-2.5 rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 shadow-sm active:scale-95 transition-all"
+                        className={`p-2.5 rounded-full border bg-white border-gray-200 shadow-sm transition-all ${googleProfile ? 'text-gray-600 hover:bg-gray-50 active:scale-95' : 'text-gray-300 cursor-not-allowed'}`}
                         title="Cloud Backups"
+                        disabled={!googleProfile}
                     >
                         <ArchiveRestore size={20} />
                     </button>
                     <button 
                         onClick={handleForceSync} 
-                        disabled={isSyncing}
-                        className={`p-2.5 rounded-full border transition-all ${isSyncing ? 'bg-gray-100 text-gray-400' : 'bg-white text-blue-600 border-blue-100 hover:bg-blue-50 shadow-sm active:scale-95'}`}
+                        disabled={isSyncing || !googleProfile}
+                        className={`p-2.5 rounded-full border transition-all ${isSyncing || !googleProfile ? 'bg-gray-100 text-gray-400' : 'bg-white text-blue-600 border-blue-100 hover:bg-blue-50 shadow-sm active:scale-95'}`}
                         title="Force Cloud Sync"
                     >
                         <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
@@ -606,11 +678,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 </div>
             </div>
             <div className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-                <div className="flex items-center gap-1 font-mono">
-                    <CheckSquare size={12} className="text-green-500"/> 
-                    {googleProfile?.email || 'Connected'}
+                <div className={`flex items-center gap-1 font-mono ${!googleProfile ? 'text-red-500' : 'text-green-600'}`}>
+                    {googleProfile ? <CheckSquare size={12}/> : <AlertTriangle size={12}/>}
+                    {googleProfile?.email || 'Not Connected'}
                 </div>
-                <div>StoreManager_DB</div>
+                <div>{googleProfile ? 'StoreManager_DB' : 'Local_Cache'}</div>
             </div>
         </Card>
 
@@ -885,6 +957,26 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 )}
             </div>
 
+            <div className="overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm hover:border-indigo-300 transition-all">
+                <button onClick={() => setShowPrivacyDropdown(!showPrivacyDropdown)} className="w-full p-4 flex items-center justify-between group bg-white">
+                    <div className="flex items-center gap-3">
+                        <ShieldCheck size={20} className="text-gray-400 group-hover:text-indigo-500"/>
+                        <span className="font-medium text-gray-700">Privacy Policy</span>
+                    </div>
+                    {showPrivacyDropdown ? <ChevronDown size={18} className="text-gray-500"/> : <ChevronRight size={18} className="text-gray-300"/>}
+                </button>
+                {showPrivacyDropdown && (
+                    <div className="px-4 pb-4 pt-0 bg-white animate-in slide-in-from-top-2">
+                        <div className="pt-3 border-t border-gray-100">
+                            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors">
+                                <ExternalLink size={16} className="text-gray-500"/>
+                                <span className="text-sm font-bold text-gray-800">Read Policy</span>
+                            </a>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             <div className="overflow-hidden bg-white rounded-xl border border-gray-200 shadow-sm hover:border-green-300 transition-all">
                 <button onClick={() => setShowContactDropdown(!showContactDropdown)} className="w-full p-4 flex items-center justify-between group bg-white">
                     <div className="flex items-center gap-3">
@@ -1017,7 +1109,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </Modal>
 
-        <div className="text-center text-xs text-gray-400 pt-8 pb-4">Noor POS v1.5.0 • Connected</div>
+        <div className="text-center text-xs text-gray-400 pt-8 pb-4">Noor POS v1.6.0 • Connected</div>
     </div>
   );
 };
