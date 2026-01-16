@@ -4,7 +4,7 @@ import { Customer, Sale, Payment } from '../types';
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone, Printer } from 'lucide-react';
+import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone, Printer, Star } from 'lucide-react';
 
 interface CustomersProps {
   initialAction?: string;
@@ -228,14 +228,22 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                                         ${selectedCustomer?.id === c.id ? 'bg-blue-50 border border-blue-100' : 'bg-transparent border border-transparent'}
                                     `}
                                 >
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 relative
                                         ${selectedCustomer?.id === c.id ? 'bg-blue-600 text-white' : 'bg-purple-600 text-white'}
                                     `}>
                                         {c.name.charAt(0).toUpperCase()}
+                                        {c.isWholesaler && (
+                                            <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow-sm border border-gray-100">
+                                                <Star size={10} className="text-amber-500 fill-amber-500"/>
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex justify-between items-center pr-2">
-                                            <span className="font-medium text-gray-900 truncate">{c.name}</span>
+                                            <span className="font-medium text-gray-900 truncate flex items-center gap-1">
+                                                {c.name}
+                                                {c.isWholesaler && <Star size={12} className="text-amber-500 fill-amber-500"/>}
+                                            </span>
                                             {(c.totalDues || 0) > 0 && (
                                                 <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100 shrink-0 ml-2 whitespace-nowrap">
                                                     Due: ₹{c.totalDues}
@@ -306,10 +314,20 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
               <div className="flex flex-col items-center text-center">
                   {/* Compact Avatar */}
-                  <div className="w-20 h-20 bg-purple-600 text-white rounded-full flex items-center justify-center text-3xl font-bold mb-3 shadow-sm">
+                  <div className="w-20 h-20 bg-purple-600 text-white rounded-full flex items-center justify-center text-3xl font-bold mb-3 shadow-sm relative">
                        {customer.name.charAt(0).toUpperCase()}
+                       {customer.isWholesaler && (
+                           <div className="absolute bottom-0 right-0 bg-white p-1 rounded-full border border-gray-100 shadow-sm">
+                               <Star size={16} className="text-amber-500 fill-amber-500"/>
+                           </div>
+                       )}
                   </div>
-                  <h2 className="text-xl font-bold text-gray-900">{customer.name}</h2>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                      {customer.name}
+                  </h2>
+                  {customer.isWholesaler && (
+                      <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 mt-1">Wholesale Customer</span>
+                  )}
                   
                   {/* Compact Action Chips */}
                   <div className="flex items-center gap-3 mt-3">
@@ -481,8 +499,9 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title={formData.id ? 'Edit Contact' : 'Create Contact'}>
          <div className="space-y-4">
              <div className="flex justify-center mb-4">
-                 <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300 text-gray-400">
+                 <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 relative">
                      <User size={32}/>
+                     {formData.isWholesaler && <Star className="absolute bottom-0 right-0 text-amber-500 fill-amber-500 bg-white rounded-full p-0.5 shadow-sm border border-gray-100" size={20}/>}
                  </div>
              </div>
              <div>
@@ -547,6 +566,23 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                         onChange={e => setFormData({...formData, location: e.target.value})} 
                      />
                 </div>
+             </div>
+
+             <div className="pt-2">
+                 <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                     <div className="relative flex items-center">
+                         <input 
+                            type="checkbox" 
+                            className="w-5 h-5 accent-amber-500"
+                            checked={!!formData.isWholesaler}
+                            onChange={(e) => setFormData({...formData, isWholesaler: e.target.checked})}
+                         />
+                     </div>
+                     <div className="flex-1">
+                         <div className="font-bold text-gray-800 text-sm flex items-center gap-1">Mark as Wholesale Customer <Star size={14} className="text-amber-500 fill-amber-500"/></div>
+                         <div className="text-xs text-gray-500">Automatically applies wholesale prices in POS.</div>
+                     </div>
+                 </label>
              </div>
              
              <div className="flex justify-end pt-4">

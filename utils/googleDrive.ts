@@ -15,7 +15,7 @@ export interface GoogleUser {
 
 const headers = ['ID', 'Product Name', 'SKU', 'Price', 'Stock', 'Unit', 'Category'];
 const settingsHeaders = ['Store Name', 'Address', 'Phone', 'Email', 'Last Updated'];
-const customerHeaders = ['ID', 'Name', 'Phone', 'Total Spent', 'Dues', 'Visits'];
+const customerHeaders = ['ID', 'Name', 'Phone', 'Total Spent', 'Dues', 'Visits', 'Wholesaler'];
 const salesHeaders = ['Invoice ID', 'Date', 'Customer', 'Total', 'Payment Method', 'Items Count'];
 
 export const GoogleDriveUtils = {
@@ -187,7 +187,7 @@ export const GoogleDriveUtils = {
       // 5. Add Headers to Sheets
       const headerUpdates = [
           { range: 'Products!A1:G1', values: [headers] },
-          { range: 'Customers!A1:F1', values: [customerHeaders] },
+          { range: 'Customers!A1:G1', values: [customerHeaders] }, // Updated range for extra column
           { range: 'Sales!A1:F1', values: [salesHeaders] },
           { range: 'Settings!A1:E1', values: [settingsHeaders] }
       ];
@@ -268,9 +268,9 @@ export const GoogleDriveUtils = {
         p.id, p.name, p.sku, p.sellPrice, p.stock, p.unit, p.category || ''
     ]);
 
-    // 2. Prepare Customer Rows
+    // 2. Prepare Customer Rows (Added isWholesaler boolean)
     const customerRows = data.customers.map((c: any) => [
-        c.id, c.name, c.phone, c.totalSpent, c.totalDues, c.visitCount
+        c.id, c.name, c.phone, c.totalSpent, c.totalDues, c.visitCount, c.isWholesaler ? 'Yes' : 'No'
     ]);
 
     // 3. Prepare Sales Rows (Most recent first)

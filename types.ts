@@ -1,3 +1,4 @@
+
 export interface Tag {
   id: string;
   name: string;
@@ -68,6 +69,7 @@ export interface Customer {
   visitCount: number;
   history: string[];
   payments?: Payment[];
+  isWholesaler?: boolean;
 }
 
 export interface User {
