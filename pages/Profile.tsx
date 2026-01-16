@@ -693,14 +693,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                  <h2 className="font-bold text-gray-800">Printer Configuration</h2>
              </div>
              <div className="p-5 space-y-4">
-                 <div className="flex items-center justify-between">
+                 <div className="flex items-center justify-between gap-4">
                      <div>
                          <div className="font-semibold text-gray-800">Direct Thermal Printing</div>
                          <p className="text-sm text-gray-500">Automatically trigger print dialog without downloading PDF.</p>
                      </div>
                      <button 
                         onClick={handleToggleDirectPrint}
-                        className={`w-14 h-8 rounded-full transition-all duration-300 relative shadow-inner ${storeSettings?.directPrintEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}
+                        className={`w-14 h-8 shrink-0 rounded-full transition-all duration-300 relative shadow-inner ${storeSettings?.directPrintEnabled ? 'bg-blue-600' : 'bg-gray-200'}`}
                      >
                         <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 shadow-md ${storeSettings?.directPrintEnabled ? 'translate-x-7' : 'translate-x-1'}`}></div>
                     </button>
@@ -765,14 +765,14 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                  <Bell size={20} className="text-amber-500"/>
                  <h2 className="font-bold text-gray-800">Notifications</h2>
              </div>
-             <div className="p-5 flex items-center justify-between">
+             <div className="p-5 flex items-center justify-between gap-4">
                  <div>
                      <div className="font-semibold text-gray-800">Browser Alerts</div>
                      <p className="text-sm text-gray-500">Get notified about low stock and critical events.</p>
                  </div>
                  <button 
                     onClick={handleToggleNotifications}
-                    className={`w-14 h-8 rounded-full transition-all duration-300 relative shadow-inner ${storeSettings?.notificationsEnabled ? 'bg-amber-500' : 'bg-gray-200'}`}
+                    className={`w-14 h-8 shrink-0 rounded-full transition-all duration-300 relative shadow-inner ${storeSettings?.notificationsEnabled ? 'bg-amber-500' : 'bg-gray-200'}`}
                  >
                     <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 shadow-md ${storeSettings?.notificationsEnabled ? 'translate-x-7' : 'translate-x-1'}`}></div>
                 </button>
@@ -814,11 +814,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                         />
                         <p className="text-[10px] text-gray-400 mt-1 ml-1">Example: http://localhost:3000/api/storage</p>
                      </div>
-                     <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-purple-100">
+                     <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-purple-100 gap-3">
                          <span className="font-bold text-gray-700 text-sm">Sync Data to NAS</span>
                          <button 
                             onClick={() => setTempNas({...tempNas, syncToNas: !tempNas.syncToNas})}
-                            className={`w-12 h-7 rounded-full transition-all duration-300 relative shadow-inner ${tempNas.syncToNas ? 'bg-purple-600' : 'bg-gray-200'}`}
+                            className={`w-12 h-7 shrink-0 rounded-full transition-all duration-300 relative shadow-inner ${tempNas.syncToNas ? 'bg-purple-600' : 'bg-gray-200'}`}
                          >
                             <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform duration-300 shadow-md ${tempNas.syncToNas ? 'translate-x-6' : 'translate-x-1'}`}></div>
                          </button>
@@ -857,7 +857,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                     <div className="mb-4">
                         <p className="text-sm text-gray-600 mb-2">Invite staff members to access this store database. They must log in with their Google Account.</p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-3">
                         <Input 
                             placeholder="staff.member@gmail.com" 
                             value={inviteEmail} 
@@ -867,7 +867,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                         <Button 
                             onClick={handleInviteStaff} 
                             disabled={isInviting || !inviteEmail}
-                            className="bg-indigo-600 hover:bg-indigo-700 w-28 flex items-center justify-center"
+                            className="bg-indigo-600 hover:bg-indigo-700 w-full sm:w-28 flex items-center justify-center"
                         >
                             {isInviting ? <Loader2 size={18} className="animate-spin" /> : <><UserPlus size={18} className="mr-2"/> Invite</>}
                         </Button>
