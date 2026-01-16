@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Product, Tag, StoreSettings, Sale } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon, Check } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, LayoutDashboard, Box, Calendar, Trash2, Pencil, X, Filter, CheckSquare, Square, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Copy, ListFilter, Calculator, ArrowRight, OctagonAlert, Book, Upload, FileUp, Loader2, Save, Eye, Camera, Image as ImageIcon, Check, Smartphone, FileType, AlignLeft } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { Html5Qrcode } from 'html5-qrcode';
 
@@ -76,7 +75,10 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       expiryAlertDays: 7, 
       lowStockDefault: 10, 
       soundEnabled: true, 
-      currencySymbol: '₹' 
+      currencySymbol: '₹',
+      recycleBinRetentionDays: 30,
+      directPrintEnabled: false,
+      scannerPreference: 'both'
   });
   const [loading, setLoading] = useState(true);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -239,6 +241,12 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const handleEditProduct = (p: Product) => { setNewProduct({ ...p }); setBatchConfig({ packs: '', perPack: '' }); setIsEditing(true); setIsEditorOpen(true); };
   const handleCloneProduct = (p: Product) => { setNewProduct({ ...p, id: undefined, stock: 0, expiryDate: '', manufacturingDate: '', sku: p.sku }); setBatchConfig({ packs: '', perPack: '' }); setIsEditing(false); setIsEditorOpen(true); };
   const handleOpenAdd = () => { resetForm(); setIsEditing(false); setIsEditorOpen(true); };
+  const handleManualEntry = () => {
+      setShowScanner(false);
+      setIsScanningToAdd(false);
+      setIsEditing(false);
+      setIsEditorOpen(true);
+  };
   const confirmDelete = async () => { if (!itemToDelete) return; if (itemToDelete.type === 'product') await StoreService.deleteProduct(itemToDelete.id); else if (itemToDelete.type === 'tag') await StoreService.deleteTag(itemToDelete.id); setItemToDelete(null); loadData(); };
   const handleEditorKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null) => { if (e.key === 'Enter') { e.preventDefault(); nextRef?.current?.focus(); } };
   const handleAnalyzeClick = () => { setShowSourceOptions(true); };
@@ -1388,7 +1396,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                   <div className="p-3 rounded-full bg-purple-100 text-purple-600 group-hover:bg-purple-200"><ImageIcon size={24}/></div>
                   <div className="text-left">
                       <span className="font-bold text-gray-900 block">Upload File</span>
-                      <span className="text-xs text-gray-500">From gallery or documents</span>
+                      <span className="text-xs text-gray-500">Image or PDF Invoice</span>
                   </div>
               </button>
           </div>

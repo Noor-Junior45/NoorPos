@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
 import { Customer, Sale, Product, Tab, Tag } from '../types';
 import { Card, Badge, Button } from '../components/UI';
-import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3 } from 'lucide-react';
+import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
 
 interface DashboardProps {
@@ -50,6 +50,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     const totalRevenue = sales.reduce((acc, s) => acc + s.total, 0);
     const totalDues = customers.reduce((acc, c) => acc + (c.totalDues || 0), 0);
     const inventoryValue = products.reduce((acc, p) => acc + (p.stock * p.sellPrice), 0);
+    
+    // Inventory Counts
+    const totalProducts = products.length;
+    const totalStockUnits = products.reduce((acc, p) => acc + p.stock, 0);
 
     // 2. Sales Trend (Last 7 Days)
     const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -151,7 +155,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return { 
         totalRevenue, 
         totalDues, 
-        inventoryValue, 
+        inventoryValue,
+        totalProducts,
+        totalStockUnits,
         salesTrend, 
         paymentTrend,
         paymentTotals,
@@ -233,13 +239,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
         </div>
 
+        {/* NEW SECTION: Inventory Overview (MOVED FROM WAREHOUSE) */}
+        <section>
+            <div className="flex items-center gap-2 mb-4 px-1 mt-6">
+                <Box size={20} className="text-gray-500"/>
+                <h3 className="text-lg font-bold text-gray-800">Inventory Overview</h3>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="border-2 border-sky-600 shadow-sm hover:shadow-md transition-shadow">
+                 <div className="text-sky-700 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><Box size={14} /> Total Products</div>
+                 <div className="text-3xl font-bold mt-1 text-gray-900">{stats.totalProducts}</div>
+              </Card>
+              <Card className="border-2 border-green-500 shadow-sm hover:shadow-md transition-shadow">
+                 <div className="text-green-600 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><IndianRupee size={14} /> Total Value</div>
+                 <div className="text-3xl font-bold mt-1 text-gray-900">{settings.currencySymbol}{stats.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              </Card>
+              <Card className="border-2 border-red-400 shadow-sm hover:shadow-md transition-shadow">
+                 <div className="text-red-600 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><AlertTriangle size={14} /> Low Stock</div>
+                 <div className="text-3xl font-bold mt-1 text-gray-900">{stats.lowStockItems.length}</div>
+              </Card>
+              <Card className="border-2 border-violet-400 shadow-sm hover:shadow-md transition-shadow">
+                 <div className="text-violet-600 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><Layers size={14} /> Stock Units</div>
+                 <div className="text-3xl font-bold mt-1 text-gray-900">{stats.totalStockUnits.toLocaleString()}</div>
+              </Card>
+            </div>
+        </section>
+
         {/* SECTION 1: BUSINESS SNAPSHOT */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1">
                 <LayoutDashboard size={20} className="text-gray-500"/>
-                <h3 className="text-lg font-bold text-gray-800">Business Snapshot</h3>
+                <h3 className="text-lg font-bold text-gray-800">Financial Snapshot</h3>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Total Revenue */}
                 <Card className="border-0 shadow-md bg-gradient-to-br from-green-600 to-emerald-600 text-white relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-full -mr-4 -mt-4 blur-xl transition-transform group-hover:scale-150 duration-700"></div>
@@ -264,23 +296,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                         <div className="text-3xl font-bold">₹{stats.totalDues.toLocaleString()}</div>
                         <div className="text-xs text-red-100 mt-1 opacity-80">
                             {stats.customersWithDues.length} Customers pending
-                        </div>
-                    </div>
-                </Card>
-
-                {/* Inventory Value */}
-                <Card className="border-0 shadow-md bg-white border-l-4 border-blue-600">
-                    <div className="p-2">
-                        <div className="flex items-center gap-2 text-gray-500 font-bold text-xs uppercase tracking-wider mb-2">
-                            <Package size={16} /> Stock Value
-                        </div>
-                        <div className="text-3xl font-bold text-gray-800">₹{stats.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                        <div className="text-xs text-gray-400 mt-1">
-                            {stats.outOfStockCount > 0 ? (
-                                <span className="text-red-500 font-bold flex items-center gap-1"><AlertTriangle size={10}/> {stats.outOfStockCount} Items Out of Stock</span>
-                            ) : (
-                                <span className="text-green-600 font-bold flex items-center gap-1"><CheckCircle size={10}/> Healthy Inventory</span>
-                            )}
                         </div>
                     </div>
                 </Card>
