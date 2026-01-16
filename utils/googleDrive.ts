@@ -141,9 +141,32 @@ export const GoogleDriveUtils = {
     const folderName = 'NoorPOS_Data';
     const fileName = 'StoreManager_DB';
     
+    // STRATEGY:
+    // 1. Search for the file GLOBALLY (covers Own Files AND Shared Files).
+    // 2. If found, return it (Staff/Shared Login).
+    // 3. If not found, Create Folder -> Create File (Owner Init).
+
+    // 1. Global Search
+    const globalQuery = `name='${fileName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
+    const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQuery)}&fields=files(id, name, parents)`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    
+    if (globalRes.ok) {
+        const globalData = await globalRes.json();
+        if (globalData.files && globalData.files.length > 0) {
+            console.log("Found existing/shared database.");
+            const fileId = globalData.files[0].id;
+            await GoogleDriveUtils.ensureSheetsExist(accessToken, fileId);
+            return fileId;
+        }
+    }
+
+    // 2. Not found, initiate Owner Creation Sequence
+    console.log("Database not found. Creating new environment...");
     const folderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, folderName);
 
-    // Search for File in Folder
+    // Double check inside folder just in case global search missed due to propagation delay
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id, name)`;
     const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
     const searchData = await searchRes.json();
@@ -387,12 +410,33 @@ export const GoogleDriveUtils = {
       return await res.json();
   },
 
+  // UPDATED: Share the Parent Folder AND the File
   shareDatabase: async (accessToken: string, spreadsheetId: string, email: string) => {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions?emailMessage=You have been invited to manage Noor POS Store.&sendNotificationEmail=true`, {
-        method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email })
+    // 1. Get File Info (to find parent folder)
+    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
     });
-    if (!res.ok) throw new Error(`Sharing failed: ${res.statusText}`);
+    
+    if (!fileRes.ok) throw new Error("Failed to locate database folder.");
+    const fileInfo = await fileRes.json();
+    
+    const targets = [];
+    // Add Parent Folder(s) to targets
+    if (fileInfo.parents && fileInfo.parents.length > 0) {
+        targets.push(fileInfo.parents[0]); // Usually the main folder
+    }
+    // Add Spreadsheet itself to targets (Double insurance)
+    targets.push(spreadsheetId);
+
+    // 2. Share Targets
+    for (const targetId of targets) {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${targetId}/permissions?emailMessage=You have been invited to manage Noor POS Store.&sendNotificationEmail=true`, {
+            method: 'POST', 
+            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email })
+        });
+    }
+    
     return true;
   },
 
