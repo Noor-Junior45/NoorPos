@@ -13,6 +13,12 @@ export interface GoogleUser {
   };
 }
 
+export interface DriveFile {
+    id: string;
+    name: string;
+    createdTime?: string;
+}
+
 const headers = ['ID', 'Product Name', 'SKU', 'Price', 'Stock', 'Unit', 'Category'];
 const settingsHeaders = ['Store Name', 'Address', 'Phone', 'Email', 'Last Updated'];
 const customerHeaders = ['ID', 'Name', 'Phone', 'Total Spent', 'Dues', 'Visits', 'Wholesaler'];
@@ -72,8 +78,13 @@ export const GoogleDriveUtils = {
   /**
    * Helper to find or create a specific folder
    */
-  findOrCreateFolder: async (accessToken: string, folderName: string): Promise<string> => {
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false&fields=files(id, name)`;
+  findOrCreateFolder: async (accessToken: string, folderName: string, parentId?: string): Promise<string> => {
+    let query = `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`;
+    if (parentId) {
+        query += ` and '${parentId}' in parents`;
+    }
+
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id, name)`;
     const searchRes = await fetch(searchUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -84,16 +95,21 @@ export const GoogleDriveUtils = {
     }
 
     // Create Folder
+    const body: any = {
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder'
+    };
+    if (parentId) {
+        body.parents = [parentId];
+    }
+
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
         method: 'POST',
         headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-            name: folderName,
-            mimeType: 'application/vnd.google-apps.folder'
-        })
+        body: JSON.stringify(body)
     });
     const createData = await createRes.json();
     return createData.id;
@@ -259,9 +275,78 @@ export const GoogleDriveUtils = {
     return true;
   },
 
+  // --- CLOUD BACKUP METHODS ---
+
+  createCloudBackup: async (accessToken: string, data: any): Promise<void> => {
+      // 1. Get Root Folder (NoorPOS_Data)
+      const rootFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'NoorPOS_Data');
+      
+      // 2. Get/Create "Backups" subfolder
+      const backupFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'Backups', rootFolderId);
+
+      // 3. Create File
+      const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `noor_backup_${dateStr}.json`;
+      
+      const fileMetadata = {
+          name: fileName,
+          parents: [backupFolderId]
+      };
+
+      const fileContent = JSON.stringify(data, null, 2);
+      const file = new Blob([fileContent], { type: 'application/json' });
+
+      // Use Multipart Upload for Drive API
+      const metadataBlob = new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' });
+      const form = new FormData();
+      form.append('metadata', metadataBlob);
+      form.append('file', file);
+
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: form
+      });
+
+      if (!res.ok) {
+          const err = await res.json();
+          throw new Error(`Backup creation failed: ${err?.error?.message}`);
+      }
+  },
+
+  listCloudBackups: async (accessToken: string): Promise<DriveFile[]> => {
+      // 1. Get Root
+      const rootFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'NoorPOS_Data');
+      
+      // 2. Get Backups Folder (might not exist yet if no backups)
+      const backupFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'Backups', rootFolderId);
+
+      // 3. List JSON files
+      const query = `'${backupFolderId}' in parents and mimeType = 'application/json' and trashed = false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&orderBy=createdTime desc&fields=files(id, name, createdTime)`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!res.ok) throw new Error("Failed to list backups");
+      
+      const data = await res.json();
+      return data.files || [];
+  },
+
+  downloadBackupFile: async (accessToken: string, fileId: string): Promise<any> => {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!res.ok) throw new Error("Failed to download backup");
+      
+      return await res.json();
+  },
+
+  // --- END BACKUP METHODS ---
+
   /**
    * Saves the entire application state to the Google Sheet.
-   * Syncs: Products, Customers, Sales History, Settings, and Raw Data Blob.
    */
   saveToSheet: async (accessToken: string, spreadsheetId: string, data: any) => {
     // 1. Prepare Product Rows
@@ -325,9 +410,6 @@ export const GoogleDriveUtils = {
 
   /**
    * Loads data from the Sheet. 
-   * Strategy:
-   * 1. Attempt to read 'RawData' (Full JSON blob) for complete state fidelity.
-   * 2. If 'RawData' is missing/empty (e.g. manual sheet edit or partial save), fallback to reading individual sheets (Products, Customers, etc) and reconstructing state.
    */
   loadFromSheet: async (accessToken: string, spreadsheetId: string) => {
       // 1. Try Fast Load (Raw JSON Blob)
@@ -341,7 +423,6 @@ export const GoogleDriveUtils = {
               if (json.values && json.values[0] && json.values[0][0]) {
                   try {
                       const data = JSON.parse(json.values[0][0]);
-                      // Basic validation to ensure it's not junk
                       if (data && (Array.isArray(data.products) || Array.isArray(data.customers))) {
                           return data;
                       }
@@ -459,7 +540,7 @@ export const GoogleDriveUtils = {
 
       } catch (e) {
           console.error("Critical: Failed to reconstruct data from rows", e);
-          return null; // Return null to indicate complete failure (empty or error)
+          return null; 
       }
   },
 

@@ -1,6 +1,6 @@
 
 import { Product, Sale, Customer, CartItem, Tag, StoreSettings, User, DeletedItem, Payment } from '../types';
-import { GoogleDriveUtils } from '../utils/googleDrive';
+import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
 
 interface StoreData {
   products: Product[];
@@ -111,6 +111,38 @@ const StoreService = {
           console.error("Force sync failed", e);
           throw e;
       }
+  },
+
+  // NEW: Cloud Backup Features
+  async createCloudBackup(): Promise<void> {
+      const session = GoogleDriveUtils.getSession();
+      if (!session) throw new Error("Not logged in");
+      
+      const data = await this.loadData();
+      await GoogleDriveUtils.createCloudBackup(session.accessToken, data);
+  },
+
+  async getCloudBackups(): Promise<DriveFile[]> {
+      const session = GoogleDriveUtils.getSession();
+      if (!session) return [];
+      
+      try {
+          return await GoogleDriveUtils.listCloudBackups(session.accessToken);
+      } catch (e) {
+          console.error("Failed to list backups", e);
+          return [];
+      }
+  },
+
+  async restoreCloudBackup(fileId: string): Promise<void> {
+      const session = GoogleDriveUtils.getSession();
+      if (!session) throw new Error("Not logged in");
+
+      const data = await GoogleDriveUtils.downloadBackupFile(session.accessToken, fileId);
+      if (!data || !data.products) throw new Error("Invalid backup file");
+
+      // Update cache and save
+      await this.importData(data);
   },
 
   // Core: Load data

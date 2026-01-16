@@ -2,9 +2,9 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { User, StoreSettings, DeletedItem } from '../types';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone, RefreshCw } from 'lucide-react';
+import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone, RefreshCw, ArchiveRestore } from 'lucide-react';
 import { StoreService } from '../services/storeService';
-import { GoogleDriveUtils } from '../utils/googleDrive';
+import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
 
 interface ProfileProps {
   user: User | null;
@@ -36,6 +36,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   
   // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // Cloud Backup State
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [cloudBackups, setCloudBackups] = useState<DriveFile[]>([]);
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false);
+  const [isCreatingBackup, setIsCreatingBackup] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   // Gesture State
   const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
@@ -308,6 +315,46 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       }
   };
 
+  const handleOpenBackupModal = async () => {
+      setShowBackupModal(true);
+      setIsLoadingBackups(true);
+      try {
+          const files = await StoreService.getCloudBackups();
+          setCloudBackups(files);
+      } catch(e) {
+          console.error(e);
+      } finally {
+          setIsLoadingBackups(false);
+      }
+  };
+
+  const handleCreateCloudBackup = async () => {
+      setIsCreatingBackup(true);
+      try {
+          await StoreService.createCloudBackup();
+          const files = await StoreService.getCloudBackups();
+          setCloudBackups(files);
+          alert("Backup created successfully in Google Drive!");
+      } catch (e: any) {
+          alert("Backup failed: " + e.message);
+      } finally {
+          setIsCreatingBackup(false);
+      }
+  };
+
+  const handleRestoreBackup = async (fileId: string) => {
+      if(!confirm("Are you sure? This will replace your current data with the selected backup.")) return;
+      
+      setIsRestoring(true);
+      try {
+          await StoreService.restoreCloudBackup(fileId);
+          setShowBackupModal(false);
+      } catch (e: any) {
+          alert("Restore failed: " + e.message);
+          setIsRestoring(false); // Only set false if failed, success triggers reload in service
+      }
+  };
+
   // --- Gesture Handlers ---
   const onTouchStart = (e: React.TouchEvent) => {
       setTouchEnd(null);
@@ -474,7 +521,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </Card>
 
-        {/* 8. Sync Status */}
+        {/* 8. Sync Status & Cloud Backups */}
         <Card className="p-0 overflow-hidden shadow-md ring-1 ring-black/5">
             <div className="bg-white p-5 flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -488,14 +535,23 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                         </p>
                     </div>
                 </div>
-                <button 
-                    onClick={handleForceSync} 
-                    disabled={isSyncing}
-                    className={`p-2.5 rounded-full border transition-all ${isSyncing ? 'bg-gray-100 text-gray-400' : 'bg-white text-blue-600 border-blue-100 hover:bg-blue-50 shadow-sm active:scale-95'}`}
-                    title="Force Cloud Sync"
-                >
-                    <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
-                </button>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={handleOpenBackupModal} 
+                        className="p-2.5 rounded-full border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 shadow-sm active:scale-95 transition-all"
+                        title="Cloud Backups"
+                    >
+                        <ArchiveRestore size={20} />
+                    </button>
+                    <button 
+                        onClick={handleForceSync} 
+                        disabled={isSyncing}
+                        className={`p-2.5 rounded-full border transition-all ${isSyncing ? 'bg-gray-100 text-gray-400' : 'bg-white text-blue-600 border-blue-100 hover:bg-blue-50 shadow-sm active:scale-95'}`}
+                        title="Force Cloud Sync"
+                    >
+                        <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
+                    </button>
+                </div>
             </div>
             <div className="bg-gray-50 px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
                 <div className="flex items-center gap-1 font-mono">
@@ -797,6 +853,53 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 )}
             </div>
         </div>
+
+        {/* Cloud Backups Modal */}
+        <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="Cloud Backups">
+            <div className="space-y-4">
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800">
+                    <p>Backups are snapshot files saved in <strong>NoorPOS_Data/Backups</strong> in your Google Drive. They help recover data if the main sync fails.</p>
+                </div>
+                
+                <Button 
+                    onClick={handleCreateCloudBackup} 
+                    disabled={isCreatingBackup}
+                    className="w-full bg-blue-600 hover:bg-blue-700 flex justify-center items-center gap-2"
+                >
+                    {isCreatingBackup ? <Loader2 size={18} className="animate-spin"/> : <Cloud size={18} />}
+                    Create New Backup Now
+                </Button>
+
+                <div className="border-t border-gray-100 pt-4 mt-4">
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Available Backups</h3>
+                    
+                    {isLoadingBackups ? (
+                        <div className="flex justify-center py-4"><Loader2 size={24} className="animate-spin text-gray-300"/></div>
+                    ) : cloudBackups.length === 0 ? (
+                        <p className="text-center text-gray-400 text-sm py-2">No backups found.</p>
+                    ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {cloudBackups.map(file => (
+                                <div key={file.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 transition-colors group">
+                                    <div className="min-w-0">
+                                        <div className="font-medium text-gray-800 text-sm truncate">{file.name}</div>
+                                        <div className="text-[10px] text-gray-400">{new Date(file.createdTime || '').toLocaleString()}</div>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleRestoreBackup(file.id)}
+                                        disabled={isRestoring}
+                                        className="p-2 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors opacity-0 group-hover:opacity-100"
+                                        title="Restore this backup"
+                                    >
+                                        <RefreshCw size={16} className={isRestoring ? "animate-spin" : ""}/>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </Modal>
 
         {/* Recycle Bin Modal */}
         <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Recycle Bin" className="!max-w-4xl h-[80vh] flex flex-col p-0">
