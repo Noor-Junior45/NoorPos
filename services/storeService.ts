@@ -52,6 +52,7 @@ const defaultData: StoreData = {
 const LS_BACKUP_KEY = 'glassstore_offline_backup';
 const LS_NAS_URL = 'noor_nas_url';
 const LS_SYNC_NAS = 'noor_sync_nas';
+const LS_POS_DRAFT = 'noor_pos_draft';
 
 // In-memory cache
 let cache: StoreData | null = null;
@@ -143,6 +144,28 @@ const StoreService = {
 
       // Update cache and save
       await this.importData(data);
+  },
+
+  // --- POS Session Management ---
+  savePOSDraft(draft: any) {
+      try {
+          localStorage.setItem(LS_POS_DRAFT, JSON.stringify(draft));
+      } catch (e) {
+          console.error("Failed to save POS draft", e);
+      }
+  },
+
+  getPOSDraft() {
+      try {
+          const draft = localStorage.getItem(LS_POS_DRAFT);
+          return draft ? JSON.parse(draft) : null;
+      } catch (e) {
+          return null;
+      }
+  },
+
+  clearPOSDraft() {
+      localStorage.removeItem(LS_POS_DRAFT);
   },
 
   // Core: Load data

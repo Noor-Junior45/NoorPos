@@ -48,6 +48,7 @@ export interface StoreSettings {
 export interface CartItem extends Product {
   quantity: number;
   discount?: number; // Cash discount per line item
+  customPrice?: number; // Overridden price for POS session
 }
 
 export interface Payment {
