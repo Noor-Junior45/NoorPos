@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restricted Access - Noor POS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #f8fafc; font-family: sans-serif; }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen">
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm border border-gray-100">
+        <div class="text-center mb-6">
+            <h1 class="text-xl font-bold text-gray-800">System Access</h1>
+            <p class="text-xs text-gray-400 mt-1">Authorized Personnel / Crawlers Only</p>
+        </div>
+        
+        <!-- The Action points to our Node server API route -->
+        <form action="/api/crawler-login" method="POST" class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Username</label>
+                <input type="text" name="username" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" required>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Password</label>
+                <input type="password" name="password" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500" required>
+            </div>
+            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                Authenticate
+            </button>
+        </form>
+        
+        <div class="mt-6 text-center border-t border-gray-100 pt-4">
+            <a href="/" class="text-xs text-blue-500 hover:underline">Return to Main App</a>
+        </div>
+    </div>
+</body>
+</html>

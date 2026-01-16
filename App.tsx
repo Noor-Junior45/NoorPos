@@ -19,7 +19,24 @@ const App: React.FC = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
-    // Check if user has an active session
+    // 1. Check for Crawler/Bot Access via URL Query Parameter
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('access_mode') === 'crawler_granted') {
+        const botUser: User = {
+            id: 'adsense_bot',
+            username: 'adsense_bot',
+            name: 'Google Crawler',
+            role: 'admin',
+            pin: '0000'
+        };
+        setCurrentUser(botUser);
+        setIsCheckingAuth(false);
+        // Clean URL without refresh
+        window.history.replaceState({}, document.title, "/");
+        return;
+    }
+
+    // 2. Check if user has an active session
     const session = GoogleDriveUtils.getSession();
     if (session) {
        // Restore user from session profile
