@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Input } from '../components/UI';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Sparkles, Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -128,11 +128,13 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       <div className="w-full max-w-[420px] animate-in fade-in zoom-in duration-500">
         
         <div className="text-center mb-10">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 mb-4">
-                <Sparkles size={32} />
-            </div>
-            <h1 className="text-4xl font-bold text-gray-900 tracking-tight">Noor</h1>
-            <p className="text-gray-500 mt-2 font-medium">Smart Store Management</p>
+            <img 
+                src="https://lh3.googleusercontent.com/p/AF1QipPlp0QUwcp2FOnTGiGNf5fqWnskinCj4QxRKa3o=s1360-w1360-h1020-rw" 
+                alt="Noor POS Logo" 
+                className="w-28 h-28 rounded-full shadow-2xl shadow-indigo-200 mx-auto mb-6 border-4 border-white object-cover"
+            />
+            <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Noor POS</h1>
+            <p className="text-gray-500 mt-3 text-lg font-bold tracking-wide">Smart Store Management Tool</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] p-8 border border-gray-100">
@@ -202,23 +204,31 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </div>
         </div>
 
-        {/* Terms & Conditions Section */}
-        <div className="text-center mt-6">
-            <p className="text-xs text-gray-500">
-                By continuing, you agree to our Terms & Conditions.
+        {/* Links Section */}
+        <div className="text-center mt-8">
+            <div className="flex items-center justify-center gap-4 text-xs font-bold text-gray-500">
+                <a 
+                    href="/privacy.html" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="hover:text-indigo-600 flex items-center gap-1 transition-colors"
+                >
+                    <ShieldCheck size={14} /> Privacy Policy
+                </a>
+                <span className="text-gray-300">•</span>
                 <a 
                     href="https://terms-conditions-store.vercel.app" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="ml-1 text-indigo-600 hover:text-indigo-800 underline font-bold transition-colors"
+                    className="hover:text-indigo-600 transition-colors"
                 >
-                    Read More
+                    Terms of Service
                 </a>
-            </p>
+            </div>
         </div>
         
-        <div className="text-center mt-4 text-xs font-medium text-gray-400">
-           Noor POS System v1.5
+        <div className="text-center mt-4 text-[10px] font-medium text-gray-400">
+           Noor POS System v1.6
         </div>
       </div>
     </div>
