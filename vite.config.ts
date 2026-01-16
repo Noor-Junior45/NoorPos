@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -18,7 +19,7 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom'],
           'vendor-charts': ['recharts'],
           'vendor-icons': ['lucide-react'],
-          'vendor-utils': ['jspdf', 'jspdf-autotable', 'html5-qrcode'],
+          'vendor-utils': ['html5-qrcode'],
           'vendor-ai': ['@google/genai']
         }
       }
