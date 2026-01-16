@@ -60,6 +60,8 @@ let loadPromise: Promise<StoreData> | null = null;
 let saveTimeout: any = null;
 let lastBackupTime: string | null = localStorage.getItem('noor_last_backup');
 let isCloudSyncHealthy = true; // Safety flag
+// Client ID for refreshing tokens
+const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -75,6 +77,10 @@ const StoreService = {
   
   getLastBackupTime() {
       return lastBackupTime;
+  },
+
+  getSyncStatus() {
+      return isCloudSyncHealthy;
   },
 
   sendBrowserNotification(title: string, body: string) {
@@ -185,22 +191,32 @@ const StoreService = {
             console.log("Loading from Google Sheet...");
             try {
                 remoteData = await GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId);
-                
-                // If loadFromSheet returns data, we are good.
-                // If it returns null, it usually means the sheet is empty or completely unreadable.
-                
-                isCloudSyncHealthy = true; // Assume healthy if no error thrown
-            } catch (err) {
+                isCloudSyncHealthy = true;
+            } catch (err: any) {
                 console.error("Cloud load CRITICAL FAILURE:", err);
-                // IMPORTANT: If cloud load fails, we mark sync as unhealthy to prevent auto-saving empty local data over cloud data.
-                isCloudSyncHealthy = false;
                 
-                // If we have local backup, use it, but warn user
-                const local = localStorage.getItem(LS_BACKUP_KEY);
-                if (local) {
-                    console.log("Falling back to offline cache due to cloud error.");
-                    resolve(JSON.parse(local));
-                    return;
+                // Handle Token Expiry on LOAD logic
+                if (err.message && (err.message.includes('401') || err.message.includes('Auth'))) {
+                    console.log("Token expired during load. Attempting refresh...");
+                    try {
+                        const newToken = await GoogleDriveUtils.refreshSession(CLIENT_ID);
+                        remoteData = await GoogleDriveUtils.loadFromSheet(newToken, session.spreadsheetId);
+                        isCloudSyncHealthy = true;
+                    } catch (retryErr) {
+                        console.error("Retry load failed:", retryErr);
+                        isCloudSyncHealthy = false;
+                    }
+                } else {
+                    isCloudSyncHealthy = false;
+                }
+                
+                if (!remoteData) {
+                    const local = localStorage.getItem(LS_BACKUP_KEY);
+                    if (local) {
+                        console.log("Falling back to offline cache due to cloud error.");
+                        resolve(JSON.parse(local));
+                        return;
+                    }
                 }
             }
         } 
@@ -221,7 +237,6 @@ const StoreService = {
 
         // 3. Fallback Local Server / LocalStorage
         if (!remoteData) {
-            // Only try local server if strictly not using NAS (Guest mode)
             if (!syncToNas && !session) {
                 try {
                     const res = await fetch('/api/storage');
@@ -245,7 +260,6 @@ const StoreService = {
     
     return loadPromise.then(async (d) => { 
         loadPromise = null; 
-        // Run auto-cleanup logic on load
         await this._cleanupRecycleBin(d);
         return d; 
     });
@@ -263,8 +277,6 @@ const StoreService = {
           return deletedAt > cutoffDate;
       });
 
-      // ONLY save if we actually removed something. 
-      // Prevents "Save on Load" loop that causes data overwrite issues on new devices.
       if (data.deletedItems.length !== initialCount) {
           console.log(`Auto-cleaned ${initialCount - data.deletedItems.length} expired items from recycle bin.`);
           this.saveData();
@@ -306,7 +318,6 @@ const StoreService = {
   async saveData(): Promise<void> {
     if (!cache) return;
     
-    // SAFETY CHECK: If cloud sync previously failed, DO NOT auto-save empty/stale data over the cloud.
     const session = GoogleDriveUtils.getSession();
     if (session && !isCloudSyncHealthy) {
         console.warn("Skipping Cloud Save: Sync is unhealthy. Please refresh to try connecting again.");
@@ -325,7 +336,25 @@ const StoreService = {
     saveTimeout = setTimeout(async () => {
       try {
         if (session) {
-             await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
+             try {
+                 // UPDATED: Now calls the Table-based save which handles large data sets
+                 await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
+             } catch (err: any) {
+                 if (err.message && (err.message.includes('401') || err.message.includes('Auth'))) {
+                     console.log("Token expired during save. Attempting refresh...");
+                     try {
+                         const newToken = await GoogleDriveUtils.refreshSession(CLIENT_ID);
+                         await GoogleDriveUtils.saveToSheet(newToken, session.spreadsheetId, cache);
+                         console.log("Save successful after refresh.");
+                     } catch (refreshErr) {
+                         console.error("Retry save failed:", refreshErr);
+                         isCloudSyncHealthy = false;
+                         alert("Cloud Session Expired. Data saved locally. Please refresh page to login again.");
+                     }
+                 } else {
+                     throw err;
+                 }
+             }
         } 
         
         if (cache?.settings.syncToNas && cache?.settings.nasUrl) {
@@ -360,13 +389,10 @@ const StoreService = {
 
       const item = data.deletedItems[itemIndex];
       
-      // Restore based on type
       if (item.type === 'product') {
-          // Check if product with ID already exists (unlikely but possible if manually created)
           if (!data.products.find(p => p.id === item.data.id)) {
               data.products.push(item.data);
           } else {
-              // ID collision, generate new ID
               data.products.push({ ...item.data, id: generateId(), name: item.data.name + ' (Restored)' });
           }
       } else if (item.type === 'customer') {
@@ -376,8 +402,6 @@ const StoreService = {
       } else if (item.type === 'sale') {
           if (!data.sales.find(s => s.id === item.data.id)) {
               data.sales.push(item.data);
-              // Note: Stock adjustments are complex on restore. 
-              // For simplicity, we just restore the record. User must adjust stock manually if needed.
           }
       } else if (item.type === 'tag') {
           if (!data.tags.find(t => t.id === item.data.id)) {
@@ -385,7 +409,6 @@ const StoreService = {
           }
       }
 
-      // Remove from bin
       data.deletedItems.splice(itemIndex, 1);
       this.saveData();
   },
@@ -408,7 +431,6 @@ const StoreService = {
   async importData(newData: any): Promise<void> {
     if (!newData.products || !Array.isArray(newData.products)) throw new Error("Invalid backup file");
     cache = { ...defaultData, ...newData };
-    // Explicitly set healthy on import
     isCloudSyncHealthy = true; 
     await this.saveData();
     window.location.reload();
@@ -424,7 +446,6 @@ const StoreService = {
 
   async logout(): Promise<void> {
       GoogleDriveUtils.clearSession();
-      // Clear local backup to ensure clean state for next user
       localStorage.removeItem(LS_BACKUP_KEY);
       cache = null;
       window.location.reload();
@@ -447,7 +468,7 @@ const StoreService = {
     return newUser;
   },
 
-  // --- Inventory (Updated with Soft Delete) ---
+  // --- Inventory ---
   async getInventory(): Promise<Product[]> { const data = await this.loadData(); return data.products; },
 
   async addProduct(product: Omit<Product, 'id'>): Promise<Product> {
@@ -500,7 +521,6 @@ const StoreService = {
     const data = await this.loadData();
     const product = data.products.find(p => p.id === id);
     if (product) {
-        // Move to recycle bin
         if (!data.deletedItems) data.deletedItems = [];
         data.deletedItems.push({
             id: generateId(),
@@ -509,13 +529,12 @@ const StoreService = {
             data: product,
             deletedAt: new Date().toISOString()
         });
-        
         data.products = data.products.filter(p => p.id !== id);
         this.saveData();
     }
   },
 
-  // --- Tags (Updated with Soft Delete) ---
+  // --- Tags ---
   async getTags(): Promise<Tag[]> { const data = await this.loadData(); return data.tags; },
 
   async addTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
@@ -543,7 +562,7 @@ const StoreService = {
     }
   },
 
-  // --- Sales (Updated with Soft Delete) ---
+  // --- Sales ---
   async getSales(): Promise<Sale[]> { const data = await this.loadData(); return data.sales; },
 
   async createSale(saleData: any): Promise<Sale> {
@@ -583,18 +602,15 @@ const StoreService = {
     if (index === -1) throw new Error("Sale not found");
 
     const oldSale = data.sales[index];
-    // Revert old stock
     oldSale.items.forEach(oldItem => {
       const pIndex = data.products.findIndex(p => p.id === oldItem.id);
       if (pIndex !== -1) data.products[pIndex].stock += oldItem.quantity;
     });
-    // Apply new stock
     updatedSale.items.forEach(newItem => {
       const pIndex = data.products.findIndex(p => p.id === newItem.id);
       if (pIndex !== -1) data.products[pIndex].stock = Math.max(0, data.products[pIndex].stock - newItem.quantity);
     });
     
-    // Update Customer Dues Logic (simplified)
     if (oldSale.customerId) {
         const custIndex = data.customers.findIndex(c => c.id === oldSale.customerId);
         if (custIndex !== -1) {
@@ -615,7 +631,6 @@ const StoreService = {
     const data = await this.loadData();
     const idSet = new Set(ids);
     
-    // Move to bin
     const salesToDelete = data.sales.filter(s => idSet.has(s.id));
     if (!data.deletedItems) data.deletedItems = [];
     
@@ -628,7 +643,6 @@ const StoreService = {
             deletedAt: new Date().toISOString()
         });
         
-        // Revert stock when deleted
         s.items.forEach(item => {
             const p = data.products.find(p => p.id === item.id);
             if(p) p.stock += item.quantity;
@@ -639,7 +653,7 @@ const StoreService = {
     this.saveData();
   },
 
-  // --- Customers (Updated with Soft Delete & Payments) ---
+  // --- Customers ---
   async getCustomers(): Promise<Customer[]> { const data = await this.loadData(); return data.customers; },
 
   async upsertCustomer(customer: Partial<Customer>): Promise<Customer> {
@@ -684,8 +698,6 @@ const StoreService = {
 
       if (!data.customers[index].payments) data.customers[index].payments = [];
       data.customers[index].payments.push(payment);
-      
-      // Reduce Dues (Don't go below 0 for now, although credit is possible in real accounting)
       data.customers[index].totalDues = Math.max(0, (data.customers[index].totalDues || 0) - amount);
       
       this.saveData();

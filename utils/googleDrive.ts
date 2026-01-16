@@ -1,6 +1,5 @@
 
-// CLIENT_ID is now expected to be provided via Environment Variable
-// Scopes: drive.file (create/open files), spreadsheets (read/write sheets), userinfo (profile data)
+// CLIENT_ID from Env
 const SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 
 export interface GoogleUser {
@@ -19,316 +18,363 @@ export interface DriveFile {
     createdTime?: string;
 }
 
-const headers = ['ID', 'Product Name', 'SKU', 'Price', 'Stock', 'Unit', 'Category'];
-const settingsHeaders = ['Store Name', 'Address', 'Phone', 'Email', 'Last Updated'];
-const customerHeaders = ['ID', 'Name', 'Phone', 'Total Spent', 'Dues', 'Visits', 'Wholesaler'];
-const salesHeaders = ['Invoice ID', 'Date', 'Customer', 'Total', 'Payment Method', 'Items Count'];
+// Table Headers Definition
+const HEADERS = {
+    Products: ['ID', 'Name', 'SKU', 'Sell Price', 'Buy Price', 'Stock', 'Unit', 'Category', 'Location', 'Low Stock', 'Tax', 'Expiry', 'Mfg Date', 'Created At', 'Tag ID'],
+    Customers: ['ID', 'Name', 'Phone', 'Email', 'Address', 'Spent', 'Dues', 'Visits', 'Type', 'History JSON', 'Payments JSON'],
+    Sales: ['ID', 'Date', 'Customer Name', 'Customer ID', 'Total', 'Subtotal', 'Tax', 'Paid', 'Due', 'Method', 'Items JSON'],
+    Tags: ['ID', 'Name', 'Color'],
+    Users: ['ID', 'Name', 'Username', 'Role', 'Pin', 'Last Login'],
+    Settings: ['Store Name', 'Address', 'Phone', 'Email', 'Logo', 'Currency', 'Tax Name', 'Config JSON'],
+    RecycleBin: ['ID', 'Original ID', 'Type', 'Deleted At', 'Data JSON']
+};
 
 export const GoogleDriveUtils = {
   
-  /**
-   * Initializes the Google Token Client and requests access.
-   */
   initGoogleLogin: (clientId: string): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // Safely access google object on window
       const g = (window as any).google;
-
       if (!g || !g.accounts || !g.accounts.oauth2) {
         reject(new Error("Google Identity Services script not loaded. Please refresh the page."));
         return;
       }
-
       try {
           const tokenClient = g.accounts.oauth2.initTokenClient({
             client_id: clientId,
             scope: SCOPES,
             callback: (response: any) => {
-              if (response.error) {
-                reject(response);
-              } else {
-                resolve(response.access_token);
-              }
+              if (response.error) reject(response);
+              else resolve(response.access_token);
             },
-            error_callback: (err: any) => {
-                reject(err);
-            }
+            error_callback: (err: any) => reject(err)
           });
-
-          // Request token (triggers popup)
           tokenClient.requestAccessToken();
-      } catch (e) {
-          reject(e);
-      }
+      } catch (e) { reject(e); }
     });
+  },
+
+  refreshSession: async (clientId: string): Promise<string> => {
+      const newToken = await GoogleDriveUtils.initGoogleLogin(clientId);
+      const currentSheetId = localStorage.getItem('google_sheet_id');
+      const currentProfile = localStorage.getItem('google_user_profile');
+      if (currentSheetId && currentProfile) {
+          GoogleDriveUtils.saveSession({
+              accessToken: newToken,
+              spreadsheetId: currentSheetId,
+              profile: JSON.parse(currentProfile)
+          });
+      }
+      return newToken;
   },
 
   getUserProfile: async (accessToken: string) => {
     const response = await fetch('https://www.googleapis.com/oauth2/v1/userinfo?alt=json', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Google Profile API Error:", response.status, errorText);
-        throw new Error("Failed to fetch user profile. Scopes might be missing.");
-    }
+    if (!response.ok) throw new Error("Failed to fetch user profile.");
     return await response.json();
   },
 
-  /**
-   * Helper to find or create a specific folder
-   */
   findOrCreateFolder: async (accessToken: string, folderName: string, parentId?: string): Promise<string> => {
     let query = `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`;
-    if (parentId) {
-        query += ` and '${parentId}' in parents`;
-    }
+    if (parentId) query += ` and '${parentId}' in parents`;
 
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id, name)`;
-    const searchRes = await fetch(searchUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!searchRes.ok) throw new Error(`${searchRes.status}: Folder search failed`);
+    
     const searchData = await searchRes.json();
+    if (searchData.files && searchData.files.length > 0) return searchData.files[0].id;
 
-    if (searchData.files && searchData.files.length > 0) {
-        return searchData.files[0].id;
-    }
-
-    // Create Folder
-    const body: any = {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder'
-    };
-    if (parentId) {
-        body.parents = [parentId];
-    }
+    const body: any = { name: folderName, mimeType: 'application/vnd.google-apps.folder' };
+    if (parentId) body.parents = [parentId];
 
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
+    if (!createRes.ok) throw new Error("Failed to create folder");
     const createData = await createRes.json();
     return createData.id;
   },
 
-  /**
-   * Finds 'StoreManager_DB' or creates it with 'Products', 'Settings', 'Customers', 'Sales', and 'RawData' sheets inside the 'NoorPOS_Data' folder.
-   */
+  ensureSheetsExist: async (accessToken: string, spreadsheetId: string) => {
+      // Check existing sheets
+      const getRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!getRes.ok) return; 
+      const sheetData = await getRes.json();
+      const existingTitles = new Set(sheetData.sheets.map((s: any) => s.properties.title));
+
+      // Create missing sheets
+      const requests = [];
+      for (const title of Object.keys(HEADERS)) {
+          if (!existingTitles.has(title)) {
+              requests.push({ addSheet: { properties: { title, gridProperties: { frozenRowCount: 1 } } } });
+          }
+      }
+
+      if (requests.length > 0) {
+          await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ requests })
+          });
+      }
+
+      // Ensure Headers
+      const valueData = [];
+      for (const [title, headers] of Object.entries(HEADERS)) {
+          valueData.push({ range: `${title}!A1`, values: [headers] });
+      }
+      
+      await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: valueData })
+      });
+  },
+
   findOrCreateBackend: async (accessToken: string): Promise<string> => {
     const folderName = 'NoorPOS_Data';
     const fileName = 'StoreManager_DB';
     
-    // 1. GLOBAL SEARCH FIRST (Crucial for Staff Access)
-    // Search for the file anywhere (Shared with me OR Owned by me)
-    const globalSearchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id, name, sharedWithMe)`;
-    const globalSearchRes = await fetch(globalSearchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    
-    if (globalSearchRes.ok) {
-        const globalData = await globalSearchRes.json();
-        // If found, return immediately. This handles the case where Admin shared the file with Staff.
-        if (globalData.files && globalData.files.length > 0) {
-            console.log("Found existing database (Global/Shared):", globalData.files[0].id);
-            return globalData.files[0].id;
-        }
-    }
-
-    // --- ONLY IF NOT FOUND GLOBALLY, CREATE NEW IN FOLDER ---
-
-    // 2. Get Folder ID (Create if doesn't exist)
     const folderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, folderName);
 
-    // 3. Search for File INSIDE Folder (Double check to avoid duplicates)
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${folderId}' in parents and trashed=false&fields=files(id, name)`;
-    const searchRes = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    
-    if (!searchRes.ok) {
-        const err = await searchRes.json();
-        throw new Error(`Drive Search Failed: ${err?.error?.message || searchRes.statusText}`);
-    }
+    // Search for File in Folder
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id, name)`;
+    const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
     const searchData = await searchRes.json();
 
     let spreadsheetId = '';
 
     if (searchData.files && searchData.files.length > 0) {
-      spreadsheetId = searchData.files[0].id;
+        spreadsheetId = searchData.files[0].id;
+        await GoogleDriveUtils.ensureSheetsExist(accessToken, spreadsheetId);
     } else {
-      // 4. Create if not found inside the folder
-      const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          properties: { title: fileName },
-          sheets: [
-            { properties: { title: 'Products', gridProperties: { frozenRowCount: 1 } } },
-            { properties: { title: 'Customers', gridProperties: { frozenRowCount: 1 } } },
-            { properties: { title: 'Sales', gridProperties: { frozenRowCount: 1 } } },
-            { properties: { title: 'Settings', gridProperties: { frozenRowCount: 1 } } },
-            { properties: { title: 'RawData' } } // Hidden sheet for full state
-          ]
-        }),
-      });
-
-      if (!createRes.ok) {
-          const err = await createRes.json();
-          throw new Error(`Sheet Creation Failed: ${err?.error?.message || createRes.statusText}`);
-      }
-      const createData = await createRes.json();
-      spreadsheetId = createData.spreadsheetId;
-
-      // Move file to folder
-      // Step 4a: Retrieve current parents
-      const fileGet = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const fileInfo = await fileGet.json();
-      const previousParents = fileInfo.parents ? fileInfo.parents.join(',') : '';
-
-      // Step 4b: Move to new folder
-      await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=${previousParents}`, {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${accessToken}` }
-      });
-
-      // 5. Add Headers to Sheets
-      const headerUpdates = [
-          { range: 'Products!A1:G1', values: [headers] },
-          { range: 'Customers!A1:G1', values: [customerHeaders] }, // Updated range for extra column
-          { range: 'Sales!A1:F1', values: [salesHeaders] },
-          { range: 'Settings!A1:E1', values: [settingsHeaders] }
-      ];
-
-      for (const h of headerUpdates) {
-          await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${h.range}?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
+        // Create New Spreadsheet
+        const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+            method: 'POST',
             headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: h.values })
-          });
-      }
-    }
+            body: JSON.stringify({
+                properties: { title: fileName },
+                sheets: Object.keys(HEADERS).map(title => ({ properties: { title, gridProperties: { frozenRowCount: 1 } } }))
+            }),
+        });
+        const createData = await createRes.json();
+        spreadsheetId = createData.spreadsheetId;
 
-    // Ensure all tabs exist (for legacy file migration)
-    try {
-        const metadataRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`, {
+        // Move to folder
+        const fileGet = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
-        if (metadataRes.ok) {
-            const metadata = await metadataRes.json();
-            const existingTitles = metadata.sheets.map((s: any) => s.properties.title);
-            
-            const requiredSheets = ['Products', 'Customers', 'Sales', 'Settings', 'RawData'];
-            const requests = [];
+        const fileInfo = await fileGet.json();
+        const previousParents = fileInfo.parents ? fileInfo.parents.join(',') : '';
 
-            requiredSheets.forEach(title => {
-                if (!existingTitles.includes(title)) {
-                    requests.push({ addSheet: { properties: { title, gridProperties: { frozenRowCount: 1 } } },
-                    });
-                }
-            });
-
-            if (requests.length > 0) {
-                await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ requests })
-                });
-            }
-        }
-    } catch (e) {
-        console.warn("Failed to check/create sheet structure", e);
+        await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=${previousParents}`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        await GoogleDriveUtils.ensureSheetsExist(accessToken, spreadsheetId);
     }
 
     return spreadsheetId;
   },
 
-  /**
-   * Shares the database file with another email address.
-   */
-  shareDatabase: async (accessToken: string, spreadsheetId: string, email: string) => {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions?emailMessage=You have been invited to manage Noor POS Store.&sendNotificationEmail=true`, {
+  // --- SAVE LOGIC (TABLE BASED) ---
+  saveToSheet: async (accessToken: string, spreadsheetId: string, data: any) => {
+    const bodyData = [];
+
+    // 1. Products
+    const productRows = data.products.map((p: any) => [
+        p.id, p.name, p.sku, p.sellPrice, p.buyPrice || 0, p.stock, p.unit, p.category || '', 
+        p.location || '', p.lowStockThreshold || 10, p.taxRate || 0, p.expiryDate || '', p.manufacturingDate || '', p.createdAt || '', p.tagId || ''
+    ]);
+    bodyData.push({ range: "Products!A2", values: productRows.length ? productRows : [['']] });
+
+    // 2. Customers
+    const customerRows = data.customers.map((c: any) => [
+        c.id, c.name, c.phone, c.email || '', c.location || '', c.totalSpent || 0, c.totalDues || 0, c.visitCount || 0, c.isWholesaler ? 'Wholesale' : 'Retail',
+        JSON.stringify(c.history || []), JSON.stringify(c.payments || [])
+    ]);
+    bodyData.push({ range: "Customers!A2", values: customerRows.length ? customerRows : [['']] });
+
+    // 3. Sales
+    const salesRows = data.sales.map((s: any) => [
+        s.id, s.timestamp, s.customerName, s.customerId || '', s.total, s.subtotal || 0, s.tax || 0, s.amountPaid ?? s.total, (s.total - (s.amountPaid ?? s.total)), s.paymentMethod || 'Cash',
+        JSON.stringify(s.items)
+    ]);
+    bodyData.push({ range: "Sales!A2", values: salesRows.length ? salesRows : [['']] });
+
+    // 4. Tags
+    const tagRows = (data.tags || []).map((t: any) => [t.id, t.name, t.color]);
+    bodyData.push({ range: "Tags!A2", values: tagRows.length ? tagRows : [['']] });
+
+    // 5. Users
+    const userRows = (data.users || []).map((u: any) => [u.id, u.name, u.username, u.role, u.pin, u.lastLogin || '']);
+    bodyData.push({ range: "Users!A2", values: userRows.length ? userRows : [['']] });
+
+    // 6. Settings (Single Row)
+    const settingsJson = JSON.stringify({
+        expiryAlertDays: data.settings.expiryAlertDays,
+        soundEnabled: data.settings.soundEnabled,
+        notificationsEnabled: data.settings.notificationsEnabled,
+        recycleBinRetentionDays: data.settings.recycleBinRetentionDays,
+        directPrintEnabled: data.settings.directPrintEnabled,
+        scannerPreference: data.settings.scannerPreference,
+        nasUrl: data.settings.nasUrl,
+        syncToNas: data.settings.syncToNas,
+        lowStockDefault: data.settings.lowStockDefault
+    });
+    const settingRow = [
+        data.settings.storeName || '', data.settings.storeAddress || '', data.settings.storePhone || '', data.settings.storeEmail || '', 
+        data.settings.logo || '', data.settings.currencySymbol || '₹', '', settingsJson
+    ];
+    bodyData.push({ range: "Settings!A2", values: [settingRow] });
+
+    // 7. Recycle Bin
+    const deletedRows = (data.deletedItems || []).map((d: any) => [
+        d.id, d.originalId, d.type, d.deletedAt, JSON.stringify(d.data)
+    ]);
+    bodyData.push({ range: "RecycleBin!A2", values: deletedRows.length ? deletedRows : [['']] });
+
+    // EXECUTE: Clear old data then write new
+    const ranges = Object.keys(HEADERS).map(k => `${k}!A2:ZZ`);
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`, {
         method: 'POST',
-        headers: { 
-            Authorization: `Bearer ${accessToken}`, 
-            'Content-Type': 'application/json' 
-        },
-        body: JSON.stringify({
-            role: 'writer',
-            type: 'user',
-            emailAddress: email
-        })
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ranges })
+    });
+
+    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: bodyData })
     });
 
     if (!res.ok) {
-        const err = await res.json();
-        throw new Error(`Sharing failed: ${err?.error?.message || res.statusText}`);
+        throw new Error(`${res.status}: Save failed`);
     }
-    return true;
   },
 
-  // --- CLOUD BACKUP METHODS ---
+  // --- LOAD LOGIC (Smart Migration) ---
+  loadFromSheet: async (accessToken: string, spreadsheetId: string) => {
+      // 1. Try to load from Table Format (Products Sheet)
+      const ranges = Object.keys(HEADERS).map(k => `${k}!A2:Z`);
+      const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?majorDimension=ROWS&ranges=${ranges.join('&ranges=')}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+      });
 
-  createCloudBackup: async (accessToken: string, data: any): Promise<void> => {
-      // 1. Get Root Folder (NoorPOS_Data)
-      const rootFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'NoorPOS_Data');
-      
-      // 2. Get/Create "Backups" subfolder
-      const backupFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'Backups', rootFolderId);
+      if (!res.ok) throw new Error("Failed to load data");
+      const json = await res.json();
+      const valueRanges = json.valueRanges;
 
-      // 3. Create File
-      const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `noor_backup_${dateStr}.json`;
-      
-      const fileMetadata = {
-          name: fileName,
-          parents: [backupFolderId]
+      const getSheetRows = (sheetTitle: string) => {
+          const range = valueRanges.find((r: any) => r.range.startsWith(sheetTitle));
+          return range ? (range.values || []) : [];
       };
 
-      const fileContent = JSON.stringify(data, null, 2);
-      const file = new Blob([fileContent], { type: 'application/json' });
+      const productRows = getSheetRows('Products');
 
-      // Use Multipart Upload for Drive API
-      const metadataBlob = new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' });
+      // --- MIGRATION CHECK ---
+      // If Products sheet is empty, check for old "RawData" blob to restore it
+      if (!productRows || productRows.length === 0) {
+          try {
+              const rawRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RawData!A1`, {
+                  headers: { Authorization: `Bearer ${accessToken}` }
+              });
+              if (rawRes.ok) {
+                  const rawJson = await rawRes.json();
+                  if (rawJson.values && rawJson.values[0] && rawJson.values[0][0]) {
+                      console.log("Migrating from Legacy RawData format...");
+                      return JSON.parse(rawJson.values[0][0]); // Return old structure, it will be saved as new Table structure next time
+                  }
+              }
+          } catch (e) { console.warn("No legacy data found"); }
+      }
+      // -----------------------
+
+      // Parse Tables
+      const products = productRows.map((r: any[]) => ({
+          id: r[0], name: r[1], sku: r[2], sellPrice: parseFloat(r[3]) || 0, buyPrice: parseFloat(r[4]) || 0,
+          stock: parseFloat(r[5]) || 0, unit: r[6], category: r[7], location: r[8],
+          lowStockThreshold: parseInt(r[9]) || 10, taxRate: parseFloat(r[10]) || 0,
+          expiryDate: r[11], manufacturingDate: r[12], createdAt: r[13], tagId: r[14]
+      })).filter((p: any) => p.id);
+
+      const customers = getSheetRows('Customers').map((r: any[]) => {
+          let history = [], payments = [];
+          try { history = JSON.parse(r[9] || '[]'); } catch {}
+          try { payments = JSON.parse(r[10] || '[]'); } catch {}
+          return {
+              id: r[0], name: r[1], phone: r[2], email: r[3], location: r[4],
+              totalSpent: parseFloat(r[5]) || 0, totalDues: parseFloat(r[6]) || 0, visitCount: parseInt(r[7]) || 0,
+              isWholesaler: r[8] === 'Wholesale', history, payments
+          };
+      }).filter((c: any) => c.id);
+
+      const sales = getSheetRows('Sales').map((r: any[]) => {
+          let items = [];
+          try { items = JSON.parse(r[10] || '[]'); } catch {}
+          return {
+              id: r[0], timestamp: r[1], customerName: r[2], customerId: r[3],
+              total: parseFloat(r[4]) || 0, subtotal: parseFloat(r[5]) || 0, tax: parseFloat(r[6]) || 0,
+              amountPaid: parseFloat(r[7]), paymentMethod: r[9], items
+          };
+      }).filter((s: any) => s.id);
+
+      const tags = getSheetRows('Tags').map((r: any[]) => ({ id: r[0], name: r[1], color: r[2] })).filter((t: any) => t.id);
+
+      const users = getSheetRows('Users').map((r: any[]) => ({
+          id: r[0], name: r[1], username: r[2], role: r[3], pin: r[4], lastLogin: r[5]
+      })).filter((u: any) => u.id);
+
+      const sRow = getSheetRows('Settings')[0] || [];
+      let extraSettings: any = {};
+      try { extraSettings = JSON.parse(sRow[7] || '{}'); } catch {}
+      const settings = {
+          storeName: sRow[0] || '', storeAddress: sRow[1] || '', storePhone: sRow[2] || '', storeEmail: sRow[3] || '',
+          logo: sRow[4] || '', currencySymbol: sRow[5] || '₹',
+          ...extraSettings
+      };
+
+      const deletedItems = getSheetRows('RecycleBin').map((r: any[]) => {
+          let data = null;
+          try { data = JSON.parse(r[4]); } catch {}
+          return { id: r[0], originalId: r[1], type: r[2], deletedAt: r[3], data };
+      }).filter((d: any) => d.id && d.data);
+
+      return { products, customers, sales, tags, users, settings, deletedItems };
+  },
+
+  // --- BACKUP METHODS ---
+  createCloudBackup: async (accessToken: string, data: any): Promise<void> => {
+      const rootFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'NoorPOS_Data');
+      const backupFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'Backups', rootFolderId);
+      const fileName = `noor_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      const file = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const metadataBlob = new Blob([JSON.stringify({ name: fileName, parents: [backupFolderId] })], { type: 'application/json' });
       const form = new FormData();
       form.append('metadata', metadataBlob);
       form.append('file', file);
 
       const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
-          body: form
+          method: 'POST', headers: { Authorization: `Bearer ${accessToken}` }, body: form
       });
-
-      if (!res.ok) {
-          const err = await res.json();
-          throw new Error(`Backup creation failed: ${err?.error?.message}`);
-      }
+      if (!res.ok) throw new Error(`${res.status}: Backup failed`);
   },
 
   listCloudBackups: async (accessToken: string): Promise<DriveFile[]> => {
-      // 1. Get Root
       const rootFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'NoorPOS_Data');
-      
-      // 2. Get Backups Folder (might not exist yet if no backups)
       const backupFolderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, 'Backups', rootFolderId);
-
-      // 3. List JSON files
       const query = `'${backupFolderId}' in parents and mimeType = 'application/json' and trashed = false`;
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&orderBy=createdTime desc&fields=files(id, name, createdTime)`, {
           headers: { Authorization: `Bearer ${accessToken}` }
       });
-
-      if (!res.ok) throw new Error("Failed to list backups");
-      
+      if (!res.ok) throw new Error(`${res.status}: Failed to list backups`);
       const data = await res.json();
       return data.files || [];
   },
@@ -337,211 +383,17 @@ export const GoogleDriveUtils = {
       const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
           headers: { Authorization: `Bearer ${accessToken}` }
       });
-
       if (!res.ok) throw new Error("Failed to download backup");
-      
       return await res.json();
   },
 
-  // --- END BACKUP METHODS ---
-
-  /**
-   * Saves the entire application state to the Google Sheet.
-   */
-  saveToSheet: async (accessToken: string, spreadsheetId: string, data: any) => {
-    // 1. Prepare Product Rows
-    const productRows = data.products.map((p: any) => [
-        p.id, p.name, p.sku, p.sellPrice, p.stock, p.unit, p.category || ''
-    ]);
-
-    // 2. Prepare Customer Rows (Added isWholesaler boolean)
-    const customerRows = data.customers.map((c: any) => [
-        c.id, c.name, c.phone, c.totalSpent, c.totalDues, c.visitCount, c.isWholesaler ? 'Yes' : 'No'
-    ]);
-
-    // 3. Prepare Sales Rows (Most recent first)
-    const salesRows = data.sales.map((s: any) => [
-        s.id, new Date(s.timestamp).toLocaleDateString(), s.customerName, s.total, s.paymentMethod, s.items.length
-    ]);
-
-    // 4. Prepare Settings Row
-    const settingsRow = [
-        data.settings?.storeName || '',
-        data.settings?.storeAddress || '',
-        data.settings?.storePhone || '',
-        data.settings?.storeEmail || '',
-        new Date().toLocaleString()
-    ];
-
-    // 5. Prepare Raw JSON blob (Essential for full app state recovery including tags, complex objects)
-    const jsonBlob = JSON.stringify(data);
-    
-    const body = {
-        valueInputOption: "USER_ENTERED",
-        data: [
-            { range: "Products!A2", values: productRows.length ? productRows : [['']] },
-            { range: "Customers!A2", values: customerRows.length ? customerRows : [['']] },
-            { range: "Sales!A2", values: salesRows.length ? salesRows : [['']] },
-            { range: "Settings!A2", values: [settingsRow] },
-            { range: "RawData!A1", values: [[jsonBlob]] }
-        ]
-    };
-
-    // 6. Clear existing content first (except headers)
-    const clearRanges = ['Products!A2:Z', 'Customers!A2:Z', 'Sales!A2:Z', 'Settings!A2:Z', 'RawData!A1:Z'];
-    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ranges: clearRanges })
+  shareDatabase: async (accessToken: string, spreadsheetId: string, email: string) => {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions?emailMessage=You have been invited to manage Noor POS Store.&sendNotificationEmail=true`, {
+        method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email })
     });
-
-    // 7. Batch Update with new data
-    const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    if (!res.ok) {
-        const err = await res.json();
-        throw new Error(`Save failed: ${err?.error?.message || res.statusText}`);
-    }
-  },
-
-  /**
-   * Loads data from the Sheet. 
-   */
-  loadFromSheet: async (accessToken: string, spreadsheetId: string) => {
-      // 1. Try Fast Load (Raw JSON Blob)
-      try {
-          const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RawData!A1`, {
-              headers: { Authorization: `Bearer ${accessToken}` }
-          });
-
-          if (res.ok) {
-              const json = await res.json();
-              if (json.values && json.values[0] && json.values[0][0]) {
-                  try {
-                      const data = JSON.parse(json.values[0][0]);
-                      if (data && (Array.isArray(data.products) || Array.isArray(data.customers))) {
-                          return data;
-                      }
-                  } catch (e) {
-                      console.warn("RawData JSON parse failed, trying fallback...", e);
-                  }
-              }
-          } else {
-              console.warn("RawData fetch failed:", res.statusText);
-          }
-      } catch (e) {
-          console.warn("RawData fetch error:", e);
-      }
-
-      // 2. Fallback: Reconstruct from Rows
-      console.log("Attempting to reconstruct data from visible sheet rows...");
-      
-      try {
-          const ranges = ['Products!A2:G', 'Customers!A2:G', 'Sales!A2:F', 'Settings!A2:E'];
-          const batchRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?majorDimension=ROWS&ranges=${ranges.join('&ranges=')}`, {
-              headers: { Authorization: `Bearer ${accessToken}` }
-          });
-
-          if (!batchRes.ok) {
-              throw new Error(`Fallback fetch failed: ${batchRes.statusText}`);
-          }
-          
-          const batchData = await batchRes.json();
-          const valueRanges = batchData.valueRanges; // Order matches requested ranges
-
-          const getRows = (index: number) => valueRanges[index].values || [];
-
-          // Map Products
-          const products = getRows(0).map((r: any[]) => ({
-              id: r[0] || `gen_${Math.random().toString(36).substr(2, 9)}`,
-              name: r[1] || 'Unknown',
-              sku: r[2] || '',
-              sellPrice: parseFloat(r[3]) || 0,
-              stock: parseFloat(r[4]) || 0,
-              unit: r[5] || 'pcs',
-              category: r[6] || '',
-              // Defaults for lost fields
-              buyPrice: 0, 
-              lowStockThreshold: 10,
-              location: 'Warehouse'
-          }));
-
-          // Map Customers
-          const customers = getRows(1).map((r: any[]) => ({
-              id: r[0] || `gen_${Math.random().toString(36).substr(2, 9)}`,
-              name: r[1] || 'Unknown',
-              phone: r[2] || '',
-              totalSpent: parseFloat(r[3]) || 0,
-              totalDues: parseFloat(r[4]) || 0,
-              visitCount: parseInt(r[5]) || 0,
-              isWholesaler: r[6] === 'Yes',
-              history: [] // Lost history linkage in simple view
-          }));
-
-          // Map Sales (Basic info only)
-          const sales = getRows(2).map((r: any[]) => ({
-              id: r[0] || `gen_${Math.random().toString(36).substr(2, 9)}`,
-              timestamp: r[1] ? new Date(r[1]).toISOString() : new Date().toISOString(), 
-              customerName: r[2] || 'Unknown',
-              total: parseFloat(r[3]) || 0,
-              paymentMethod: r[4] || 'Cash',
-              items: [], // Lost item details
-              subtotal: parseFloat(r[3]) || 0,
-              tax: 0,
-              amountPaid: parseFloat(r[3]) || 0 
-          }));
-
-          // Map Settings
-          const sRow = getRows(3)[0] || [];
-          const settings = {
-              storeName: sRow[0] || '',
-              storeAddress: sRow[1] || '',
-              storePhone: sRow[2] || '',
-              storeEmail: sRow[3] || '',
-              currencySymbol: '₹',
-              expiryAlertDays: 7,
-              lowStockDefault: 10,
-              soundEnabled: true,
-              notificationsEnabled: true,
-              recycleBinRetentionDays: 30,
-              directPrintEnabled: false,
-              scannerPreference: 'both' as const,
-              nasUrl: '',
-              syncToNas: false
-          };
-
-          // Reconstruct Tags from Product Categories
-          const uniqueCategories = Array.from(new Set(products.map((p: any) => p.category).filter((c: any) => c)));
-          const tags = uniqueCategories.map((name: any) => ({
-              id: `tag_${name.replace(/\s+/g, '_').toLowerCase()}`,
-              name: name,
-              color: '#3b82f6'
-          }));
-          
-          // Link products to tags
-          products.forEach((p: any) => {
-              const t = tags.find((tag: any) => tag.name === p.category);
-              if (t) p.tagId = t.id;
-          });
-
-          return {
-              products,
-              customers,
-              sales,
-              settings,
-              tags,
-              users: [],
-              deletedItems: []
-          };
-
-      } catch (e) {
-          console.error("Critical: Failed to reconstruct data from rows", e);
-          return null; 
-      }
+    if (!res.ok) throw new Error(`Sharing failed: ${res.statusText}`);
+    return true;
   },
 
   saveSession: (data: GoogleUser) => {

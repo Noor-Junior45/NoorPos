@@ -58,6 +58,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const storePhoneRef = useRef<HTMLInputElement>(null);
   const storeEmailRef = useRef<HTMLInputElement>(null);
 
+  // Environment Variable for Client ID
+  const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
+
   useEffect(() => {
     loadData();
   }, []);
@@ -319,10 +322,31 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       setShowBackupModal(true);
       setIsLoadingBackups(true);
       try {
-          const files = await StoreService.getCloudBackups();
-          setCloudBackups(files);
-      } catch(e) {
+          // Attempt to list backups. If token expired (401), listCloudBackups will throw.
+          try {
+              const files = await StoreService.getCloudBackups();
+              setCloudBackups(files);
+          } catch (e: any) {
+              if (e.message.includes('401') || e.message.includes('credentials') || e.message.includes('Auth')) {
+                  if (CLIENT_ID) {
+                      // Attempt Refresh for Listing
+                      console.log("Token expired for listing backups, refreshing...");
+                      await GoogleDriveUtils.refreshSession(CLIENT_ID);
+                      const files = await StoreService.getCloudBackups(); // Retry
+                      setCloudBackups(files);
+                  } else {
+                      throw e;
+                  }
+              } else {
+                  throw e;
+              }
+          }
+      } catch(e: any) {
           console.error(e);
+          // Only alert if it's a real error, not just empty
+          if (e.message !== "Failed to list backups") {
+             // alert("Failed to load backups: " + e.message); 
+          }
       } finally {
           setIsLoadingBackups(false);
       }
@@ -336,7 +360,24 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
           setCloudBackups(files);
           alert("Backup created successfully in Google Drive!");
       } catch (e: any) {
-          alert("Backup failed: " + e.message);
+          // Handle 401 Unauthorized / Invalid Credentials
+          if ((e.message.includes('401') || e.message.includes('credentials')) && CLIENT_ID) {
+              try {
+                  console.log("Token expired, attempting refresh...");
+                  await GoogleDriveUtils.refreshSession(CLIENT_ID);
+                  // Retry Operation once
+                  await StoreService.createCloudBackup();
+                  const files = await StoreService.getCloudBackups();
+                  setCloudBackups(files);
+                  alert("Backup created successfully (Session Refreshed)!");
+                  return; // Exit success
+              } catch (refreshErr: any) {
+                  console.error("Refresh failed", refreshErr);
+                  alert("Session expired. Please sign out and sign in again.");
+              }
+          } else {
+              alert("Backup failed: " + e.message);
+          }
       } finally {
           setIsCreatingBackup(false);
       }
@@ -350,8 +391,19 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
           await StoreService.restoreCloudBackup(fileId);
           setShowBackupModal(false);
       } catch (e: any) {
+          // Handle 401 for Restore as well
+          if ((e.message.includes('401') || e.message.includes('credentials')) && CLIENT_ID) {
+              try {
+                  await GoogleDriveUtils.refreshSession(CLIENT_ID);
+                  await StoreService.restoreCloudBackup(fileId);
+                  setShowBackupModal(false);
+                  return;
+              } catch (refreshErr) {
+                  alert("Session expired. Please re-login.");
+              }
+          }
           alert("Restore failed: " + e.message);
-          setIsRestoring(false); // Only set false if failed, success triggers reload in service
+          setIsRestoring(false); 
       }
   };
 
