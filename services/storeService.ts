@@ -58,6 +58,7 @@ let cache: StoreData | null = null;
 let loadPromise: Promise<StoreData> | null = null;
 let saveTimeout: any = null;
 let lastBackupTime: string | null = localStorage.getItem('noor_last_backup');
+let isCloudSyncHealthy = true; // Safety flag
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -105,8 +106,23 @@ const StoreService = {
             console.log("Loading from Google Sheet...");
             try {
                 remoteData = await GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId);
+                if (!remoteData) {
+                    // If loadFromSheet returns null but didn't throw, it might be an empty sheet.
+                    // However, we must be careful not to overwrite if it was a fetch error.
+                    console.log("Cloud data was empty or unparseable.");
+                }
+                isCloudSyncHealthy = true;
             } catch (err) {
-                console.warn("Cloud load failed, trying alternates:", err);
+                console.error("Cloud load CRITICAL FAILURE:", err);
+                // IMPORTANT: If cloud load fails, we mark sync as unhealthy to prevent auto-saving empty local data over cloud data.
+                isCloudSyncHealthy = false;
+                // If we have local backup, use it, but warn user
+                const local = localStorage.getItem(LS_BACKUP_KEY);
+                if (local) {
+                    console.log("Falling back to offline cache due to cloud error.");
+                    resolve(JSON.parse(local));
+                    return;
+                }
             }
         } 
         
@@ -124,16 +140,19 @@ const StoreService = {
             }
         }
 
-        // 3. Fallback Local Server
-        if (!remoteData && !syncToNas) {
-            try {
-                const res = await fetch('/api/storage');
-                if (res.ok) {
-                    const json = await res.json();
-                    if (json) remoteData = json;
+        // 3. Fallback Local Server / LocalStorage
+        if (!remoteData) {
+            // Only try local server if strictly not using NAS (Guest mode)
+            if (!syncToNas && !session) {
+                try {
+                    const res = await fetch('/api/storage');
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json) remoteData = json;
+                    }
+                } catch (err) {
+                    console.log("Local server unreachable.");
                 }
-            } catch (err) {
-                console.log("Local server unreachable, using browser storage.");
             }
         }
 
@@ -165,6 +184,8 @@ const StoreService = {
           return deletedAt > cutoffDate;
       });
 
+      // ONLY save if we actually removed something. 
+      // Prevents "Save on Load" loop that causes data overwrite issues on new devices.
       if (data.deletedItems.length !== initialCount) {
           console.log(`Auto-cleaned ${initialCount - data.deletedItems.length} expired items from recycle bin.`);
           this.saveData();
@@ -206,6 +227,13 @@ const StoreService = {
   async saveData(): Promise<void> {
     if (!cache) return;
     
+    // SAFETY CHECK: If cloud sync previously failed, DO NOT auto-save empty/stale data over the cloud.
+    const session = GoogleDriveUtils.getSession();
+    if (session && !isCloudSyncHealthy) {
+        console.warn("Skipping Cloud Save: Sync is unhealthy. Please refresh to try connecting again.");
+        return;
+    }
+
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
     lastBackupTime = new Date().toISOString();
     localStorage.setItem('noor_last_backup', lastBackupTime);
@@ -216,7 +244,6 @@ const StoreService = {
     if (saveTimeout) clearTimeout(saveTimeout);
     
     saveTimeout = setTimeout(async () => {
-      const session = GoogleDriveUtils.getSession();
       try {
         if (session) {
              await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
@@ -302,6 +329,8 @@ const StoreService = {
   async importData(newData: any): Promise<void> {
     if (!newData.products || !Array.isArray(newData.products)) throw new Error("Invalid backup file");
     cache = { ...defaultData, ...newData };
+    // Explicitly set healthy on import
+    isCloudSyncHealthy = true; 
     await this.saveData();
     window.location.reload();
   },
@@ -316,6 +345,9 @@ const StoreService = {
 
   async logout(): Promise<void> {
       GoogleDriveUtils.clearSession();
+      // Clear local backup to ensure clean state for next user
+      localStorage.removeItem(LS_BACKUP_KEY);
+      cache = null;
       window.location.reload();
   },
 

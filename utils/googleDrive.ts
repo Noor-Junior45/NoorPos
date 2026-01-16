@@ -215,7 +215,8 @@ export const GoogleDriveUtils = {
 
             requiredSheets.forEach(title => {
                 if (!existingTitles.includes(title)) {
-                    requests.push({ addSheet: { properties: { title, gridProperties: { frozenRowCount: 1 } } } });
+                    requests.push({ addSheet: { properties: { title, gridProperties: { frozenRowCount: 1 } } },
+                    });
                 }
             });
 
@@ -332,8 +333,8 @@ export const GoogleDriveUtils = {
       });
 
       if (!res.ok) {
-          console.warn("Load failed, falling back", res.statusText);
-          return null; 
+          console.warn("Load failed details:", res.status, res.statusText);
+          throw new Error(`Cloud fetch failed: ${res.statusText}`);
       }
       
       const json = await res.json();
@@ -343,6 +344,8 @@ export const GoogleDriveUtils = {
               return JSON.parse(json.values[0][0]);
           } catch (e) {
               console.error("Failed to parse remote JSON", e);
+              // We return null here to indicate empty/corrupt data, handled by caller
+              return null;
           }
       }
       return null;
