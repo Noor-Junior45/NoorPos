@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
-import { Customer, Sale, Product, Tab, Tag } from '../types';
-import { Card, Badge, Button } from '../components/UI';
-import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers, Loader2, X, BrainCircuit, RefreshCw, MessageSquareText, ShieldCheck, Lightbulb, BookOpen, Activity, Terminal } from 'lucide-react';
+import { Customer, Sale, Product, Tab, Tag, StoreSettings } from '../types';
+import { Card, Badge, Button, Modal } from '../components/UI';
+import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers, Loader2, X, BrainCircuit, RefreshCw, MessageSquareText, ShieldCheck, Lightbulb, BookOpen, Activity, Terminal, ChevronRight, Search, Hourglass } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
 
 interface DashboardProps {
@@ -18,12 +17,36 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [settings, setSettings] = useState<any>({});
+  const [settings, setSettings] = useState<StoreSettings | null>(null);
   
+  // Detail Modal States
+  const [activeDetail, setActiveDetail] = useState<'LOW_STOCK' | 'EXPIRING' | 'DUES' | null>(null);
+
   // Gemini AI States
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // --- Browser/Gesture Back Navigation Logic ---
+  useEffect(() => {
+    const handleNavigationPop = (e: any) => {
+        if (activeDetail) {
+            setActiveDetail(null);
+        }
+    };
+    window.addEventListener('app-navigation-pop' as any, handleNavigationPop);
+    return () => window.removeEventListener('app-navigation-pop' as any, handleNavigationPop);
+  }, [activeDetail]);
+
+  const openDetail = (type: 'LOW_STOCK' | 'EXPIRING' | 'DUES') => {
+      window.history.pushState({ tab: Tab.DASHBOARD, depth: 1 }, '');
+      setActiveDetail(type);
+  };
+
+  const closeDetail = () => {
+      setActiveDetail(null);
+      window.history.back();
+  };
 
   useEffect(() => {
     loadData();
@@ -86,7 +109,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         return { name: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }), value: dayTotal };
     });
 
-    // Per-Method Trends for Sparklines
     const getMethodTrend = (method: string) => last7DaysDates.map(date => ({
         value: sales.filter(s => s.timestamp.startsWith(date) && s.paymentMethod === method)
                     .reduce((acc, s) => acc + s.total, 0)
@@ -111,16 +133,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     ].filter(i => i.value > 0);
 
     const lowStockItems = products
-        .filter(p => p.stock <= (p.lowStockThreshold || settings.lowStockDefault || 10) && p.stock > 0)
+        .filter(p => p.stock <= (p.lowStockThreshold || settings?.lowStockDefault || 10) && p.stock > 0)
         .sort((a, b) => a.stock - b.stock);
 
     const expiringItems = products.filter(p => {
         if (!p.expiryDate) return false;
         const today = new Date();
+        today.setHours(0,0,0,0);
         const exp = new Date(p.expiryDate);
-        const diff = (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
-        return diff >= 0 && diff <= (settings.expiryAlertDays || 7);
-    });
+        exp.setHours(0,0,0,0);
+        const diff = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const threshold = settings?.expiryAlertDays || 7;
+        return diff >= 0 && diff <= threshold;
+    }).map(p => {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const exp = new Date(p.expiryDate!);
+        exp.setHours(0,0,0,0);
+        const daysLeft = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        return { ...p, daysLeft };
+    }).sort((a, b) => a.daysLeft - b.daysLeft);
 
     const productSales: Record<string, number> = {};
     sales.forEach(s => s.items.forEach(i => productSales[i.name] = (productSales[i.name] || 0) + i.quantity));
@@ -214,8 +246,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   <div className="text-emerald-700 text-[10px] uppercase font-black tracking-widest flex items-center gap-1 mb-1"><IndianRupee size={12} /> Total Value</div>
                   <div className="text-3xl font-black text-gray-950">₹{stats.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
               </Card>
-              <Card className="border-2 border-rose-200 shadow-sm p-5 hover:border-rose-500 transition-colors">
-                  <div className="text-rose-700 text-[10px] uppercase font-black tracking-widest flex items-center gap-1 mb-1"><AlertTriangle size={12} /> Low Stock</div>
+              <Card onClick={() => openDetail('LOW_STOCK')} className="border-2 border-rose-200 shadow-sm p-5 hover:border-rose-500 transition-colors cursor-pointer active:scale-95 group">
+                  <div className="text-rose-700 text-[10px] uppercase font-black tracking-widest flex items-center justify-between mb-1">
+                      <span className="flex items-center gap-1"><AlertTriangle size={12} /> Low Stock</span>
+                      <ArrowUpRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity"/>
+                  </div>
                   <div className="text-4xl font-black text-gray-950">{stats.lowStockItems.length}</div>
               </Card>
               <Card className="border-2 border-violet-200 shadow-sm p-5 hover:border-violet-500 transition-colors">
@@ -240,10 +275,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                         <div className="text-xs text-emerald-100 mt-2 font-bold opacity-80 flex items-center gap-1"><ArrowUpRight size={14}/> {sales.length} Transactions Recorded</div>
                     </div>
                 </Card>
-                <Card className="border-0 shadow-xl bg-gradient-to-br from-rose-500 to-red-700 text-white p-7 rounded-3xl relative overflow-hidden group">
+                <Card onClick={() => openDetail('DUES')} className="border-0 shadow-xl bg-gradient-to-br from-rose-500 to-red-700 text-white p-7 rounded-3xl relative overflow-hidden group cursor-pointer active:scale-95">
                     <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-700"><AlertTriangle size={120}/></div>
                     <div className="relative z-10">
-                        <div className="flex items-center gap-2 text-rose-100 font-black text-[10px] uppercase tracking-widest mb-2"><AlertTriangle size={16} /> Outstanding Dues</div>
+                        <div className="flex items-center justify-between gap-2 text-rose-100 font-black text-[10px] uppercase tracking-widest mb-2">
+                            <span className="flex items-center gap-2"><AlertTriangle size={16} /> Outstanding Dues</span>
+                            <ArrowUpRight size={16} />
+                        </div>
                         <div className="text-4xl font-black">₹{stats.totalDues.toLocaleString()}</div>
                         <div className="text-xs text-rose-100 mt-2 font-bold opacity-80">{stats.customersWithDues.length} Customers pending</div>
                     </div>
@@ -251,7 +289,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
         </section>
 
-        {/* --- PAYMENT BREAKDOWN WITH GRAPHS --- */}
+        {/* --- PAYMENT BREAKDOWN --- */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1">
                 <Banknote size={22} className="text-blue-600"/>
@@ -338,7 +376,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Inventory Health</h3>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="p-0 overflow-hidden h-[320px] flex flex-col border-2 border-indigo-50">
+                <Card className="p-0 overflow-hidden h-[340px] flex flex-col border-2 border-indigo-50">
                     <div className="px-6 py-5 border-b border-indigo-50 bg-indigo-50/20 flex justify-between items-center">
                         <h3 className="font-black text-gray-950 flex items-center gap-2 text-sm"><Crown size={18} className="text-amber-500"/> TOP MOVING ITEMS</h3>
                     </div>
@@ -355,10 +393,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     </div>
                 </Card>
 
-                <Card className="border-2 border-rose-100 bg-rose-50/20 h-[320px] flex flex-col p-0 overflow-hidden">
-                    <div className="px-6 py-5 border-b border-rose-100 bg-rose-100/30 flex justify-between items-center"><h3 className="font-black text-gray-950 flex items-center gap-2 text-sm uppercase"><AlertTriangle size={20} className="text-rose-600"/> Critical Low Stock</h3></div>
+                <Card onClick={() => openDetail('LOW_STOCK')} className="border-2 border-rose-100 bg-rose-50/20 h-[340px] flex flex-col p-0 overflow-hidden cursor-pointer active:scale-[0.99] group">
+                    <div className="px-6 py-5 border-b border-rose-100 bg-rose-100/30 flex justify-between items-center">
+                        <h3 className="font-black text-gray-950 flex items-center gap-2 text-sm uppercase"><AlertTriangle size={20} className="text-rose-600"/> Critical Low Stock</h3>
+                        <ChevronRight size={18} className="text-rose-400 group-hover:translate-x-1 transition-transform"/>
+                    </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                        {stats.lowStockItems.length > 0 ? stats.lowStockItems.map(p => (
+                        {stats.lowStockItems.length > 0 ? stats.lowStockItems.slice(0, 5).map(p => (
                             <div key={p.id} className="flex justify-between items-center text-sm py-3 px-4 bg-white rounded-xl border border-rose-100 shadow-sm hover:border-rose-400 transition-colors">
                                 <span className="font-bold truncate text-gray-900 w-2/3">{p.name}</span>
                                 <span className="font-black text-xs text-rose-600 whitespace-nowrap">{p.stock} units</span>
@@ -369,16 +410,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 <p className="text-sm font-bold uppercase tracking-widest">Levels Healthy</p>
                             </div>
                         )}
+                        {stats.lowStockItems.length > 5 && <div className="text-center pt-2 text-[10px] font-bold text-rose-400 uppercase">View {stats.lowStockItems.length - 5} More...</div>}
                     </div>
                 </Card>
 
-                <Card className="border-2 border-amber-100 bg-amber-50/20 h-[320px] flex flex-col p-0 overflow-hidden">
-                    <div className="px-6 py-5 border-b border-amber-100 bg-amber-100/30 flex justify-between items-center"><h3 className="font-black text-gray-950 flex items-center gap-2 text-sm uppercase"><Clock size={20} className="text-amber-600"/> Expiring Soon</h3></div>
+                <Card onClick={() => openDetail('EXPIRING')} className="border-2 border-amber-100 bg-amber-50/20 h-[340px] flex flex-col p-0 overflow-hidden cursor-pointer active:scale-[0.99] group">
+                    <div className="px-6 py-5 border-b border-amber-100 bg-amber-100/30 flex flex-col gap-1">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-black text-gray-950 flex items-center gap-2 text-sm uppercase"><Clock size={20} className="text-amber-600"/> Expiring Soon</h3>
+                            <ChevronRight size={18} className="text-amber-400 group-hover:translate-x-1 transition-transform"/>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <Badge color="bg-amber-100 text-amber-700 text-[8px] font-black uppercase tracking-tighter">Preference: {settings?.expiryAlertDays || 7} Days</Badge>
+                        </div>
+                    </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                         {stats.expiringItems.length > 0 ? stats.expiringItems.map(p => (
-                            <div key={p.id} className="flex justify-between items-center text-sm py-3 px-4 bg-white rounded-xl border border-amber-100 shadow-sm hover:border-amber-400 transition-colors">
-                                <span className="font-bold truncate text-gray-900 w-2/3">{p.name}</span>
-                                <span className="font-black text-[10px] text-amber-700 whitespace-nowrap bg-amber-50 px-2 py-1 rounded-md">{formatDateShort(p.expiryDate || '')}</span>
+                         {stats.expiringItems.length > 0 ? stats.expiringItems.slice(0, 5).map(p => (
+                            <div key={p.id} className="flex flex-col gap-1 p-3 bg-white rounded-xl border border-amber-100 shadow-sm hover:border-amber-400 transition-colors">
+                                <div className="flex justify-between items-center">
+                                    <span className="font-bold truncate text-gray-900 text-sm">{p.name}</span>
+                                    <Badge color={p.daysLeft === 0 ? "bg-red-500 text-white" : "bg-amber-500 text-white"}>
+                                        {p.daysLeft === 0 ? 'Today' : `${p.daysLeft}d left`}
+                                    </Badge>
+                                </div>
+                                <div className="flex justify-between items-center text-[10px] text-gray-500 font-bold uppercase">
+                                    <span>Stock: {p.stock}</span>
+                                    <span>Exp: {formatDateShort(p.expiryDate || '')}</span>
+                                </div>
                             </div>
                         )) : (
                             <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-40">
@@ -386,6 +444,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 <p className="text-sm font-bold uppercase tracking-widest">No Expiry Risk</p>
                             </div>
                         )}
+                        {stats.expiringItems.length > 5 && <div className="text-center pt-2 text-[10px] font-bold text-amber-400 uppercase">View {stats.expiringItems.length - 5} More...</div>}
                     </div>
                 </Card>
             </div>
@@ -426,10 +485,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Card className="bg-gradient-to-br from-orange-500 to-red-700 text-white border-0 h-24 p-5 flex items-center justify-between shadow-xl rounded-2xl">
+                    <Card onClick={() => openDetail('DUES')} className="bg-gradient-to-br from-orange-500 to-red-700 text-white border-0 h-24 p-5 flex items-center justify-between shadow-xl rounded-2xl cursor-pointer hover:shadow-2xl transition-all active:scale-95 group">
                         <div>
                             <p className="text-[10px] uppercase font-black text-orange-100 mb-0.5 tracking-widest">Total Outstanding</p>
-                            <h4 className="font-black text-lg truncate">{stats.customersWithDues.length} ACTIVE DEBTORS</h4>
+                            <h4 className="font-black text-lg truncate flex items-center gap-2">{stats.customersWithDues.length} ACTIVE DEBTORS <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform"/></h4>
                         </div>
                         <div className="text-2xl font-black">₹{stats.totalDues.toLocaleString()}</div>
                     </Card>
@@ -460,7 +519,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
         </section>
 
-        {/* --- GEMINI AI ASSISTANT GOOGLE THEME --- */}
+        {/* --- GEMINI AI ASSISTANT --- */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1 mt-8">
                 <BrainCircuit size={22} className="text-indigo-600"/>
@@ -503,7 +562,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     </button>
                 </div>
 
-                {/* AI TERMINAL STYLE TALKING BOX */}
                 <div className="mt-8 bg-white/60 backdrop-blur-md border border-gray-200 rounded-[2rem] p-8 shadow-inner min-h-[180px] relative transition-colors group-hover:border-indigo-100">
                     <div className="absolute -top-3 left-8 bg-white border border-gray-100 text-gray-900 text-[9px] font-black px-5 py-2 rounded-full shadow-md flex items-center gap-2 uppercase tracking-[0.2em]">
                         <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Processing Core
@@ -532,7 +590,92 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </Card>
         </section>
 
-        {/* --- STORE MANAGEMENT GUIDE --- */}
+        {/* --- DRILL-DOWN MODALS --- */}
+        <Modal isOpen={activeDetail === 'LOW_STOCK'} onClose={closeDetail} title="Inventory Restock List" className="!max-w-3xl">
+            <div className="space-y-4">
+                <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100 flex items-start gap-4 mb-4">
+                    <div className="p-3 bg-white rounded-xl text-rose-600 shadow-sm"><AlertTriangle size={24}/></div>
+                    <div>
+                        <h4 className="font-black text-rose-900 uppercase text-xs tracking-widest">Restock Required</h4>
+                        <p className="text-rose-700/70 text-sm font-medium leading-relaxed">The following items have dropped below your configured safety threshold.</p>
+                    </div>
+                </div>
+                <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2 no-scrollbar">
+                    {stats.lowStockItems.map(p => (
+                        <div key={p.id} className="flex justify-between items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-rose-300 transition-all">
+                            <div className="flex flex-col">
+                                <span className="font-black text-gray-900">{p.name}</span>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Threshold: {p.lowStockThreshold || 10} units</span>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-lg font-black text-rose-600">{p.stock} <span className="text-[10px] uppercase">{p.unit}</span></div>
+                                <button onClick={() => { closeDetail(); onNavigate(Tab.WAREHOUSE, 'add'); }} className="text-[9px] font-black text-blue-600 uppercase border-b border-blue-200 hover:text-blue-700 transition-colors">Order Now</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <Button onClick={closeDetail} className="w-full mt-4 py-4 font-black uppercase tracking-widest rounded-2xl">Dismiss</Button>
+            </div>
+        </Modal>
+
+        <Modal isOpen={activeDetail === 'EXPIRING'} onClose={closeDetail} title="Expiry Protection" className="!max-w-3xl">
+            <div className="space-y-4">
+                <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-4 mb-4">
+                    <div className="p-3 bg-white rounded-xl text-amber-600 shadow-sm"><Clock size={24}/></div>
+                    <div>
+                        <h4 className="font-black text-amber-900 uppercase text-xs tracking-widest">Stock Health Report</h4>
+                        <p className="text-amber-700/70 text-sm font-medium leading-relaxed">Showing items expiring within <strong>{settings?.expiryAlertDays || 7} days</strong> based on your preferences. Consider clearance sales.</p>
+                    </div>
+                </div>
+                <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2 no-scrollbar">
+                    {stats.expiringItems.map(p => (
+                        <div key={p.id} className="flex justify-between items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-amber-300 transition-all">
+                            <div className="flex-1 pr-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-black text-gray-900 block">{p.name}</span>
+                                    <Badge color={p.daysLeft === 0 ? "bg-red-500 text-white" : "bg-amber-500 text-white"}>{p.daysLeft}d</Badge>
+                                </div>
+                                <div className="flex gap-2 mt-1">
+                                    <Badge color="bg-amber-100 text-amber-700 text-[9px] uppercase">Expires: {formatDateShort(p.expiryDate || '')}</Badge>
+                                    <Badge color="bg-gray-100 text-gray-600 text-[9px] uppercase">Qty: {p.stock}</Badge>
+                                </div>
+                            </div>
+                            <Button onClick={() => { closeDetail(); onNavigate(Tab.POS); }} size="sm" variant="neutral" className="border-amber-200 text-amber-700 font-black uppercase text-[10px] shrink-0">SELL NOW</Button>
+                        </div>
+                    ))}
+                </div>
+                <Button onClick={closeDetail} className="w-full mt-4 py-4 font-black uppercase tracking-widest rounded-2xl">Dismiss</Button>
+            </div>
+        </Modal>
+
+        <Modal isOpen={activeDetail === 'DUES'} onClose={closeDetail} title="Outstanding Debtors" className="!max-w-3xl">
+            <div className="space-y-4">
+                <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100 flex items-start gap-4 mb-4">
+                    <div className="p-3 bg-white rounded-xl text-rose-600 shadow-sm"><IndianRupee size={24}/></div>
+                    <div>
+                        <h4 className="font-black text-rose-900 uppercase text-xs tracking-widest">Cashflow Leakage</h4>
+                        <p className="text-rose-700/70 text-sm font-medium leading-relaxed">A total of ₹{stats.totalDues.toLocaleString()} is currently locked in credit accounts.</p>
+                    </div>
+                </div>
+                <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2 no-scrollbar">
+                    {stats.customersWithDues.map(c => (
+                        <div key={c.id} className="flex justify-between items-center p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:border-rose-300 transition-all">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-black">{c.name.charAt(0)}</div>
+                                <div><span className="font-black text-gray-900 block">{c.name}</span><span className="text-[10px] text-gray-400 font-bold uppercase">{c.phone}</span></div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-lg font-black text-rose-600">₹{c.totalDues.toLocaleString()}</div>
+                                <button onClick={() => { closeDetail(); onNavigate(Tab.CUSTOMERS); }} className="text-[9px] font-black text-blue-600 uppercase border-b border-blue-200 hover:text-blue-700 transition-colors">Record Payment</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <Button onClick={closeDetail} className="w-full mt-4 py-4 font-black uppercase tracking-widest rounded-2xl">Dismiss</Button>
+            </div>
+        </Modal>
+
+        {/* Growth Guide */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1 mt-8">
                 <BookOpen size={22} className="text-gray-700"/>

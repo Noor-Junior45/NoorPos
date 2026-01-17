@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, Suspense } from 'react';
 import { Tab, User } from './types';
 import { Package, ShoppingCart, Users, User as UserIcon, LayoutDashboard } from 'lucide-react';
@@ -15,7 +14,6 @@ const Auth = React.lazy(() => import('./pages/Auth').then(m => ({ default: m.Aut
 const PublicInvoice = React.lazy(() => import('./pages/PublicInvoice').then(m => ({ default: m.PublicInvoice })));
 
 const App: React.FC = () => {
-  // Initialize tab from localStorage or default to Dashboard
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     const savedTab = localStorage.getItem('noor_active_tab');
     return (savedTab as Tab) || Tab.DASHBOARD;
@@ -26,13 +24,38 @@ const App: React.FC = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isPublicMode, setIsPublicMode] = useState(false);
 
+  // --- Browser/Gesture Back Navigation Logic ---
   useEffect(() => {
-    // Persist active tab to localStorage whenever it changes
-    localStorage.setItem('noor_active_tab', activeTab);
-  }, [activeTab]);
+    // Handle popstate (Back/Forward buttons)
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state && event.state.tab) {
+        setActiveTab(event.state.tab as Tab);
+        // Dispatch a custom event for sub-views (like CRM Profile or Warehouse Editor)
+        // so they can decide whether to close themselves or let the tab change
+        window.dispatchEvent(new CustomEvent('app-navigation-pop', { detail: event.state }));
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Initial history entry if none exists
+    if (!window.history.state) {
+      window.history.replaceState({ tab: activeTab, depth: 0 }, '');
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleTabChange = (newTab: Tab) => {
+    if (newTab === activeTab) return;
+    
+    // Push new tab to history stack
+    window.history.pushState({ tab: newTab, depth: 0 }, '');
+    setActiveTab(newTab);
+    localStorage.setItem('noor_active_tab', newTab);
+  };
 
   useEffect(() => {
-    // Check for public invoice route
     if (window.location.pathname.startsWith('/invoice/')) {
         setIsPublicMode(true);
         setIsCheckingAuth(false);
@@ -59,17 +82,16 @@ const App: React.FC = () => {
   const handleLogin = (user: User) => setCurrentUser(user);
   const handleLogout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('noor_active_tab'); // Clear tab on logout
+    localStorage.removeItem('noor_active_tab');
   };
 
   const handleNavigate = (tab: Tab, action?: string) => {
-    setActiveTab(tab);
+    handleTabChange(tab);
     if (action) setPendingAction(action);
   };
 
   if (isCheckingAuth) return null;
 
-  // Render dedicated public invoice viewer if on that route
   if (isPublicMode) {
       return (
           <Suspense fallback={<div className="h-screen flex items-center justify-center"><LoadingSpinner/></div>}>
@@ -100,29 +122,29 @@ const App: React.FC = () => {
 
       <div className="fixed bottom-0 left-0 right-0 p-4 z-40 flex justify-center pointer-events-none">
         <nav className="pointer-events-auto rounded-full px-5 py-3 flex gap-1 items-center shadow-[0_20px_50px_rgba(8,_112,_184,_0.1)] ring-1 ring-white/50 bg-white/40 backdrop-blur-3xl border border-white/80">
-          <button onClick={() => setActiveTab(Tab.WAREHOUSE)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.WAREHOUSE ? 'text-yellow-600 scale-105 font-bold' : 'text-gray-800'}`}>
+          <button onClick={() => handleTabChange(Tab.WAREHOUSE)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.WAREHOUSE ? 'text-yellow-600 scale-105 font-bold' : 'text-gray-800'}`}>
             <Package size={22} />
             <span className="text-[10px] tracking-wide">Stock</span>
           </button>
           <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
-          <button onClick={() => setActiveTab(Tab.POS)} className={`flex flex-col items-center gap-1 px-3 transition-all duration-300 ${activeTab === Tab.POS ? '' : 'text-gray-800'}`}>
+          <button onClick={() => handleTabChange(Tab.POS)} className={`flex flex-col items-center gap-1 px-3 transition-all duration-300 ${activeTab === Tab.POS ? '' : 'text-gray-800'}`}>
              <div className={`flex items-center justify-center transition-all duration-300 ${activeTab === Tab.POS ? 'bg-green-600 text-white w-14 h-14 rounded-full shadow-xl -mt-12 ring-4 ring-[#fdfdfc]' : 'bg-transparent text-gray-800 w-auto h-auto mt-0'}`}>
                 <ShoppingCart size={activeTab === Tab.POS ? 26 : 22} />
             </div>
             <span className={`text-[10px] font-bold tracking-wide ${activeTab === Tab.POS ? 'w-0 h-0 opacity-0' : 'opacity-100 mt-0.5'}`}>POS</span>
           </button>
           <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
-          <button onClick={() => setActiveTab(Tab.DASHBOARD)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.DASHBOARD ? 'text-indigo-600 scale-105 font-bold' : 'text-gray-800'}`}>
+          <button onClick={() => handleTabChange(Tab.DASHBOARD)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.DASHBOARD ? 'text-indigo-600 scale-105 font-bold' : 'text-gray-800'}`}>
             <LayoutDashboard size={22} />
             <span className="text-[10px] tracking-wide">Dash</span>
           </button>
           <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
-          <button onClick={() => setActiveTab(Tab.CUSTOMERS)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.CUSTOMERS ? 'text-blue-600 scale-105 font-bold' : 'text-gray-800'}`}>
+          <button onClick={() => handleTabChange(Tab.CUSTOMERS)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.CUSTOMERS ? 'text-blue-600 scale-105 font-bold' : 'text-gray-800'}`}>
             <Users size={22} />
             <span className="text-[10px] tracking-wide">CRM</span>
           </button>
           <div className="w-px h-6 bg-gray-800/10 mx-1"></div>
-          <button onClick={() => setActiveTab(Tab.PROFILE)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.PROFILE ? 'text-purple-600 scale-105 font-bold' : 'text-gray-800'}`}>
+          <button onClick={() => handleTabChange(Tab.PROFILE)} className={`flex flex-col items-center gap-1 px-3 transition-all ${activeTab === Tab.PROFILE ? 'text-purple-600 scale-105 font-bold' : 'text-gray-800'}`}>
             <UserIcon size={22} />
             <span className="text-[10px] tracking-wide">Profile</span>
           </button>

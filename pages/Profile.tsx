@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { User, StoreSettings, DeletedItem } from '../types';
+import { User, StoreSettings, DeletedItem, Tab } from '../types';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
 import { LogOut, AlertTriangle, Cloud, Settings, Store, Phone, MapPin, Mail, Bell, CheckSquare, Save, Download, Upload, ChevronRight, ChevronDown, Sparkles, Server, HardDrive, Image as ImageIcon, FileText, Headphones, ExternalLink, Users, UserPlus, Loader2, Trash2, RotateCcw, Box, Receipt, Calendar, Clock, Printer, Scan, Smartphone, RefreshCw, ArchiveRestore, ShieldCheck, CloudOff } from 'lucide-react';
 import { StoreService } from '../services/storeService';
@@ -63,6 +62,36 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   // Environment Variable for Client ID
   const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 
+  // --- Browser/Gesture Back Navigation Handling ---
+  useEffect(() => {
+    const handleNavigationPop = (e: any) => {
+        // Priority-based closing of Profile sub-views
+        if (showBackupModal) {
+            setShowBackupModal(false);
+            return;
+        }
+        if (showRecycleBin) {
+            setShowRecycleBin(false);
+            return;
+        }
+        if (showResetConfirm) {
+            setShowResetConfirm(false);
+            return;
+        }
+        if (isEditingNas) {
+            setIsEditingNas(false);
+            return;
+        }
+        if (isEditingProfile) {
+            setIsEditingProfile(false);
+            return;
+        }
+    };
+
+    window.addEventListener('app-navigation-pop' as any, handleNavigationPop);
+    return () => window.removeEventListener('app-navigation-pop' as any, handleNavigationPop);
+  }, [isEditingProfile, isEditingNas, showRecycleBin, showBackupModal, showResetConfirm]);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -93,6 +122,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
               storeEmail: storeSettings.storeEmail,
               logo: storeSettings.logo
           });
+          window.history.pushState({ tab: Tab.PROFILE, depth: 1 }, '');
           setIsEditingProfile(true);
       }
   };
@@ -103,6 +133,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       await StoreService.saveSettings(newSettings);
       setStoreSettings(newSettings);
       setIsEditingProfile(false);
+      window.history.back();
   };
   
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,6 +197,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
               nasUrl: storeSettings.nasUrl || 'http://localhost:3000/api/storage',
               syncToNas: storeSettings.syncToNas || false
           });
+          window.history.pushState({ tab: Tab.PROFILE, depth: 1 }, '');
           setIsEditingNas(true);
       }
   };
@@ -180,6 +212,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       await StoreService.saveSettings(newSettings);
       setStoreSettings(newSettings);
       setIsEditingNas(false);
+      window.history.back();
       alert("NAS configuration saved. App will try to sync on next action.");
   };
 
@@ -352,6 +385,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
           alert("Cloud backups require a connected Google account.");
           return;
       }
+      window.history.pushState({ tab: Tab.PROFILE, depth: 1 }, '');
       setShowBackupModal(true);
       setIsLoadingBackups(true);
       try {
@@ -376,10 +410,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
           }
       } catch(e: any) {
           console.error(e);
-          // Only alert if it's a real error, not just empty
-          if (e.message !== "Failed to list backups") {
-             // alert("Failed to load backups: " + e.message); 
-          }
       } finally {
           setIsLoadingBackups(false);
       }
@@ -423,6 +453,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       try {
           await StoreService.restoreCloudBackup(fileId);
           setShowBackupModal(false);
+          window.history.back();
       } catch (e: any) {
           // Handle 401 for Restore as well
           if ((e.message.includes('401') || e.message.includes('credentials')) && CLIENT_ID) {
@@ -430,6 +461,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                   await GoogleDriveUtils.refreshSession(CLIENT_ID);
                   await StoreService.restoreCloudBackup(fileId);
                   setShowBackupModal(false);
+                  window.history.back();
                   return;
               } catch (refreshErr) {
                   alert("Session expired. Please re-login.");
@@ -457,7 +489,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       const isRightSwipe = distanceX < -minSwipeDistance; 
       
       if (isRightSwipe && Math.abs(distanceX) > Math.abs(distanceY)) {
-          setShowRecycleBin(false);
+          if (showRecycleBin) {
+              setShowRecycleBin(false);
+              window.history.back();
+          }
       }
   };
 
@@ -532,7 +567,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                     <button onClick={handleStartEdit} className="text-blue-600 text-xs font-bold hover:underline">EDIT</button>
                 ) : (
                     <div className="flex gap-2">
-                        <button onClick={() => setIsEditingProfile(false)} className="text-gray-400 text-xs font-bold hover:text-gray-600">CANCEL</button>
+                        <button onClick={() => { setIsEditingProfile(false); window.history.back(); }} className="text-gray-400 text-xs font-bold hover:text-gray-600">CANCEL</button>
                         <button onClick={handleSaveProfile} className="text-green-600 text-xs font-bold hover:text-green-700 flex items-center gap-1"><Save size={12}/> SAVE</button>
                     </div>
                 )}
@@ -790,7 +825,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                     <button onClick={handleStartEditNas} className="text-blue-600 text-xs font-bold hover:underline">CONFIGURE</button>
                 ) : (
                     <div className="flex gap-2">
-                        <button onClick={() => setIsEditingNas(false)} className="text-gray-400 text-xs font-bold hover:text-gray-600">CANCEL</button>
+                        <button onClick={() => { setIsEditingNas(false); window.history.back(); }} className="text-gray-400 text-xs font-bold hover:text-gray-600">CANCEL</button>
                         <button onClick={handleSaveNas} className="text-green-600 text-xs font-bold hover:text-green-700 flex items-center gap-1"><Save size={12}/> SAVE</button>
                     </div>
                 )}
@@ -901,7 +936,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                 <ChevronRight size={18} className="text-gray-300"/>
             </button>
 
-            <button onClick={() => setShowResetConfirm(true)} className="w-full bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between group hover:border-red-300 hover:bg-red-50 transition-all mt-2">
+            <button onClick={() => { setShowResetConfirm(true); window.history.pushState({ tab: Tab.PROFILE, depth: 1 }, ''); }} className="w-full bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between group hover:border-red-300 hover:bg-red-50 transition-all mt-2">
                 <div className="flex items-center gap-3">
                     <AlertTriangle size={20} className="text-red-400"/>
                     <span className="font-medium text-red-600">Factory Reset App</span>
@@ -912,7 +947,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         </div>
 
         {/* Recycle Bin Card */}
-        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5 hover:ring-blue-200 transition-all cursor-pointer mt-4" onClick={() => setShowRecycleBin(true)}>
+        <Card className="overflow-hidden border-0 shadow-sm ring-1 ring-black/5 hover:ring-blue-200 transition-all cursor-pointer mt-4" onClick={() => { setShowRecycleBin(true); window.history.pushState({ tab: Tab.PROFILE, depth: 1 }, ''); }}>
              <div className="bg-white p-4 border-b border-gray-100 flex items-center justify-between">
                  <div className="flex items-center gap-2">
                      <Trash2 size={20} className="text-red-500"/>
@@ -999,7 +1034,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         </div>
 
         {/* Cloud Backups Modal */}
-        <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="Cloud Backups">
+        <Modal isOpen={showBackupModal} onClose={() => { setShowBackupModal(false); window.history.back(); }} title="Cloud Backups">
             <div className="space-y-4">
                 <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800">
                     <p>Backups are snapshot files saved in <strong>NoorPOS_Data/Backups</strong> in your Google Drive. They help recover data if the main sync fails.</p>
@@ -1046,7 +1081,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         </Modal>
 
         {/* Recycle Bin Modal */}
-        <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Recycle Bin" className="!max-w-4xl h-[80vh] flex flex-col p-0">
+        <Modal isOpen={showRecycleBin} onClose={() => { setShowRecycleBin(false); window.history.back(); }} title="Recycle Bin" className="!max-w-4xl h-[80vh] flex flex-col p-0">
             <div className="flex-1 flex flex-col h-full overflow-hidden bg-gray-50" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
                 <div className="px-6 py-4 bg-white border-b border-gray-200 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-3">
@@ -1100,12 +1135,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         </Modal>
 
         {/* Reset Confirm Modal */}
-        <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="Factory Reset">
+        <Modal isOpen={showResetConfirm} onClose={() => { setShowResetConfirm(false); window.history.back(); }} title="Factory Reset">
             <div className="text-center">
                 <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32}/></div>
                 <h3 className="text-lg font-bold text-gray-900 mb-2">Are you absolutely sure?</h3>
                 <p className="text-sm text-gray-600 mb-6">This action will delete all products, sales history, and customer data from this device.</p>
-                <div className="flex gap-3"><Button variant="neutral" className="flex-1" onClick={() => setShowResetConfirm(false)}>Cancel</Button><Button variant="danger" className="flex-1" onClick={handleReset}>Yes, Reset</Button></div>
+                <div className="flex gap-3"><Button variant="neutral" className="flex-1" onClick={() => { setShowResetConfirm(false); window.history.back(); }}>Cancel</Button><Button variant="danger" className="flex-1" onClick={handleReset}>Yes, Reset</Button></div>
             </div>
         </Modal>
 

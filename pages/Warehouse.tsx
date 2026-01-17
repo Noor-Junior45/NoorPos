@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Product, Tag, StoreSettings, Sale } from '../types';
+import { Product, Tag, StoreSettings, Sale, Tab } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
@@ -131,6 +131,44 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const editLowStockRef = useRef<HTMLInputElement>(null);
   const editMfgRef = useRef<HTMLInputElement>(null);
 
+  // --- Browser/Gesture Back Navigation Handling ---
+  useEffect(() => {
+      const handleNavigationPop = (e: any) => {
+          // Priority-based closing of Warehouse sub-views
+          if (showCamera) {
+              setShowCamera(false);
+              return;
+          }
+          if (showScanner) {
+              setShowScanner(false);
+              return;
+          }
+          if (showTagModal) {
+              setShowTagModal(false);
+              return;
+          }
+          if (showSourceOptions) {
+              setShowSourceOptions(false);
+              return;
+          }
+          if (itemToDelete) {
+              setItemToDelete(null);
+              return;
+          }
+          if (isEditorOpen) {
+              setIsEditorOpen(false);
+              return;
+          }
+          if (viewMode === 'REVIEW') {
+              setViewMode('WAREHOUSE');
+              return;
+          }
+      };
+
+      window.addEventListener('app-navigation-pop' as any, handleNavigationPop);
+      return () => window.removeEventListener('app-navigation-pop' as any, handleNavigationPop);
+  }, [isEditorOpen, showTagModal, showScanner, viewMode, itemToDelete, showSourceOptions, showCamera]);
+
   useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
@@ -165,12 +203,18 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     if (isScanningToAdd || isEditorOpen) {
                         setNewProduct(prev => ({ ...prev, sku: decodedText }));
                         setShowScanner(false);
-                        if(isScanningToAdd) setIsEditorOpen(true);
+                        // No need for window.history.back here as it was a modal scan
+                        if(isScanningToAdd) {
+                           window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
+                           setIsEditorOpen(true);
+                        }
                         setIsScanningToAdd(false);
                     } else { 
                         setSearchTerm(decodedText); 
                         setActiveTab(SubTab.PRODUCTS); 
                         setShowScanner(false);
+                        // Manual back is needed here to clear the pushed state for the scanner modal
+                        window.history.back();
                     }
                 }, () => {}).catch(() => setShowScanner(false));
         }, 300);
@@ -193,6 +237,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     try { 
       const products = await GeminiService.parseInvoice(file); 
       setParsedProducts(products); 
+      window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
       setViewMode('REVIEW'); 
     } catch (err) { 
       alert("Failed to process image."); 
@@ -212,6 +257,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
               const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
               setInvoiceImage(dataUrl); 
               setShowCamera(false);
+              // Pop the camera state
+              window.history.back();
               fetch(dataUrl).then(res => res.blob()).then(blob => { processImageFile(new File([blob], "capture.jpg", { type: "image/jpeg" })); });
           }
       }
@@ -266,7 +313,12 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           if (isEditing && newProduct.id) await StoreService.updateProduct(newProduct.id, newProduct);
           else await StoreService.addProduct(newProduct as Product);
       }
-      loadData(); setIsEditorOpen(false); setIsEditing(false); resetForm(); 
+      loadData(); 
+      setIsEditorOpen(false); 
+      setIsEditing(false); 
+      resetForm();
+      // Sync browser history
+      window.history.back();
   };
 
   const handleSaveTag = async () => { 
@@ -289,7 +341,11 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
              const createdTag = await StoreService.addTag({ ...newTag, name: trimmedName } as Tag); 
              if (isEditorOpen) setNewProduct(prev => ({ ...prev, tagId: createdTag.id })); 
           }
-          loadData(); setShowTagModal(false); setNewTag({ name: '', color: '#3b82f6' }); setIsEditingTag(false);
+          loadData(); 
+          setShowTagModal(false); 
+          setNewTag({ name: '', color: '#3b82f6' }); 
+          setIsEditingTag(false);
+          window.history.back();
       } finally { setIsSavingTag(false); }
   };
   
@@ -302,19 +358,47 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   
   const handleNameBlur = () => { if (!newProduct.name || isEditing) return; const existing = products.find(p => p.name.toLowerCase() === newProduct.name?.toLowerCase()); if (existing) { setNewProduct(prev => ({ ...prev, tagId: prev.tagId || existing.tagId, location: prev.location || existing.location, unit: existing.unit, capacity: existing.capacity, lowStockThreshold: existing.lowStockThreshold, buyPrice: prev.buyPrice || existing.buyPrice, wholesalePrice: prev.wholesalePrice || existing.wholesalePrice, sellPrice: prev.sellPrice || existing.sellPrice, taxRate: existing.taxRate, })); } };
 
-  const handleEditProduct = (p: Product) => { setNewProduct({ ...p }); setBatchConfig({ packs: '', perPack: '' }); setIsEditing(true); setIsEditorOpen(true); setShowMoreFields(false); };
+  const handleEditProduct = (p: Product) => { 
+      setNewProduct({ ...p }); 
+      setBatchConfig({ packs: '', perPack: '' }); 
+      setIsEditing(true); 
+      window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
+      setIsEditorOpen(true); 
+      setShowMoreFields(false); 
+  };
   
-  const handleCloneProduct = (p: Product) => { setNewProduct({ ...p, id: undefined, stock: 0, expiryDate: '', manufacturingDate: '', sku: p.sku }); setBatchConfig({ packs: '', perPack: '' }); setIsEditing(false); setIsEditorOpen(true); setShowMoreFields(false); };
+  const handleCloneProduct = (p: Product) => { 
+      setNewProduct({ ...p, id: undefined, stock: 0, expiryDate: '', manufacturingDate: '', sku: p.sku }); 
+      setBatchConfig({ packs: '', perPack: '' }); 
+      setIsEditing(false); 
+      window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
+      setIsEditorOpen(true); 
+      setShowMoreFields(false); 
+  };
 
-  const handleOpenAdd = () => { resetForm(); setPendingBulkItems([]); setIsScanningToAdd(true); setShowScanner(true); };
-  const handleManualEntry = () => { setShowScanner(false); setIsScanningToAdd(false); setIsEditorOpen(true); };
+  const handleOpenAdd = () => { 
+      resetForm(); 
+      setPendingBulkItems([]); 
+      setIsScanningToAdd(true); 
+      window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
+      setShowScanner(true); 
+  };
+  
+  const handleManualEntry = () => { 
+      // Manual entry from scanner. We already pushed a state for scanner, so we keep it for the editor
+      setShowScanner(false); 
+      setIsScanningToAdd(false); 
+      setIsEditorOpen(true); 
+  };
 
   const confirmDelete = async () => { 
       if (!itemToDelete) return; 
       if (itemToDelete.type === 'product') await StoreService.deleteProduct(itemToDelete.id);
       else if (itemToDelete.type === 'tag') await StoreService.deleteTag(itemToDelete.id);
       else if (itemToDelete.type === 'bulk_products') setPendingBulkItems(prev => prev.filter((_, idx) => idx !== parseInt(itemToDelete.id)));
-      setItemToDelete(null); loadData();
+      setItemToDelete(null); 
+      loadData();
+      window.history.back();
   };
 
   const handleEditorKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null, action?: () => void) => { 
@@ -333,12 +417,33 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       }
   };
 
-  const handleAnalyzeClick = () => { setShowSourceOptions(true); };
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setInvoiceImage(URL.createObjectURL(file)); await processImageFile(file); };
+  const handleAnalyzeClick = () => { 
+      window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
+      setShowSourceOptions(true); 
+  };
   
-  const handleCloseReview = () => { setViewMode('WAREHOUSE'); if (invoiceImage) { URL.revokeObjectURL(invoiceImage); setInvoiceImage(null); } setParsedProducts([]); };
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { 
+      const file = e.target.files?.[0]; 
+      if (!file) return; 
+      setInvoiceImage(URL.createObjectURL(file)); 
+      // Analysis Modal closes, but Review starts. App state depth remains 1.
+      setShowSourceOptions(false);
+      await processImageFile(file); 
+  };
+  
+  const handleCloseReview = () => { 
+      setViewMode('WAREHOUSE'); 
+      if (invoiceImage) { URL.revokeObjectURL(invoiceImage); setInvoiceImage(null); } 
+      setParsedProducts([]); 
+      window.history.back();
+  };
 
-  const handleImportParsedProducts = async () => { await StoreService.batchAddProducts(parsedProducts); setViewMode('WAREHOUSE'); loadData(); };
+  const handleImportParsedProducts = async () => { 
+      await StoreService.batchAddProducts(parsedProducts); 
+      setViewMode('WAREHOUSE'); 
+      loadData(); 
+      window.history.back();
+  };
   
   const updateParsedProduct = (index: number, field: keyof Product, value: any) => { const updated = [...parsedProducts]; updated[index] = { ...updated[index], [field]: value }; setParsedProducts(updated); };
 
@@ -376,7 +481,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     <h4 className="font-bold text-gray-900 text-2xl leading-tight line-clamp-2">{p.name}</h4>
                     <div className="flex gap-1 shrink-0">
                          <button onClick={() => handleEditProduct(p)} className="p-2 text-gray-500 hover:text-blue-600 bg-gray-50 rounded-lg"><Pencil size={18} /></button>
-                         <button onClick={() => setItemToDelete({ id: p.id, type: 'product', name: p.name })} className="p-2 text-gray-500 hover:text-red-600 bg-gray-50 rounded-lg"><Trash2 size={18} /></button>
+                         <button onClick={() => { setItemToDelete({ id: p.id, type: 'product', name: p.name }); window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, ''); }} className="p-2 text-gray-500 hover:text-red-600 bg-gray-50 rounded-lg"><Trash2 size={18} /></button>
                     </div>
                 </div>
                 <div className="text-xs font-mono font-bold text-gray-400">SKU: {p.sku || 'N/A'}</div>
@@ -409,7 +514,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                             <div className="text-center text-gray-900">{item.stock}</div>
                             <div className="flex justify-end gap-1">
                                 <button onClick={() => handleEditProduct(item)} className="p-1 text-blue-600"><Pencil size={12}/></button>
-                                <button onClick={() => setItemToDelete({ id: item.id, type: 'product', name: `${item.name} (Batch)` })} className="p-1 text-red-600"><Trash2 size={12}/></button>
+                                <button onClick={() => { setItemToDelete({ id: item.id, type: 'product', name: `${item.name} (Batch)` }); window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, ''); }} className="p-1 text-red-600"><Trash2 size={12}/></button>
                             </div>
                         </div>
                     ))}
@@ -430,7 +535,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     return (
         <div className={`animate-in slide-in-from-bottom-4 duration-300 pb-24 ${shakeTrigger ? 'shake-element' : ''}`}>
             <div className="flex items-center gap-4 mb-6">
-                <button onClick={() => setIsEditorOpen(false)} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
+                <button onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
                 <h2 className="text-2xl font-bold text-gray-800">{isEditing ? 'Edit Product' : 'Add New Product'}</h2>
             </div>
 
@@ -491,7 +596,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                                 className={`${inputBaseClass} pr-14`} 
                             />
                             <button 
-                                onClick={() => setShowScanner(true)} 
+                                onClick={() => { window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, ''); setShowScanner(true); }} 
                                 className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                 title="Scan Barcode"
                             >
@@ -507,7 +612,14 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                             ref={editCategoryRef} 
                             onKeyDown={(e) => handleEditorKeyDown(e, editSellRef)} 
                             value={newProduct.tagId || ''} 
-                            onChange={(e) => e.target.value === 'NEW_TAG_TRIGGER' ? setShowTagModal(true) : setNewProduct({...newProduct, tagId: e.target.value})} 
+                            onChange={(e) => { 
+                                if (e.target.value === 'NEW_TAG_TRIGGER') {
+                                    window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, '');
+                                    setShowTagModal(true);
+                                } else {
+                                    setNewProduct({...newProduct, tagId: e.target.value});
+                                }
+                            }} 
                             className={`${inputBaseClass} cursor-pointer`}
                         >
                             <option value="">Select Category</option>
@@ -629,7 +741,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-12 pt-10 border-t border-gray-100">
-                    <Button variant="neutral" onClick={() => setIsEditorOpen(false)} className="py-4 !rounded-xl font-black uppercase tracking-widest text-xs border-2 border-gray-100">Cancel</Button>
+                    <Button variant="neutral" onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="py-4 !rounded-xl font-black uppercase tracking-widest text-xs border-2 border-gray-100">Cancel</Button>
                     <Button variant="neutral" onClick={handleAddToBatch} className="bg-indigo-50 text-indigo-700 py-4 !rounded-xl font-black uppercase tracking-widest text-xs border-2 border-indigo-100 flex items-center justify-center gap-2">
                         <ListPlus size={20}/> Queue
                     </Button>
@@ -655,7 +767,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         value={searchTerm} 
                         onChange={(e) => setSearchTerm(e.target.value)} 
                     />
-                    <button onClick={() => setShowScanner(true)} className="text-gray-400 hover:text-blue-600 transition-colors p-1">
+                    <button onClick={() => { window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, ''); setShowScanner(true); }} className="text-gray-400 hover:text-blue-600 transition-colors p-1">
                         <Scan size={22} />
                     </button>
                </div>
@@ -703,7 +815,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
     <div className="space-y-6 animate-in fade-in max-w-4xl mx-auto px-2">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <h2 className="text-2xl font-bold text-gray-900">Product Categories</h2>
-            <Button onClick={() => { setIsEditingTag(false); setNewTag({ name: '', color: '#3b82f6' }); setShowTagModal(true); }} className="rounded-full px-6 py-3 shadow-md whitespace-nowrap flex items-center bg-blue-600 hover:bg-blue-700 text-white font-bold"><Plus size={20} className="mr-2"/> Create New Tag</Button>
+            <Button onClick={() => { setIsEditingTag(false); setNewTag({ name: '', color: '#3b82f6' }); window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, ''); setShowTagModal(true); }} className="rounded-full px-6 py-3 shadow-md whitespace-nowrap flex items-center bg-blue-600 hover:bg-blue-700 text-white font-bold"><Plus size={20} className="mr-2"/> Create New Tag</Button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {tags.map(t => (
@@ -713,8 +825,8 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         <div><div className="font-bold text-gray-800 text-lg">{t.name}</div><div className="text-xs text-gray-500 font-medium uppercase tracking-widest">{products.filter(p => p.tagId === t.id).length} Products</div></div>
                     </div>
                     <div className="relative z-10 flex items-center gap-1">
-                        <button onClick={(e) => { e.stopPropagation(); setNewTag({ ...t }); setIsEditingTag(true); setShowTagModal(true); }} className="text-gray-400 hover:text-blue-600 p-2 transition-colors bg-white hover:bg-blue-50 rounded-full border border-transparent hover:border-blue-100" title="Edit Category"><Pencil size={18} /></button>
-                        <button onClick={(e) => { e.stopPropagation(); setItemToDelete({ id: t.id, type: 'tag', name: t.name }); }} className="text-gray-400 hover:text-red-600 p-2 transition-colors bg-white hover:bg-red-50 rounded-full border border-transparent hover:border-red-100" title="Delete Category"><Trash2 size={18} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setNewTag({ ...t }); setIsEditingTag(true); window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, ''); setShowTagModal(true); }} className="text-gray-400 hover:text-blue-600 p-2 transition-colors bg-white hover:bg-blue-50 rounded-full border border-transparent hover:border-blue-100" title="Edit Category"><Pencil size={18} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setItemToDelete({ id: t.id, type: 'tag', name: t.name }); window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, ''); }} className="text-gray-400 hover:text-red-600 p-2 transition-colors bg-white hover:bg-red-50 rounded-full border border-transparent hover:border-red-100" title="Delete Category"><Trash2 size={18} /></button>
                     </div>
                 </Card>
             ))}
@@ -859,7 +971,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           )}
       </main>
 
-      <Modal isOpen={showTagModal} onClose={() => { setShowTagModal(false); setIsSavingTag(false); setIsEditingTag(false); }} title={isEditingTag ? "Edit Category" : "Create New Tag"}>
+      <Modal isOpen={showTagModal} onClose={() => { setShowTagModal(false); setIsSavingTag(false); setIsEditingTag(false); window.history.back(); }} title={isEditingTag ? "Edit Category" : "Create New Tag"}>
           <div className="space-y-4">
               <div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Category Name</label><Input placeholder="e.g. Dairy" value={newTag.name || ''} onChange={e => setNewTag({...newTag, name: e.target.value})} autoFocus/></div>
               <div><label className="text-xs font-bold text-gray-500 uppercase block mb-2">Color Code</label><div className="grid grid-cols-6 sm:grid-cols-8 gap-3 justify-items-center p-3 bg-gray-50 rounded-xl border border-gray-100">{TAG_COLORS.map(color => (<button key={color} onClick={() => setNewTag({...newTag, color})} className={`w-8 h-8 rounded-full shadow-sm border border-black/5`} style={{ backgroundColor: color, transform: newTag.color === color ? 'scale(1.2)' : 'scale(1)', boxShadow: newTag.color === color ? '0 0 0 2px white, 0 0 0 4px ' + color : '' }}>{newTag.color === color && <Check size={14} className="text-white mx-auto" strokeWidth={4} />}</button>))}</div></div>
@@ -889,23 +1001,23 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           </div>
       </Modal>
 
-      <Modal isOpen={showScanner} onClose={() => setShowScanner(false)} title="Scan Barcode"><div className="relative w-full bg-black rounded-lg overflow-hidden min-h-[300px]"><div id="reader" className="w-full"></div></div>{isScanningToAdd && <div className="mt-4 pt-4 border-t border-gray-100 flex justify-center"><Button variant="neutral" onClick={handleManualEntry} className="w-full">Can't scan? Enter Manually</Button></div>}</Modal>
+      <Modal isOpen={showScanner} onClose={() => { setShowScanner(false); window.history.back(); }} title="Scan Barcode"><div className="relative w-full bg-black rounded-lg overflow-hidden min-h-[300px]"><div id="reader" className="w-full"></div></div>{isScanningToAdd && <div className="mt-4 pt-4 border-t border-gray-100 flex justify-center"><Button variant="neutral" onClick={handleManualEntry} className="w-full">Can't scan? Enter Manually</Button></div>}</Modal>
       
-      <Modal isOpen={!!itemToDelete} onClose={() => setItemToDelete(null)} title="Delete Confirmation">
+      <Modal isOpen={!!itemToDelete} onClose={() => { setItemToDelete(null); window.history.back(); }} title="Delete Confirmation">
           <div className="text-center py-4">
               <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
               <h3 className="text-lg font-bold text-gray-900 mb-1">Delete {itemToDelete?.name}?</h3>
               <p className="text-sm text-gray-500 mb-6">This action cannot be undone.</p>
               <div className="flex gap-3">
-                  <Button variant="neutral" className="flex-1" onClick={() => setItemToDelete(null)}>Cancel</Button>
+                  <Button variant="neutral" className="flex-1" onClick={() => { setItemToDelete(null); window.history.back(); }}>Cancel</Button>
                   <Button variant="danger" className="flex-1" onClick={confirmDelete}>Delete</Button>
               </div>
           </div>
       </Modal>
 
-      <Modal isOpen={showSourceOptions} onClose={() => setShowSourceOptions(false)} title="Add Stock via AI">
+      <Modal isOpen={showSourceOptions} onClose={() => { setShowSourceOptions(false); window.history.back(); }} title="Add Stock via AI">
           <div className="grid grid-cols-2 gap-4">
-              <button onClick={() => {setShowCamera(true); setShowSourceOptions(false);}} className="flex flex-col items-center justify-center p-6 border-2 border-gray-100 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all gap-3 text-gray-600"><Camera size={32}/><span className="font-bold text-sm">Camera</span></button>
+              <button onClick={() => { window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, ''); setShowCamera(true); setShowSourceOptions(false);}} className="flex flex-col items-center justify-center p-6 border-2 border-gray-100 rounded-2xl hover:border-blue-500 hover:bg-blue-50 transition-all gap-3 text-gray-600"><Camera size={32}/><span className="font-bold text-sm">Camera</span></button>
               <button onClick={() => {fileInputRef.current?.click(); setShowSourceOptions(false);}} className="flex flex-col items-center justify-center p-6 border-2 border-gray-100 rounded-2xl hover:border-purple-500 hover:bg-purple-50 transition-all gap-3 text-gray-600"><FileType size={32}/><span className="font-bold text-sm">Upload</span></button>
           </div>
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
@@ -915,7 +1027,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
           <div className="fixed inset-0 z-[100] bg-black flex flex-col">
               <video ref={videoRef} autoPlay playsInline className="flex-1 object-cover"></video>
               <div className="h-32 flex items-center justify-center gap-12 bg-black pb-8">
-                  <button onClick={() => setShowCamera(false)} className="p-4 rounded-full bg-white/10 text-white"><X/></button>
+                  <button onClick={() => { setShowCamera(false); window.history.back(); }} className="p-4 rounded-full bg-white/10 text-white"><X/></button>
                   <button onClick={capturePhoto} className="w-20 h-20 bg-white rounded-full border-4 border-gray-300 shadow-xl"></button>
                   <div className="w-12"></div>
               </div>
