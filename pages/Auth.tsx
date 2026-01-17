@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Input } from '../components/UI';
@@ -8,9 +7,6 @@ import { Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2, Exter
 interface AuthProps {
   onLogin: (user: User) => void;
 }
-
-// Use 'any' cast for the custom element to bypass IntrinsicElements check robustly
-const AmpAd = 'amp-ad' as any;
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
@@ -128,8 +124,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-[#f8fafc]">
-      <div className="flex-1 flex items-center justify-center p-6">
+    <div className="min-h-screen flex flex-col justify-center bg-[#f8fafc]">
+      <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-[420px] animate-in fade-in zoom-in duration-500">
           
           <div className="text-center mb-10">
@@ -236,19 +232,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             Noor POS System v1.6
           </div>
         </div>
-      </div>
-
-      {/* Ad Unit (AMP) */}
-      <div className="w-full flex justify-center mt-4 pb-2">
-          <AmpAd width="100vw" height="320"
-                type="adsense"
-                data-ad-client="ca-pub-5865716270182311"
-                data-ad-slot="4491985099"
-                data-auto-format="rspv"
-                data-full-width="">
-            {/* Using spread with any cast to bypass detailed prop check for 'overflow' */}
-            <div {...{ overflow: "" } as any}></div>
-          </AmpAd>
       </div>
     </div>
   );
