@@ -155,8 +155,13 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
   const handleSave = async () => {
     if (!validateForm()) return;
-    let phoneToSave = formData.phone || '';
-    if (phoneToSave && !phoneToSave.startsWith('+')) phoneToSave = `+91 ${phoneToSave}`;
+    
+    // Clean and prefix phone number
+    let rawPhone = (formData.phone || '').trim();
+    let phoneToSave = rawPhone;
+    if (rawPhone && !rawPhone.startsWith('+')) {
+        phoneToSave = `+91 ${rawPhone}`;
+    }
     
     // Ensure critical arrays are initialized to prevent rendering crashes
     const payload = {
@@ -173,11 +178,10 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
     setSearchTerm('');
     setShowEditModal(false);
     
-    // Use window.history.back() to sync the app state depth, 
-    // but manually refresh the data and selection to ensure UI stability
-    window.history.back();
+    // Refresh data and handle navigation
     await loadData();
     setSelectedCustomer(savedCustomer);
+    window.history.back();
   };
 
   const handleDeleteClick = (customer: Customer) => {

@@ -272,10 +272,11 @@ export const GoogleDriveUtils = {
         body: JSON.stringify({ ranges })
     });
 
+    // CRITICAL FIX: Use valueInputOption: "RAW" to prevent +91 phone numbers from becoming formula errors
     const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: bodyData })
+        body: JSON.stringify({ valueInputOption: "RAW", data: bodyData })
     });
 
     if (!res.ok) {
