@@ -1,0 +1,10 @@
+{
+  "appId": "com.noorpos.app",
+  "appName": "Noor POS",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}
