@@ -15,11 +15,21 @@ const Auth = React.lazy(() => import('./pages/Auth').then(m => ({ default: m.Aut
 const PublicInvoice = React.lazy(() => import('./pages/PublicInvoice').then(m => ({ default: m.PublicInvoice })));
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
+  // Initialize tab from localStorage or default to Dashboard
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    const savedTab = localStorage.getItem('noor_active_tab');
+    return (savedTab as Tab) || Tab.DASHBOARD;
+  });
+  
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [pendingAction, setPendingAction] = useState<string | undefined>(undefined);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isPublicMode, setIsPublicMode] = useState(false);
+
+  useEffect(() => {
+    // Persist active tab to localStorage whenever it changes
+    localStorage.setItem('noor_active_tab', activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     // Check for public invoice route
@@ -47,7 +57,11 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = (user: User) => setCurrentUser(user);
-  const handleLogout = () => setCurrentUser(null);
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('noor_active_tab'); // Clear tab on logout
+  };
+
   const handleNavigate = (tab: Tab, action?: string) => {
     setActiveTab(tab);
     if (action) setPendingAction(action);
