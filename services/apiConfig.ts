@@ -2,23 +2,26 @@
 /**
  * API CONFIGURATION
  * 
- * When running in the Android APK, relative paths (like /api/storage) don't work
- * because the app runs on a local bridge (capacitor:// or http://localhost).
+ * CRITICAL FOR APK:
+ * When running in the Android APK, relative paths (like /api/storage) do NOT work.
+ * The APK needs a full URL to communicate with your Vercel backend.
  * 
- * REPLACE the URL below with your actual Vercel deployment URL.
+ * ACTION REQUIRED:
+ * Replace 'https://noorpos.vercel.app' with your actual Vercel Production URL.
+ * You can find this URL in your Vercel Project Dashboard under "Deployments".
  */
-const PRODUCTION_URL = 'https://noorpos.vercel.app'; 
+const PRODUCTION_URL = 'https://www.noorpos.in'; 
 
 export const getApiUrl = (path: string) => {
-  // Check if we are running in a Capacitor (Android/iOS) environment
+  // Check if we are running inside the Android/iOS app environment
   const isCapacitor = window.location.protocol === 'capacitor:' || 
-                      (window.location.hostname === 'localhost' && !window.location.port);
+                      window.location.protocol === 'http:' && window.location.hostname === 'localhost' && !window.location.port;
   
-  // In mobile or isolated local preview, use absolute production URL
+  // If we are in the APK, we MUST use the absolute URL to reach your server
   if (isCapacitor) {
     return `${PRODUCTION_URL}${path}`;
   }
   
-  // In the standard browser deployment on Vercel, use relative paths
+  // If we are just browsing the website normally, use relative paths
   return path;
 };
