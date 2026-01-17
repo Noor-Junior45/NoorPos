@@ -12,7 +12,7 @@ const PRODUCTION_URL = 'https://noorpos.vercel.app';
 export const getApiUrl = (path: string) => {
   // Check if we are running in a Capacitor (Android/iOS) environment
   const isCapacitor = window.location.protocol === 'capacitor:' || 
-                      window.location.hostname === 'localhost' && !window.location.port;
+                      (window.location.hostname === 'localhost' && !window.location.port);
   
   // In mobile or isolated local preview, use absolute production URL
   if (isCapacitor) {
