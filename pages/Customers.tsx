@@ -32,12 +32,9 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
 
-  // DO add comment above each fix.
-  // Fixed error in Customers.tsx: Moved useEffect after state declarations to prevent "Block-scoped variable used before its declaration" error.
   // --- Navigation Gesture Hook ---
   useEffect(() => {
       const handleNavigationPop = (e: any) => {
-          // Priority-based closing of sub-views
           if (showPaymentModal) {
               setShowPaymentModal(false);
               return;
@@ -66,7 +63,18 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
   const handleOpenAddModal = () => {
       window.history.pushState({ tab: Tab.CUSTOMERS, depth: 1 }, '');
-      setFormData({});
+      setFormData({
+          name: '',
+          phone: '',
+          email: '',
+          location: '',
+          totalSpent: 0,
+          totalDues: 0,
+          visitCount: 0,
+          history: [],
+          payments: [],
+          isWholesaler: false
+      });
       setShowEditModal(true);
   };
 
@@ -109,7 +117,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
   };
 
-  const onTouchEnd = (action: () => void, direction: 'right' | 'down') => {
+  const onTouchEndAction = (action: () => void, direction: 'right' | 'down') => {
       if (!touchStart || !touchEnd) return;
       const xDiff = touchStart.x - touchEnd.x;
       const yDiff = touchStart.y - touchEnd.y;
@@ -149,9 +157,24 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
     if (!validateForm()) return;
     let phoneToSave = formData.phone || '';
     if (phoneToSave && !phoneToSave.startsWith('+')) phoneToSave = `+91 ${phoneToSave}`;
-    const savedCustomer = await StoreService.upsertCustomer({ ...formData, phone: phoneToSave });
+    
+    // Ensure critical arrays are initialized to prevent rendering crashes
+    const payload = {
+        ...formData,
+        phone: phoneToSave,
+        history: formData.history || [],
+        payments: formData.payments || [],
+        totalSpent: formData.totalSpent || 0,
+        totalDues: formData.totalDues || 0,
+        visitCount: formData.visitCount || 0
+    };
+
+    const savedCustomer = await StoreService.upsertCustomer(payload);
     setSearchTerm('');
     setShowEditModal(false);
+    
+    // Use window.history.back() to sync the app state depth, 
+    // but manually refresh the data and selection to ensure UI stability
     window.history.back();
     await loadData();
     setSelectedCustomer(savedCustomer);
@@ -277,8 +300,13 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
   const renderCustomerDetails = (customer: Customer, isMobile: boolean) => {
       const historyItems: Array<{ type: 'sale' | 'payment', date: string, data: Sale | Payment }> = [];
-      customer.history.forEach(saleId => { const sale = sales.find(s => s.id === saleId); if (sale) historyItems.push({ type: 'sale', date: sale.timestamp, data: sale }); });
-      if (customer.payments) { customer.payments.forEach(payment => { historyItems.push({ type: 'payment', date: payment.date, data: payment }); }); }
+      // Fixed potential crash: Add safety check for history and payments arrays
+      const customerHistory = customer.history || [];
+      const customerPayments = customer.payments || [];
+
+      customerHistory.forEach(saleId => { const sale = sales.find(s => s.id === saleId); if (sale) historyItems.push({ type: 'sale', date: sale.timestamp, data: sale }); });
+      customerPayments.forEach(payment => { historyItems.push({ type: 'payment', date: payment.date, data: payment }); });
+      
       historyItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
       return (
@@ -366,10 +394,10 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       <div className="flex-1 min-h-0 relative">{renderContacts()}</div>
       <button onClick={handleOpenAddModal} className="fixed bottom-24 right-6 w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-xl flex items-center justify-center z-40 transition-transform active:scale-95 hover:bg-blue-700 hover:scale-105" style={{ boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.4)' }}><Plus size={28} /></button>
       {selectedCustomer && (
-          <div className="md:hidden fixed inset-0 z-50 bg-white animate-in slide-in-from-bottom-10 duration-200" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={() => onTouchEnd(() => { setSelectedCustomer(null); window.history.back(); }, 'right')}>{renderCustomerDetails(selectedCustomer, true)}</div>
+          <div className="md:hidden fixed inset-0 z-50 bg-white animate-in slide-in-from-bottom-10 duration-200" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={() => onTouchEndAction(() => { setSelectedCustomer(null); window.history.back(); }, 'right')}>{renderCustomerDetails(selectedCustomer, true)}</div>
       )}
       <Modal isOpen={showEditModal} onClose={() => { setShowEditModal(false); window.history.back(); }} title={formData.id ? 'Edit Contact' : 'Create Contact'}>
-         <div className={`space-y-4 ${shakeTrigger ? 'shake-element' : ''}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={() => onTouchEnd(() => { setShowEditModal(false); window.history.back(); }, 'down')}>
+         <div className={`space-y-4 ${shakeTrigger ? 'shake-element' : ''}`} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={() => onTouchEndAction(() => { setShowEditModal(false); window.history.back(); }, 'down')}>
              <div className="flex justify-center mb-4"><div className="w-20 h-20 bg-gray-100 rounded-3xl flex items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 relative"><User size={32}/>{formData.isWholesaler && <Star className="absolute -bottom-1 -right-1 text-amber-500 fill-amber-500 bg-white rounded-full p-1 shadow-md border border-gray-100" size={20}/>}</div></div>
              <div><label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${validationErrors.has('name') ? 'text-red-500' : 'text-gray-400'}`}>Full Name *</label><div className={`flex items-center border-b-2 transition-colors bg-gray-50 rounded-t-xl px-3 ${validationErrors.has('name') ? 'border-red-500 bg-red-50' : 'border-gray-100 focus-within:border-blue-500'}`}><User size={18} className={validationErrors.has('name') ? 'text-red-400' : 'text-gray-400 mr-2'}/><input ref={nameRef} onKeyDown={(e) => handleKeyDown(e, phoneRef)} className="w-full py-3 bg-transparent outline-none text-gray-950 font-bold placeholder-gray-300" placeholder="e.g. John Doe" value={formData.name || ''} onChange={e => { setFormData({...formData, name: e.target.value}); if (validationErrors.has('name')) { setValidationErrors(prev => { const n = new Set(prev); n.delete('name'); return n; }); } }} /></div></div>
              <div><label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${validationErrors.has('phone') ? 'text-red-500' : 'text-gray-400'}`}>Phone Number {validationErrors.has('phone') && '(Requires Phone or Email)'}</label><div className={`flex items-center border-b-2 transition-colors bg-gray-50 rounded-t-xl px-3 ${validationErrors.has('phone') ? 'border-red-500 bg-red-50' : 'border-gray-100 focus-within:border-blue-500'}`}><Phone size={18} className={validationErrors.has('phone') ? 'text-red-400' : 'text-gray-400 mr-2'}/><input ref={phoneRef} onKeyDown={(e) => handleKeyDown(e, emailRef)} className="w-full py-3 bg-transparent outline-none text-gray-950 font-bold placeholder-gray-300" placeholder="Mobile Number" value={formData.phone || ''} onChange={e => { const val = e.target.value.replace(/\D/g, ''); setFormData({...formData, phone: val}); if (validationErrors.has('phone') || validationErrors.has('email')) { setValidationErrors(prev => { const n = new Set(prev); n.delete('phone'); n.delete('email'); return n; }); } }} maxLength={10} /></div></div>
