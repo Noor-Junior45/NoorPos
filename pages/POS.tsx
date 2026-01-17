@@ -345,6 +345,30 @@ export const POS: React.FC = () => {
       }
   };
 
+  // --- NEW: Smart Customer Entry Trigger ---
+  const handleTriggerNewCustomer = () => {
+    const trimmed = customerSearch.trim();
+    if (!trimmed) return;
+
+    // Check if input contains any alphabets
+    const hasAlphabets = /[a-zA-Z]/.test(trimmed);
+    
+    setIsNewCustomerMode(true);
+    setShowCustomerDropdown(false);
+
+    if (hasAlphabets) {
+        setNewCustName(trimmed);
+        setNewCustPhone('');
+        // Automatically focus phone since name is filled
+        setTimeout(() => custPhoneRef.current?.focus(), 150);
+    } else {
+        setNewCustPhone(trimmed);
+        setNewCustName('');
+        // Automatically focus name since phone is filled
+        setTimeout(() => custNameRef.current?.focus(), 150);
+    }
+  };
+
   const handleCreateCustomer = async () => {
       if (!newCustName || !newCustPhone) return;
       
@@ -599,8 +623,11 @@ export const POS: React.FC = () => {
         if (hasPhone) {
             const storeName = settings.storeName || "Noor Store";
             const itemsList = sale.items.map(i => `• ${i.name} x${i.quantity}`).join('%0A');
-            const link = `${window.location.origin}/?invoiceId=${sale.id}`; 
-            const message = `*${storeName}*%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ₹${sale.total.toFixed(0)}*%0A*Invoice:* ${link}`;
+            
+            // UPDATED: Use clean public link format
+            const link = `${window.location.origin}/invoice/${sale.id}.html`; 
+            
+            const message = `*${storeName}*%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ₹${sale.total.toFixed(0)}*%0A*Invoice Link:* ${link}%0A%0A_Note: Link valid for 3 days._`;
             
             const phone = activeCustomer.phone.replace(/[^0-9]/g, '');
             const url = `https://wa.me/${phone}?text=${message}`;
@@ -666,9 +693,6 @@ export const POS: React.FC = () => {
       }
   };
 
-  // ... (Rest of POS code remains identical, omitted for brevity as structure is same) ...
-  // ... History View and Render logic is structurally identical, just needs to close the file ...
-
   if (viewMode === 'HISTORY') {
       return (
           <div className="bg-white min-h-screen animate-in slide-in-from-right-10 flex flex-col">
@@ -726,10 +750,6 @@ export const POS: React.FC = () => {
                   </div>
               </div>
 
-              {/* ... (History list rendering logic same as existing file) ... */}
-              {/* For simplicity, assume history rendering is preserved from previous context */}
-              {/* I am returning the full modified component structure focusing on the state persistence changes */}
-              
               {isSelectionMode && (
                   <div className="bg-gray-50 px-4 py-3 flex items-center gap-3 border-b border-gray-100 sticky top-[73px] z-10">
                        <button onClick={toggleSelectAll} className="flex items-center gap-2 text-sm font-bold text-gray-600">
@@ -861,8 +881,6 @@ export const POS: React.FC = () => {
                   })}
               </div>
               
-              {/* ... Modals (Dues, Delete, Details, Edit) ... */}
-              {/* Keeping modals from original code to maintain functionality, but abbreviated here for focus */}
               <Modal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} title="Confirm Deletion">
                   <div className="text-center py-4">
                       <h3 className="text-lg font-bold text-gray-900 mb-2">Delete {selectedSales.size} Records?</h3>
@@ -873,11 +891,9 @@ export const POS: React.FC = () => {
                   </div>
               </Modal>
               
-              {/* ... Other modals (Dues Error, Details, Edit) ... */}
               <Modal isOpen={!!saleDetail} onClose={() => setSaleDetail(null)} title="Sale Details" className="!max-w-lg">
                   {saleDetail && (
                       <div className="animate-in fade-in zoom-in-95">
-                          {/* Detail Content */}
                           <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
                               <div>
                                   <div className="text-xs text-gray-400 font-bold uppercase mb-1">Customer</div>
@@ -979,7 +995,6 @@ export const POS: React.FC = () => {
         .shake-element { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
       `}</style>
 
-      {/* ... (Header and Customer Selection UI logic remains same, just ensuring state is preserved) ... */}
       <div className="w-full max-w-5xl mx-auto bg-white md:rounded-xl md:shadow-xl md:border border-gray-100 min-h-[85vh] flex flex-col">
           
           <div className="p-4 md:p-8 border-b border-gray-100 flex flex-row justify-between items-center gap-4 relative z-30">
@@ -1019,12 +1034,15 @@ export const POS: React.FC = () => {
                                       }}
                                       onFocus={() => setShowCustomerDropdown(true)}
                                       onKeyDown={(e) => {
-                                          if (e.key === 'Enter' && filteredCustomers.length > 0) {
-                                              handleCustomerSelect(filteredCustomers[0]);
+                                          if (e.key === 'Enter') {
+                                              if (filteredCustomers.length > 0) {
+                                                  handleCustomerSelect(filteredCustomers[0]);
+                                              } else {
+                                                  handleTriggerNewCustomer();
+                                              }
                                           }
                                       }}
                                   />
-                                  {/* ... Dropdown list logic same ... */}
                                   {showCustomerDropdown && customerSearch && (
                                       <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden max-h-60 overflow-y-auto z-50">
                                           {filteredCustomers.length > 0 ? (
@@ -1042,7 +1060,7 @@ export const POS: React.FC = () => {
                                               ))
                                           ) : (
                                               <div className="p-3 text-center">
-                                                  <button onClick={() => { setIsNewCustomerMode(true); setShowCustomerDropdown(false); setNewCustPhone(customerSearch); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded-md transition-colors">
+                                                  <button onClick={handleTriggerNewCustomer} className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded-md transition-colors">
                                                       + Create "{customerSearch}"
                                                   </button>
                                               </div>
@@ -1052,7 +1070,6 @@ export const POS: React.FC = () => {
                               </div>
                           )}
                           
-                          {/* New Customer Form */}
                           {isNewCustomerMode && (
                               <div className="mt-4 bg-white rounded-xl shadow-[0_4px_20px_-2px_rgba(59,130,246,0.1)] border border-blue-100 p-5 animate-in slide-in-from-top-2">
                                   <div className="flex justify-between items-center mb-4 pb-2 border-b border-gray-50">
@@ -1088,7 +1105,7 @@ export const POS: React.FC = () => {
                                                       const val = e.target.value.replace(/[^\d+ ]/g, '');
                                                       setNewCustPhone(val);
                                                   }}
-                                                  onKeyDown={(e) => handleKeyDown(e, custEmailRef)}
+                                                  onKeyDown={(e) => handleKeyDown(e, null, handleCreateCustomer)}
                                               />
                                           </div>
                                       </div>
@@ -1104,7 +1121,6 @@ export const POS: React.FC = () => {
                   ) : (
                       <div className="relative h-full flex flex-col justify-center">
                           <button onClick={() => { setSelectedCustomer(null); setCart(prev => prev.map(i => {
-                              // Reset prices when deselected if they were wholesale
                               const orig = products.find(p => p.id === i.id);
                               if (orig && i.customPrice === orig.wholesalePrice) return { ...i, customPrice: orig.sellPrice, discount: 0 };
                               return i; 
@@ -1155,7 +1171,7 @@ export const POS: React.FC = () => {
 
                   <div className="divide-y divide-gray-100">
                       {cart.map((item, index) => {
-                         const lineTotal = ((item.customPrice ?? item.sellPrice) * item.quantity); // Discount already applied to customPrice
+                         const lineTotal = ((item.customPrice ?? item.sellPrice) * item.quantity);
                          return (
                              <div key={item.id} className="grid grid-cols-[40px_2fr_80px_60px_60px_80px_40px] gap-2 items-center px-4 md:px-8 py-3 hover:bg-gray-50/50 transition-colors group">
                                  <div className="text-center text-gray-400 font-medium text-sm">{index + 1}</div>
@@ -1305,8 +1321,6 @@ export const POS: React.FC = () => {
           </div>
       </div>
 
-      {/* ... Existing Modals (Add Product, Checkout, Scanner, Edit Transaction) ... */}
-      {/* Same logic, just ensuring state persistence */}
       <Modal isOpen={showProductLookup && isCreatingProduct} onClose={() => { setShowProductLookup(false); setIsCreatingProduct(false); }} title="Add New Product" className="!max-w-2xl !bg-[#fdfdfc] !shadow-2xl border-0">
             <div className="animate-in fade-in slide-in-from-right-4">
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -1456,7 +1470,6 @@ export const POS: React.FC = () => {
          </div>
       </Modal>
 
-      {/* Edit Transaction Modal also reused... (same logic) */}
       <Modal isOpen={isEditingSale} onClose={() => setIsEditingSale(false)} title="Edit Transaction" className="!max-w-3xl !p-0 overflow-hidden border-0 shadow-2xl bg-white">
           {editingSaleData && (
               <div className="animate-in fade-in flex flex-col h-full">

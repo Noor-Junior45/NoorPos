@@ -1,7 +1,7 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export default async function handler(req, res) {
-  // Handle CORS for local development if needed, though Vercel rewrites usually handle this
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
@@ -20,27 +20,44 @@ export default async function handler(req, res) {
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Calculate stats for the prompt
-    const lowStockItems = products.filter(p => p.stock < p.lowStockThreshold);
+    // Calculate stats for the AI prompt
+    const lowStockItems = products.filter(p => p.stock > 0 && p.stock <= (p.lowStockThreshold || 10));
+    const outOfStockCount = products.filter(p => p.stock === 0).length;
     const totalStockValue = products.reduce((acc, p) => acc + (p.stock * p.sellPrice), 0);
-    
+
+    // Calculate expiring items (within 7 days)
+    const today = new Date();
+    const weekFromNow = new Date();
+    weekFromNow.setDate(today.getDate() + 7);
+
+    const expiringItems = products.filter(p => {
+      if (!p.expiryDate) return false;
+      const exp = new Date(p.expiryDate);
+      return exp >= today && exp <= weekFromNow;
+    });
+
     const prompt = `
-      Act as an expert Warehouse Manager AI. Analyze the following store data and provide 3 concise, actionable strategic insights.
-      
+      Act as a high-level Retail Business Consultant & AI Analyst for "Noor POS".
+      Analyze the following store data and provide 3 concise, highly strategic, and actionable insights.
+
       **Data Snapshot:**
-      - Total Unique Products: ${products.length}
-      - Total Inventory Value: ${totalStockValue.toFixed(2)}
-      - Low Stock Items (${lowStockItems.length}): ${lowStockItems.map(p => `${p.name} (only ${p.stock} left)`).join(', ') || 'None'}
-      - Recent Sales Count: ${sales.length}
+      - Total Inventory Value: ₹${totalStockValue.toLocaleString()}
+      - Out of Stock Items: ${outOfStockCount}
+      - Critically Low Stock Items (${lowStockItems.length}): ${lowStockItems.slice(0, 5).map(p => `${p.name} (${p.stock} left)`).join(', ') || 'None'}
+      - Items Expiring within 7 Days (${expiringItems.length}): ${expiringItems.map(p => `${p.name} (Exp: ${p.expiryDate})`).join(', ') || 'None'}
+      - Recent Total Sales Transactions: ${sales.length}
 
       **Your Task:**
-      Generate 3 distinct insights. Each insight should have a clear heading with an emoji.
-      Focus on identifying potential risks (like stockouts), opportunities (like fast-moving items), and clear recommendations.
-      
+      Provide 3 distinct insights in a professional yet encouraging tone.
+      1. One insight MUST focus on Stock/Inventory management (Low stock or dead stock).
+      2. One insight MUST focus on Sales/Revenue trends.
+      3. One insight MUST focus on Expiry management or Capital efficiency.
+
+      Format the output with bold headings and relevant emojis. Keep it under 150 words total.
       Example Format:
-      "**📈 Sales Trend:** Your sales volume is steady. Consider a promotion on [Product] to boost numbers.
-      **📦 Stock Alert:** You are critically low on [Product]. Reorder immediately to avoid missing sales.
-      **💰 High-Value Stock:** A large portion of your capital is tied up in [Product]. Ensure it has good visibility."
+      "**📉 Sales Strategy:** Your revenue is peaking on [Day]. Consider [Action].
+      **⚠️ Inventory Risk:** You are missing sales due to [Product] being out of stock.
+      **⏳ Expiry Alert:** [Product] expires soon. Launch a 20% discount 'Flash Sale' to recover costs."
     `;
 
     const response = await ai.models.generateContent({

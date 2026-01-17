@@ -57,6 +57,7 @@ export interface Payment {
   date: string;
   method: string;
   note?: string;
+  receiptImage?: string; // New: Proof of payment
 }
 
 export interface Customer {

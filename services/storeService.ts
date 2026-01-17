@@ -14,7 +14,6 @@ interface StoreData {
 
 // Initial Data for fresh starts
 const initialTags: Tag[] = []; 
-
 const initialProducts: Product[] = []; 
 const initialCustomers: Customer[] = [];
 const initialUsers: User[] = [];
@@ -33,7 +32,7 @@ const defaultSettings: StoreSettings = {
   currencySymbol: '₹',
   recycleBinRetentionDays: 30,
   directPrintEnabled: false,
-  scannerPreference: 'both', // Default to both
+  scannerPreference: 'both', 
   nasUrl: 'http://localhost:3000/api/storage',
   syncToNas: false
 };
@@ -59,8 +58,9 @@ let cache: StoreData | null = null;
 let loadPromise: Promise<StoreData> | null = null;
 let saveTimeout: any = null;
 let lastBackupTime: string | null = localStorage.getItem('noor_last_backup');
-let isCloudSyncHealthy = true; // Safety flag
-// Client ID for refreshing tokens
+let isCloudSyncHealthy = true; 
+let isServerAvailable = true; // NEW: Track local/NAS server health
+
 const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 
 const generateId = () => {
@@ -96,23 +96,14 @@ const StoreService = {
       }
   },
 
-  // NEW: Manual Cloud Sync
   async forceSync(): Promise<boolean> {
       const session = GoogleDriveUtils.getSession();
       if (!session) return false;
-
-      // Reset cache to force reload
       cache = null;
       loadPromise = null;
-      
       try {
-          // This will trigger a fresh fetch from Google Drive
           await this.loadData();
-          
-          // Check if the load resulted in a healthy cloud state
-          if (!isCloudSyncHealthy) {
-              throw new Error("Cloud sync failed. Check internet connection.");
-          }
+          if (!isCloudSyncHealthy) throw new Error("Cloud sync failed.");
           return true;
       } catch (e) {
           console.error("Force sync failed", e);
@@ -120,11 +111,9 @@ const StoreService = {
       }
   },
 
-  // NEW: Cloud Backup Features
   async createCloudBackup(): Promise<void> {
       const session = GoogleDriveUtils.getSession();
       if (!session) throw new Error("Not logged in");
-      
       const data = await this.loadData();
       await GoogleDriveUtils.createCloudBackup(session.accessToken, data);
   },
@@ -132,7 +121,6 @@ const StoreService = {
   async getCloudBackups(): Promise<DriveFile[]> {
       const session = GoogleDriveUtils.getSession();
       if (!session) return [];
-      
       try {
           return await GoogleDriveUtils.listCloudBackups(session.accessToken);
       } catch (e) {
@@ -144,15 +132,11 @@ const StoreService = {
   async restoreCloudBackup(fileId: string): Promise<void> {
       const session = GoogleDriveUtils.getSession();
       if (!session) throw new Error("Not logged in");
-
       const data = await GoogleDriveUtils.downloadBackupFile(session.accessToken, fileId);
       if (!data || !data.products) throw new Error("Invalid backup file");
-
-      // Update cache and save
       await this.importData(data);
   },
 
-  // --- POS Session Management ---
   savePOSDraft(draft: any) {
       try {
           localStorage.setItem(LS_POS_DRAFT, JSON.stringify(draft));
@@ -174,7 +158,6 @@ const StoreService = {
       localStorage.removeItem(LS_POS_DRAFT);
   },
 
-  // Core: Load data
   async loadData(): Promise<StoreData> {
     if (cache) return cache;
     if (loadPromise) return loadPromise;
@@ -188,72 +171,61 @@ const StoreService = {
 
         // 1. Try Google Sheet
         if (session) {
-            console.log("Loading from Google Sheet...");
             try {
                 remoteData = await GoogleDriveUtils.loadFromSheet(session.accessToken, session.spreadsheetId);
                 isCloudSyncHealthy = true;
             } catch (err: any) {
-                console.error("Cloud load CRITICAL FAILURE:", err);
-                
-                // Handle Token Expiry on LOAD logic
                 if (err.message && (err.message.includes('401') || err.message.includes('Auth'))) {
-                    console.log("Token expired during load. Attempting refresh...");
                     try {
                         const newToken = await GoogleDriveUtils.refreshSession(CLIENT_ID);
                         remoteData = await GoogleDriveUtils.loadFromSheet(newToken, session.spreadsheetId);
                         isCloudSyncHealthy = true;
                     } catch (retryErr) {
-                        console.error("Retry load failed:", retryErr);
                         isCloudSyncHealthy = false;
                     }
                 } else {
                     isCloudSyncHealthy = false;
                 }
-                
-                if (!remoteData) {
-                    const local = localStorage.getItem(LS_BACKUP_KEY);
-                    if (local) {
-                        console.log("Falling back to offline cache due to cloud error.");
-                        resolve(JSON.parse(local));
-                        return;
-                    }
-                }
             }
         } 
         
-        // 2. Try NAS
-        if (!remoteData && syncToNas && nasUrl) {
-            console.log(`Loading from NAS: ${nasUrl}...`);
+        // 2. Try NAS (with safety)
+        if (!remoteData && syncToNas && nasUrl && isServerAvailable) {
             try {
-                const res = await fetch(nasUrl);
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                const res = await fetch(nasUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if (res.ok) {
                     const json = await res.json();
                     if (json) remoteData = json;
                 }
             } catch (err) {
-                 console.warn("NAS load failed:", err);
+                 isServerAvailable = false;
+                 console.log("NAS unreachable, falling back to local.");
             }
         }
 
-        // 3. Fallback Local Server / LocalStorage
-        if (!remoteData) {
-            if (!syncToNas && !session) {
-                try {
-                    const res = await fetch('/api/storage');
-                    if (res.ok) {
-                        const json = await res.json();
-                        if (json) remoteData = json;
-                    }
-                } catch (err) {
-                    console.log("Local server unreachable.");
+        // 3. Fallback Local Server
+        if (!remoteData && !syncToNas && !session && isServerAvailable) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000);
+                const res = await fetch('/api/storage', { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (res.ok) {
+                    const json = await res.json();
+                    if (json) remoteData = json;
                 }
+            } catch (err) {
+                isServerAvailable = false;
+                console.log("Local API unreachable, using LocalStorage.");
             }
         }
 
         if (remoteData) {
             resolve(this._processRemoteData(remoteData));
         } else {
-            console.log("Using local browser storage.");
             resolve(this._fallbackToLocal());
         }
     });
@@ -270,15 +242,12 @@ const StoreService = {
       const retentionDays = data.settings.recycleBinRetentionDays || 30;
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-
       const initialCount = data.deletedItems.length;
       data.deletedItems = data.deletedItems.filter(item => {
           const deletedAt = new Date(item.deletedAt);
           return deletedAt > cutoffDate;
       });
-
       if (data.deletedItems.length !== initialCount) {
-          console.log(`Auto-cleaned ${initialCount - data.deletedItems.length} expired items from recycle bin.`);
           this.saveData();
       }
   },
@@ -289,12 +258,10 @@ const StoreService = {
         ...data, 
         settings: { ...defaultData.settings, ...data.settings }
     };
-    
     if (cache?.settings) {
         if (cache.settings.nasUrl) localStorage.setItem(LS_NAS_URL, cache.settings.nasUrl);
         if (cache.settings.syncToNas !== undefined) localStorage.setItem(LS_SYNC_NAS, String(cache.settings.syncToNas));
     }
-    
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
     lastBackupTime = new Date().toISOString();
     localStorage.setItem('noor_last_backup', lastBackupTime);
@@ -305,25 +272,17 @@ const StoreService = {
     const local = localStorage.getItem(LS_BACKUP_KEY);
     const nasUrl = localStorage.getItem(LS_NAS_URL);
     const syncToNas = localStorage.getItem(LS_SYNC_NAS) === 'true';
-
     let data = local ? { ...defaultData, ...JSON.parse(local) } : JSON.parse(JSON.stringify(defaultData));
-    
     if (nasUrl) data.settings.nasUrl = nasUrl;
     data.settings.syncToNas = syncToNas;
-
     cache = data;
     return cache as StoreData;
   },
 
   async saveData(): Promise<void> {
     if (!cache) return;
-    
     const session = GoogleDriveUtils.getSession();
-    if (session && !isCloudSyncHealthy) {
-        console.warn("Skipping Cloud Save: Sync is unhealthy. Please refresh to try connecting again.");
-        return;
-    }
-
+    
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(cache));
     lastBackupTime = new Date().toISOString();
     localStorage.setItem('noor_last_backup', lastBackupTime);
@@ -335,48 +294,52 @@ const StoreService = {
     
     saveTimeout = setTimeout(async () => {
       try {
-        if (session) {
+        // Cloud Save
+        if (session && isCloudSyncHealthy) {
              try {
-                 // UPDATED: Now calls the Table-based save which handles large data sets
                  await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
              } catch (err: any) {
                  if (err.message && (err.message.includes('401') || err.message.includes('Auth'))) {
-                     console.log("Token expired during save. Attempting refresh...");
                      try {
                          const newToken = await GoogleDriveUtils.refreshSession(CLIENT_ID);
                          await GoogleDriveUtils.saveToSheet(newToken, session.spreadsheetId, cache);
-                         console.log("Save successful after refresh.");
                      } catch (refreshErr) {
-                         console.error("Retry save failed:", refreshErr);
                          isCloudSyncHealthy = false;
-                         alert("Cloud Session Expired. Data saved locally. Please refresh page to login again.");
                      }
-                 } else {
-                     throw err;
                  }
              }
         } 
         
-        if (cache?.settings.syncToNas && cache?.settings.nasUrl) {
-             await fetch(cache.settings.nasUrl, {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify(cache)
-             });
-        } else if (!session) {
-             await fetch('/api/storage', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify(cache)
-             });
+        // Server Sync (NAS or Local API)
+        const canSyncServer = isServerAvailable && (cache?.settings.syncToNas || !session);
+        if (canSyncServer) {
+            const url = cache?.settings.syncToNas ? cache?.settings.nasUrl : '/api/storage';
+            if (url) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cache),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                } catch (err) {
+                    isServerAvailable = false; // Stop trying to hit unreachable server
+                    console.log("Server unreachable. Data saved in LocalStorage.");
+                }
+            }
         }
       } catch (err) {
-        console.error("Remote save error:", err);
+        // Suppress "Failed to fetch" logs as they are expected when backend is not running
+        if (err instanceof Error && err.message !== "Failed to fetch") {
+            console.error("Save error:", err);
+        }
       }
-    }, 2000);
+    }, 800);
   },
 
-  // --- Recycle Bin Logic ---
   async getDeletedItems(): Promise<DeletedItem[]> {
       const data = await this.loadData();
       return [...(data.deletedItems || [])];
@@ -386,29 +349,17 @@ const StoreService = {
       const data = await this.loadData();
       const itemIndex = data.deletedItems.findIndex(i => i.id === deletedItemId);
       if (itemIndex === -1) return;
-
       const item = data.deletedItems[itemIndex];
-      
       if (item.type === 'product') {
-          if (!data.products.find(p => p.id === item.data.id)) {
-              data.products.push(item.data);
-          } else {
-              data.products.push({ ...item.data, id: generateId(), name: item.data.name + ' (Restored)' });
-          }
+          if (!data.products.find(p => p.id === item.data.id)) data.products.push(item.data);
+          else data.products.push({ ...item.data, id: generateId(), name: item.data.name + ' (Restored)' });
       } else if (item.type === 'customer') {
-          if (!data.customers.find(c => c.id === item.data.id)) {
-              data.customers.push(item.data);
-          }
+          if (!data.customers.find(c => c.id === item.data.id)) data.customers.push(item.data);
       } else if (item.type === 'sale') {
-          if (!data.sales.find(s => s.id === item.data.id)) {
-              data.sales.push(item.data);
-          }
+          if (!data.sales.find(s => s.id === item.data.id)) data.sales.push(item.data);
       } else if (item.type === 'tag') {
-          if (!data.tags.find(t => t.id === item.data.id)) {
-              data.tags.push(item.data);
-          }
+          if (!data.tags.find(t => t.id === item.data.id)) data.tags.push(item.data);
       }
-
       data.deletedItems.splice(itemIndex, 1);
       this.saveData();
   },
@@ -425,7 +376,6 @@ const StoreService = {
       this.saveData();
   },
 
-  // --- General Methods ---
   async getRawData(): Promise<StoreData> { return await this.loadData(); },
   
   async importData(newData: any): Promise<void> {
@@ -451,7 +401,6 @@ const StoreService = {
       window.location.reload();
   },
 
-  // --- Users ---
   async authenticate(username: string, pin: string): Promise<User | null> {
     const data = await this.loadData();
     const user = data.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.pin === pin);
@@ -468,7 +417,6 @@ const StoreService = {
     return newUser;
   },
 
-  // --- Inventory ---
   async getInventory(): Promise<Product[]> { const data = await this.loadData(); return [...data.products]; },
 
   async addProduct(product: Omit<Product, 'id'>): Promise<Product> {
@@ -534,16 +482,13 @@ const StoreService = {
     }
   },
 
-  // --- Tags ---
   async getTags(): Promise<Tag[]> { const data = await this.loadData(); return [...data.tags]; },
 
   async addTag(tag: Omit<Tag, 'id'>): Promise<Tag> {
     const data = await this.loadData();
-    // Check for duplicate tag names (case insensitive) to prevent "doubling"
     const trimmedName = tag.name.trim();
     const existing = data.tags.find(t => t.name.toLowerCase() === trimmedName.toLowerCase());
     if (existing) return existing;
-
     const newTag = { ...tag, name: trimmedName, id: generateId() };
     data.tags.push(newTag);
     this.saveData();
@@ -564,37 +509,21 @@ const StoreService = {
     const tag = data.tags.find(t => t.id === id);
     if (tag) {
         if (!data.deletedItems) data.deletedItems = [];
-        data.deletedItems.push({
-            id: generateId(),
-            originalId: tag.id,
-            type: 'tag',
-            data: tag,
-            deletedAt: new Date().toISOString()
-        });
-        
-        // FIX: Unlink products associated with this tag so they become "Uncategorized" instead of deleting them
-        data.products.forEach(p => {
-            if (p.tagId === id) {
-                p.tagId = undefined; // Unlink the tag
-            }
-        });
-
+        data.deletedItems.push({ id: generateId(), originalId: tag.id, type: 'tag', data: tag, deletedAt: new Date().toISOString() });
+        data.products.forEach(p => { if (p.tagId === id) p.tagId = undefined; });
         data.tags = data.tags.filter(t => t.id !== id);
         this.saveData();
     }
   },
 
-  // --- Sales ---
   async getSales(): Promise<Sale[]> { const data = await this.loadData(); return [...data.sales]; },
 
   async createSale(saleData: any): Promise<Sale> {
     const data = await this.loadData();
     const amountPaid = saleData.amountPaid !== undefined ? saleData.amountPaid : saleData.total;
     const dueAmount = saleData.total - amountPaid;
-
     const newSale: Sale = { id: generateId(), timestamp: new Date().toISOString(), ...saleData, amountPaid };
     data.sales.push(newSale);
-
     for (const soldItem of saleData.items) {
       const productIndex = data.products.findIndex(p => p.id === soldItem.id);
       if (productIndex !== -1) {
@@ -604,7 +533,6 @@ const StoreService = {
         }
       }
     }
-
     if (saleData.customerId) {
       const custIndex = data.customers.findIndex(c => c.id === saleData.customerId);
       if (custIndex !== -1) {
@@ -622,7 +550,6 @@ const StoreService = {
     const data = await this.loadData();
     const index = data.sales.findIndex(s => s.id === updatedSale.id);
     if (index === -1) throw new Error("Sale not found");
-
     const oldSale = data.sales[index];
     oldSale.items.forEach(oldItem => {
       const pIndex = data.products.findIndex(p => p.id === oldItem.id);
@@ -632,7 +559,6 @@ const StoreService = {
       const pIndex = data.products.findIndex(p => p.id === newItem.id);
       if (pIndex !== -1) data.products[pIndex].stock = Math.max(0, data.products[pIndex].stock - newItem.quantity);
     });
-    
     if (oldSale.customerId) {
         const custIndex = data.customers.findIndex(c => c.id === oldSale.customerId);
         if (custIndex !== -1) {
@@ -644,7 +570,6 @@ const StoreService = {
             data.customers[custIndex].totalDues = data.customers[custIndex].totalDues - oldDue + newDue;
         }
     }
-
     data.sales[index] = updatedSale;
     this.saveData();
   },
@@ -652,30 +577,19 @@ const StoreService = {
   async deleteSales(ids: string[]): Promise<void> {
     const data = await this.loadData();
     const idSet = new Set(ids);
-    
     const salesToDelete = data.sales.filter(s => idSet.has(s.id));
     if (!data.deletedItems) data.deletedItems = [];
-    
     salesToDelete.forEach(s => {
-        data.deletedItems.push({
-            id: generateId(),
-            originalId: s.id,
-            type: 'sale',
-            data: s,
-            deletedAt: new Date().toISOString()
-        });
-        
+        data.deletedItems.push({ id: generateId(), originalId: s.id, type: 'sale', data: s, deletedAt: new Date().toISOString() });
         s.items.forEach(item => {
             const p = data.products.find(p => p.id === item.id);
             if(p) p.stock += item.quantity;
         });
     });
-
     data.sales = data.sales.filter(s => !idSet.has(s.id));
     this.saveData();
   },
 
-  // --- Customers ---
   async getCustomers(): Promise<Customer[]> { const data = await this.loadData(); return [...data.customers]; },
 
   async upsertCustomer(customer: Partial<Customer>): Promise<Customer> {
@@ -689,39 +603,23 @@ const StoreService = {
       }
     }
     const newCustomer: Customer = { 
-        id: generateId(), 
-        name: customer.name || 'Unknown', 
-        phone: customer.phone || '', 
-        email: customer.email || '', 
-        location: customer.location || '', 
-        totalSpent: 0, 
-        totalDues: 0, 
-        visitCount: 0, 
-        history: [],
-        payments: []
+        id: generateId(), name: customer.name || 'Unknown', phone: customer.phone || '', 
+        email: customer.email || '', location: customer.location || '', totalSpent: 0, 
+        totalDues: 0, visitCount: 0, history: [], payments: []
     };
     data.customers.push(newCustomer);
     this.saveData();
     return newCustomer;
   },
 
-  async addCustomerPayment(customerId: string, amount: number, method: string, note: string, dateStr?: string): Promise<Customer> {
+  async addCustomerPayment(customerId: string, amount: number, method: string, note: string, dateStr?: string, receiptImage?: string): Promise<Customer> {
       const data = await this.loadData();
       const index = data.customers.findIndex(c => c.id === customerId);
       if (index === -1) throw new Error("Customer not found");
-
-      const payment: Payment = {
-          id: generateId(),
-          amount,
-          date: dateStr || new Date().toISOString(),
-          method,
-          note
-      };
-
+      const payment: Payment = { id: generateId(), amount, date: dateStr || new Date().toISOString(), method, note, receiptImage };
       if (!data.customers[index].payments) data.customers[index].payments = [];
       data.customers[index].payments.push(payment);
       data.customers[index].totalDues = Math.max(0, (data.customers[index].totalDues || 0) - amount);
-      
       this.saveData();
       return data.customers[index];
   },
@@ -731,19 +629,12 @@ const StoreService = {
     const customer = data.customers.find(c => c.id === id);
     if (customer) {
         if (!data.deletedItems) data.deletedItems = [];
-        data.deletedItems.push({
-            id: generateId(),
-            originalId: customer.id,
-            type: 'customer',
-            data: customer,
-            deletedAt: new Date().toISOString()
-        });
+        data.deletedItems.push({ id: generateId(), originalId: customer.id, type: 'customer', data: customer, deletedAt: new Date().toISOString() });
         data.customers = data.customers.filter(c => c.id !== id);
         this.saveData();
     }
   },
 
-  // --- Settings ---
   async getSettings(): Promise<StoreSettings> { const data = await this.loadData(); return data.settings; },
 
   async saveSettings(settings: StoreSettings): Promise<void> {

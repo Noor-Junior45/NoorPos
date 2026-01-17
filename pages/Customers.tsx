@@ -4,7 +4,8 @@ import { Customer, Sale, Payment } from '../types';
 import { StoreService } from '../services/storeService';
 import { generateInvoicePDF } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone, Printer, Star } from 'lucide-react';
+// Fixed errors: Added missing 'Receipt' and 'ChevronDown' icon imports from lucide-react.
+import { Search, MapPin, Phone, User, Clock, Pencil, Trash2, Plus, X, Mail, ArrowLeft, Contact, Phone as PhoneIcon, MessageCircle, Share2, AlertTriangle, CheckCircle2, Banknote, CreditCard, Smartphone, Printer, Star, Receipt, ChevronDown, Wallet, Image as ImageIcon, Upload, Loader2, Eye } from 'lucide-react';
 
 interface CustomersProps {
   initialAction?: string;
@@ -18,6 +19,10 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [searchTerm, setSearchTerm] = useState('');
   const [showEditModal, setShowEditModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Customer>>({});
+  
+  // Validation State
+  const [validationErrors, setValidationErrors] = useState<Set<string>>(new Set());
+  const [shakeTrigger, setShakeTrigger] = useState(false);
 
   // Payment Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -25,6 +30,8 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
   const [paymentNote, setPaymentNote] = useState<string>('');
+  const [paymentReceipt, setPaymentReceipt] = useState<string | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Invoice View State
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
@@ -34,6 +41,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const phoneRef = useRef<HTMLInputElement>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
 
   // Delete Modal State
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -106,16 +114,39 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const handleEditClick = (customer: Customer) => {
     const cleanPhone = customer.phone.replace(/^\+91\s?/, '');
     setFormData({ ...customer, phone: cleanPhone });
+    setValidationErrors(new Set());
     setShowEditModal(true);
   };
 
   const handleAddClick = () => {
       setFormData({});
+      setValidationErrors(new Set());
       setShowEditModal(true);
   };
 
+  const validateForm = () => {
+    const errors = new Set<string>();
+    if (!formData.name?.trim()) {
+      errors.add('name');
+    }
+    // Rule: Must have either phone or email
+    if (!formData.phone?.trim() && !formData.email?.trim()) {
+      errors.add('phone');
+      errors.add('email');
+    }
+    
+    setValidationErrors(errors);
+    if (errors.size > 0) {
+      setShakeTrigger(true);
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      setTimeout(() => setShakeTrigger(false), 500);
+      return false;
+    }
+    return true;
+  };
+
   const handleSave = async () => {
-    if (!formData.name) return;
+    if (!validateForm()) return;
     
     let phoneToSave = formData.phone || '';
     if (phoneToSave && !phoneToSave.startsWith('+')) {
@@ -127,7 +158,11 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
         phone: phoneToSave
     });
     
+    // CRITICAL: Clear search term so the new customer doesn't get hidden immediately
+    setSearchTerm('');
     setShowEditModal(false);
+    
+    // Refresh Data immediately for UI reactivity
     await loadData();
     setSelectedCustomer(savedCustomer);
   };
@@ -163,7 +198,19 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       setPaymentDate(new Date().toISOString().split('T')[0]);
       setPaymentMethod('Cash');
       setPaymentNote('');
+      setPaymentReceipt(null);
       setShowPaymentModal(true);
+  };
+
+  const handleReceiptUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setPaymentReceipt(reader.result as string);
+          };
+          reader.readAsDataURL(file);
+      }
   };
 
   const handleRecordPayment = async () => {
@@ -174,22 +221,31 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
           return;
       }
 
-      await StoreService.addCustomerPayment(
-          selectedCustomer.id,
-          amount,
-          paymentMethod,
-          paymentNote,
-          paymentDate // Pass the selected date
-      );
+      setIsProcessingPayment(true);
+      try {
+        await StoreService.addCustomerPayment(
+            selectedCustomer.id,
+            amount,
+            paymentMethod,
+            paymentNote,
+            paymentDate,
+            paymentReceipt || undefined
+        );
 
-      // Refresh Data
-      const updatedCustomers = await StoreService.getCustomers();
-      const updatedSelf = updatedCustomers.find(c => c.id === selectedCustomer.id);
-      
-      setCustomers(updatedCustomers);
-      if (updatedSelf) setSelectedCustomer(updatedSelf);
-      
-      setShowPaymentModal(false);
+        // Refresh Data
+        const updatedCustomers = await StoreService.getCustomers();
+        const updatedSelf = updatedCustomers.find(c => c.id === selectedCustomer.id);
+        
+        setCustomers(updatedCustomers);
+        if (updatedSelf) setSelectedCustomer(updatedSelf);
+        
+        setShowPaymentModal(false);
+      } catch (err) {
+        console.error(err);
+        alert("Failed to record payment.");
+      } finally {
+        setIsProcessingPayment(false);
+      }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLInputElement> | null, isSubmit = false) => {
@@ -205,7 +261,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
   const filteredAndSortedCustomers = useMemo(() => {
       return customers
-        .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()))
+        .filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.phone.includes(searchTerm))
         .sort((a, b) => a.name.localeCompare(b.name));
   }, [customers, searchTerm]);
 
@@ -225,13 +281,13 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
           </div>
 
           {/* Google-Style Search Bar */}
-          <div className="relative w-full max-w-2xl mx-auto z-20 mb-4">
+          <div className="relative w-full max-w-2xl mx-auto z-20 mb-4 px-2">
               <div className="relative group">
                 <div className="relative flex items-center bg-white rounded-full shadow-sm transition-shadow duration-300 border border-gray-200 h-12 px-4 focus-within:shadow-md focus-within:border-blue-300">
                     <Search className="text-gray-400 mr-3 shrink-0" size={20} />
                     <input 
                         type="text" 
-                        placeholder="Search contacts" 
+                        placeholder="Search by name or phone..." 
                         className="w-full bg-transparent border-none focus:ring-0 text-base text-gray-700 placeholder-gray-400 h-full"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -245,7 +301,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
               </div>
           </div>
 
-          <div className="flex-1 flex gap-6 min-h-0 relative">
+          <div className="flex-1 flex gap-6 min-h-0 relative px-2">
                {/* Contact List */}
                <div className={`flex-1 overflow-y-auto pr-2 pb-24 ${selectedCustomer ? 'hidden md:block' : ''}`}>
                     {filteredAndSortedCustomers.length === 0 ? (
@@ -275,21 +331,21 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex justify-between items-center pr-2">
-                                            <span className="font-medium text-gray-900 truncate flex items-center gap-1">
+                                            <span className="font-bold text-gray-900 truncate flex items-center gap-1">
                                                 {c.name}
                                                 {c.isWholesaler && <Star size={12} className="text-amber-500 fill-amber-500"/>}
                                             </span>
                                             {(c.totalDues || 0) > 0 && (
-                                                <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100 shrink-0 ml-2 whitespace-nowrap">
+                                                <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100 shrink-0 ml-2 whitespace-nowrap uppercase">
                                                     Due: ₹{c.totalDues}
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="text-xs text-gray-500 truncate">{c.phone}</div>
+                                        <div className="text-xs text-gray-500 truncate font-medium">{c.phone}</div>
                                     </div>
                                     {/* Quick Actions (Desktop Hover) */}
                                     <div className="hidden md:flex opacity-0 group-hover:opacity-100 transition-opacity gap-2">
-                                         <button onClick={(e) => {e.stopPropagation(); handleEditClick(c)}} className="p-2 hover:bg-white rounded-full text-gray-500"><Pencil size={16}/></button>
+                                         <button onClick={(e) => {e.stopPropagation(); handleEditClick(c)}} className="p-2 hover:bg-white rounded-full text-gray-500 shadow-sm border border-gray-100"><Pencil size={16}/></button>
                                     </div>
                                 </div>
                             ))}
@@ -297,12 +353,12 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                     )}
                </div>
                
-               {/* Detail View (Desktop) - Hidden on Mobile unless handled separately */}
+               {/* Detail View (Desktop) */}
                <div className="hidden md:block w-1/2 lg:w-2/3 pl-4 border-l border-gray-100">
                     {selectedCustomer ? renderCustomerDetails(selectedCustomer, false) : (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                             <Contact size={64} className="opacity-10 mb-4"/>
-                             <p>Select a contact to view details</p>
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-30">
+                             <Contact size={64} className="mb-4"/>
+                             <p className="font-bold uppercase tracking-widest text-xs">Select contact to view profile</p>
                         </div>
                     )}
                </div>
@@ -364,21 +420,30 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                       <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 mt-1">Wholesale Customer</span>
                   )}
                   
-                  {/* Compact Action Chips */}
-                  <div className="flex items-center gap-3 mt-3">
-                       <a href={`tel:${customer.phone}`} className="flex flex-col items-center gap-1 p-2 min-w-[70px] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group">
-                           <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 group-hover:bg-blue-100 flex items-center justify-center"><PhoneIcon size={18}/></div>
+                  {/* Action Chips */}
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                       <a href={`tel:${customer.phone}`} className="flex flex-col items-center gap-1 p-2 min-w-[65px] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group">
+                           <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-600 group-hover:bg-blue-100 flex items-center justify-center shadow-sm"><PhoneIcon size={18}/></div>
                            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Call</span>
                        </a>
-                       <button onClick={() => handleShareWhatsApp(customer)} className="flex flex-col items-center gap-1 p-2 min-w-[70px] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group">
-                           <div className="w-9 h-9 rounded-full bg-green-50 text-green-600 group-hover:bg-green-100 flex items-center justify-center"><MessageCircle size={18}/></div>
+                       <button onClick={() => handleShareWhatsApp(customer)} className="flex flex-col items-center gap-1 p-2 min-w-[65px] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group">
+                           <div className="w-9 h-9 rounded-full bg-green-50 text-green-600 group-hover:bg-green-100 flex items-center justify-center shadow-sm"><MessageCircle size={18}/></div>
                            <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide">Chat</span>
                        </button>
                        {customer.email && (
-                            <a href={`mailto:${customer.email}`} className="flex flex-col items-center gap-1 p-2 min-w-[70px] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group">
-                                <div className="w-9 h-9 rounded-full bg-red-50 text-red-600 group-hover:bg-red-100 flex items-center justify-center"><Mail size={18}/></div>
+                            <a href={`mailto:${customer.email}`} className="flex flex-col items-center gap-1 p-2 min-w-[65px] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer group">
+                                <div className="w-9 h-9 rounded-full bg-red-50 text-red-600 group-hover:bg-red-100 flex items-center justify-center shadow-sm"><Mail size={18}/></div>
                                 <span className="text-[10px] font-bold text-red-600 uppercase tracking-wide">Email</span>
                             </a>
+                       )}
+                       {/* IN-LINE SETTLE BUTTON (Only if dues exist) */}
+                       {(customer.totalDues || 0) > 0 && (
+                            <button onClick={() => openPaymentModal(customer)} className="flex flex-col items-center gap-1 p-2 min-w-[65px] hover:bg-emerald-50 rounded-xl transition-colors cursor-pointer group">
+                                <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:bg-emerald-700 animate-in zoom-in duration-300">
+                                    <Wallet size={18}/>
+                                </div>
+                                <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Settle</span>
+                            </button>
                        )}
                   </div>
               </div>
@@ -386,61 +451,53 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
 
           {/* Details Body */}
           <div className="p-4 space-y-4 pt-0">
-              <div className="bg-gray-50 rounded-2xl p-4 space-y-4">
-                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider">Contact Info</h3>
+              <div className="bg-gray-50 rounded-2xl p-4 space-y-4 border border-gray-100 shadow-sm">
+                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">Contact Details</h3>
                    <div className="flex items-center gap-4">
-                       <Phone size={20} className="text-gray-400"/>
+                       <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400"><Phone size={18}/></div>
                        <div>
-                           <div className="text-sm font-medium text-gray-900">{customer.phone}</div>
-                           <div className="text-xs text-gray-500">Mobile</div>
+                           <div className="text-sm font-bold text-gray-900">{customer.phone}</div>
+                           <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Primary Mobile</div>
                        </div>
                    </div>
                    {customer.email && (
                        <div className="flex items-center gap-4">
-                           <Mail size={20} className="text-gray-400"/>
+                           <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400"><Mail size={18}/></div>
                            <div>
-                               <div className="text-sm font-medium text-gray-900">{customer.email}</div>
-                               <div className="text-xs text-gray-500">Email</div>
+                               <div className="text-sm font-bold text-gray-900">{customer.email}</div>
+                               <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Business Email</div>
                            </div>
                        </div>
                    )}
                    {customer.location && (
                        <div className="flex items-center gap-4">
-                           <MapPin size={20} className="text-gray-400"/>
+                           <div className="w-9 h-9 rounded-lg bg-white border border-gray-200 flex items-center justify-center text-gray-400"><MapPin size={18}/></div>
                            <div>
-                               <div className="text-sm font-medium text-gray-900">{customer.location}</div>
-                               <div className="text-xs text-gray-500">Address</div>
+                               <div className="text-sm font-bold text-gray-900">{customer.location}</div>
+                               <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Shipping Address</div>
                            </div>
                        </div>
                    )}
               </div>
 
-              <div className="bg-gray-50 rounded-2xl p-4">
-                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Financials</h3>
+              <div className="bg-white rounded-2xl p-4 border-2 border-gray-50">
+                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Financial Overview</h3>
                    <div className="grid grid-cols-3 gap-3 mb-4">
-                        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
-                            <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Total Spent</div>
-                            <div className="font-bold text-green-600">₹{customer.totalSpent.toLocaleString()}</div>
+                        <div className="text-center p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="text-[9px] text-gray-400 uppercase font-black mb-1">Spent</div>
+                            <div className="font-black text-green-600 text-sm">₹{customer.totalSpent.toLocaleString()}</div>
                         </div>
-                        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100">
-                            <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Visits</div>
-                            <div className="font-bold text-blue-600">{customer.visitCount}</div>
+                        <div className="text-center p-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                            <div className="text-[9px] text-gray-400 uppercase font-black mb-1">Visits</div>
+                            <div className="font-black text-blue-600 text-sm">{customer.visitCount}</div>
                         </div>
-                        <div className="text-center p-2 bg-white rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-                            <div className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Dues</div>
-                            <div className="font-bold text-red-500">₹{customer.totalDues || 0}</div>
-                            {(customer.totalDues || 0) > 0 && (
-                                <button 
-                                    onClick={() => openPaymentModal(customer)}
-                                    className="mt-1 w-full bg-red-100 text-red-700 text-[10px] font-bold py-1 rounded hover:bg-red-200 transition-colors"
-                                >
-                                    PAY
-                                </button>
-                            )}
+                        <div className="text-center p-3 bg-white rounded-2xl border border-red-50 shadow-sm relative overflow-hidden group">
+                            <div className="text-[9px] text-gray-400 uppercase font-black mb-1">Dues</div>
+                            <div className="font-black text-red-600 text-sm">₹{customer.totalDues || 0}</div>
                         </div>
                    </div>
                    
-                   <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3 mt-6">Timeline</h3>
+                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3 mt-8">Recent Activities</h3>
                    {historyItems.length > 0 ? (
                        <div className="space-y-3">
                            {historyItems.map((item, idx) => {
@@ -450,50 +507,65 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                                        <div 
                                             key={`sale-${sale.id}`} 
                                             onClick={() => setViewingSale(sale)}
-                                            className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                                            className="flex justify-between items-center bg-gray-50/50 p-4 rounded-2xl border border-gray-100 hover:border-blue-200 cursor-pointer transition-all hover:scale-[1.01]"
                                        >
                                            <div className="flex items-center gap-3">
-                                               <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-500">
-                                                   <Clock size={16}/>
+                                               <div className="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-400 shadow-sm">
+                                                   <Receipt size={18}/>
                                                </div>
                                                <div>
-                                                   <div className="text-sm font-bold text-gray-800">
+                                                   <div className="text-sm font-black text-gray-900">
                                                        Sale 
-                                                       <span className="text-xs font-normal text-gray-400 ml-1">#{sale.id.slice(0,5).toUpperCase()}</span>
+                                                       <span className="text-[10px] font-bold text-gray-400 ml-2 uppercase">#{sale.id.slice(0,5)}</span>
                                                    </div>
-                                                   <div className="text-[10px] text-gray-500">{new Date(sale.timestamp).toLocaleDateString()}</div>
+                                                   <div className="text-[10px] text-gray-500 font-bold uppercase">{new Date(sale.timestamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})}</div>
                                                </div>
                                            </div>
                                            <div className="text-right">
-                                               <div className="text-sm font-bold text-gray-800">₹{sale.total.toFixed(0)}</div>
-                                               <div className="text-[10px] text-gray-400">{sale.items.length} Items</div>
+                                               <div className="text-sm font-black text-gray-950">₹{sale.total.toFixed(0)}</div>
+                                               <div className="text-[10px] font-bold text-indigo-500 uppercase">{sale.items.length} Items</div>
                                            </div>
                                        </div>
                                    );
                                } else {
                                    const payment = item.data as Payment;
                                    return (
-                                       <div key={`pay-${payment.id}`} className="flex justify-between items-center bg-white p-3 rounded-xl border border-green-100 shadow-sm">
-                                           <div className="flex items-center gap-3">
-                                               <div className="w-8 h-8 rounded bg-green-100 flex items-center justify-center text-green-600">
-                                                   <CheckCircle2 size={16}/>
+                                       <div key={`pay-${payment.id}`} className="flex flex-col bg-emerald-50/30 p-4 rounded-2xl border border-emerald-100 shadow-sm gap-3">
+                                           <div className="flex justify-between items-center">
+                                               <div className="flex items-center gap-3">
+                                                   <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600 shadow-sm ring-2 ring-white">
+                                                       <CheckCircle2 size={18}/>
+                                                   </div>
+                                                   <div>
+                                                       <div className="text-sm font-black text-emerald-700">Payment In</div>
+                                                       <div className="text-[10px] text-emerald-600/70 font-bold uppercase">{new Date(payment.date).toLocaleDateString()} • {payment.method}</div>
+                                                   </div>
                                                </div>
-                                               <div>
-                                                   <div className="text-sm font-bold text-green-700">Payment Received</div>
-                                                   <div className="text-[10px] text-gray-500">{new Date(payment.date).toLocaleDateString()} • {payment.method}</div>
+                                               <div className="text-right">
+                                                   <div className="text-sm font-black text-emerald-700">-₹{payment.amount.toLocaleString()}</div>
+                                                   {payment.note && <div className="text-[9px] text-emerald-500 font-bold uppercase truncate max-w-[100px]">{payment.note}</div>}
                                                </div>
                                            </div>
-                                           <div className="text-right">
-                                               <div className="text-sm font-bold text-green-600">-₹{payment.amount.toLocaleString()}</div>
-                                               {payment.note && <div className="text-[10px] text-gray-400 italic max-w-[80px] truncate">{payment.note}</div>}
-                                           </div>
+                                           {payment.receiptImage && (
+                                               <div className="mt-1">
+                                                   <button 
+                                                       onClick={() => {
+                                                            const win = window.open("");
+                                                            win?.document.write(`<img src="${payment.receiptImage}" style="max-width:100%; height:auto;" />`);
+                                                       }}
+                                                       className="flex items-center gap-2 text-[9px] font-black text-emerald-600 uppercase bg-white border border-emerald-100 rounded-lg px-3 py-2 hover:bg-emerald-50 transition-colors"
+                                                   >
+                                                       <ImageIcon size={14}/> View Receipt Proof
+                                                   </button>
+                                               </div>
+                                           )}
                                        </div>
                                    );
                                }
                            })}
                        </div>
                    ) : (
-                       <p className="text-center text-gray-400 text-sm py-4">No history yet.</p>
+                       <p className="text-center text-gray-300 text-[10px] font-black uppercase tracking-widest py-10">No records found</p>
                    )}
               </div>
           </div>
@@ -507,6 +579,13 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
+
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+          20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .shake-element { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
       `}</style>
       
       {/* Main Content Area */}
@@ -538,45 +617,53 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       {/* Edit/Add Modal */}
       <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)} title={formData.id ? 'Edit Contact' : 'Create Contact'}>
          <div 
-            className="space-y-4"
+            className={`space-y-4 ${shakeTrigger ? 'shake-element' : ''}`}
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={() => onTouchEnd(() => setShowEditModal(false), 'down')}
          >
              <div className="flex justify-center mb-4">
-                 <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 relative">
+                 <div className="w-20 h-20 bg-gray-100 rounded-3xl flex items-center justify-center border-2 border-dashed border-gray-300 text-gray-400 relative">
                      <User size={32}/>
-                     {formData.isWholesaler && <Star className="absolute bottom-0 right-0 text-amber-500 fill-amber-500 bg-white rounded-full p-0.5 shadow-sm border border-gray-100" size={20}/>}
+                     {formData.isWholesaler && <Star className="absolute -bottom-1 -right-1 text-amber-500 fill-amber-500 bg-white rounded-full p-1 shadow-md border border-gray-100" size={20}/>}
                  </div>
              </div>
              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Full Name</label>
-                <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
-                     <User size={18} className="text-gray-400 mr-2"/>
+                <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${validationErrors.has('name') ? 'text-red-500' : 'text-gray-400'}`}>Full Name *</label>
+                <div className={`flex items-center border-b-2 transition-colors bg-gray-50 rounded-t-xl px-3 ${validationErrors.has('name') ? 'border-red-500 bg-red-50' : 'border-gray-100 focus-within:border-blue-500'}`}>
+                     <User size={18} className={validationErrors.has('name') ? 'text-red-400' : 'text-gray-400 mr-2'}/>
                      <input 
                         ref={nameRef}
                         onKeyDown={(e) => handleKeyDown(e, phoneRef)}
-                        className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
-                        placeholder="Name"
+                        className="w-full py-3 bg-transparent outline-none text-gray-950 font-bold placeholder-gray-300"
+                        placeholder="e.g. John Doe"
                         value={formData.name || ''} 
-                        onChange={e => setFormData({...formData,name: e.target.value})} 
+                        onChange={e => {
+                          setFormData({...formData, name: e.target.value});
+                          if (validationErrors.has('name')) {
+                            setValidationErrors(prev => { const n = new Set(prev); n.delete('name'); return n; });
+                          }
+                        }} 
                      />
                 </div>
              </div>
 
              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Phone</label>
-                <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
-                     <Phone size={18} className="text-gray-400 mr-2"/>
+                <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${validationErrors.has('phone') ? 'text-red-500' : 'text-gray-400'}`}>Phone Number {validationErrors.has('phone') && '(Requires Phone or Email)'}</label>
+                <div className={`flex items-center border-b-2 transition-colors bg-gray-50 rounded-t-xl px-3 ${validationErrors.has('phone') ? 'border-red-500 bg-red-50' : 'border-gray-100 focus-within:border-blue-500'}`}>
+                     <Phone size={18} className={validationErrors.has('phone') ? 'text-red-400' : 'text-gray-400 mr-2'}/>
                      <input 
                         ref={phoneRef}
                         onKeyDown={(e) => handleKeyDown(e, emailRef)}
-                        className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
-                        placeholder="Phone Number"
+                        className="w-full py-3 bg-transparent outline-none text-gray-950 font-bold placeholder-gray-300"
+                        placeholder="Mobile Number"
                         value={formData.phone || ''} 
                         onChange={e => {
                             const val = e.target.value.replace(/\D/g, '');
                             setFormData({...formData, phone: val});
+                            if (validationErrors.has('phone') || validationErrors.has('email')) {
+                              setValidationErrors(prev => { const n = new Set(prev); n.delete('phone'); n.delete('email'); return n; });
+                            }
                         }}
                         maxLength={10}
                      />
@@ -584,29 +671,34 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
              </div>
              
              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Email</label>
-                <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
-                     <Mail size={18} className="text-gray-400 mr-2"/>
+                <label className={`block text-[10px] font-black uppercase tracking-widest mb-1.5 ml-1 ${validationErrors.has('email') ? 'text-red-500' : 'text-gray-400'}`}>Email Address {validationErrors.has('email') && '(Requires Phone or Email)'}</label>
+                <div className={`flex items-center border-b-2 transition-colors bg-gray-50 rounded-t-xl px-3 ${validationErrors.has('email') ? 'border-red-500 bg-red-50' : 'border-gray-100 focus-within:border-blue-500'}`}>
+                     <Mail size={18} className={validationErrors.has('email') ? 'text-red-400' : 'text-gray-400 mr-2'}/>
                      <input 
                         ref={emailRef}
                         onKeyDown={(e) => handleKeyDown(e, addressRef)}
-                        className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
-                        placeholder="Email (Optional)"
+                        className="w-full py-3 bg-transparent outline-none text-gray-950 font-bold placeholder-gray-300"
+                        placeholder="Optional if Phone is added"
                         value={formData.email || ''} 
-                        onChange={e => setFormData({...formData, email: e.target.value})} 
+                        onChange={e => {
+                          setFormData({...formData, email: e.target.value});
+                          if (validationErrors.has('phone') || validationErrors.has('email')) {
+                            setValidationErrors(prev => { const n = new Set(prev); n.delete('phone'); n.delete('email'); return n; });
+                          }
+                        }} 
                      />
                 </div>
              </div>
 
              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5 ml-1">Address</label>
-                <div className="flex items-center border-b border-gray-300 focus-within:border-blue-500 transition-colors">
+                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Billing Address</label>
+                <div className="flex items-center border-b-2 border-gray-100 focus-within:border-blue-500 transition-colors bg-gray-50 rounded-t-xl px-3">
                      <MapPin size={18} className="text-gray-400 mr-2"/>
                      <input 
                         ref={addressRef}
                         onKeyDown={(e) => handleKeyDown(e, null, true)}
-                        className="w-full py-2 bg-transparent outline-none text-gray-900 placeholder-gray-400"
-                        placeholder="Location (Optional)"
+                        className="w-full py-3 bg-transparent outline-none text-gray-950 font-bold placeholder-gray-300"
+                        placeholder="City, Area (Optional)"
                         value={formData.location || ''} 
                         onChange={e => setFormData({...formData, location: e.target.value})} 
                      />
@@ -614,7 +706,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
              </div>
 
              <div className="pt-2">
-                 <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                 <label className="flex items-center gap-4 p-4 border-2 border-gray-50 rounded-2xl cursor-pointer hover:bg-amber-50/30 hover:border-amber-100 transition-all group">
                      <div className="relative flex items-center">
                          <input 
                             type="checkbox" 
@@ -624,19 +716,19 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                          />
                      </div>
                      <div className="flex-1">
-                         <div className="font-bold text-gray-800 text-sm flex items-center gap-1">Mark as Wholesale Customer <Star size={14} className="text-amber-500 fill-amber-500"/></div>
-                         <div className="text-xs text-gray-500">Automatically applies wholesale prices in POS.</div>
+                         <div className="font-black text-gray-900 text-sm flex items-center gap-2">Wholesale Tier <Star size={14} className="text-amber-500 fill-amber-500"/></div>
+                         <div className="text-[10px] text-gray-500 font-bold uppercase">Enable wholesale rates automatically in POS</div>
                      </div>
                  </label>
              </div>
              
              <div className="flex justify-end pt-4">
-                 <Button className="w-full" onClick={handleSave}>Save</Button>
+                 <Button className="w-full py-4 font-black uppercase tracking-[0.2em] shadow-xl shadow-blue-100 rounded-2xl" onClick={handleSave}>Save Contact</Button>
              </div>
              
              {/* Hint for gesture */}
              <div className="flex justify-center pt-2 md:hidden">
-                 <div className="w-12 h-1 bg-gray-200 rounded-full"></div>
+                 <div className="w-12 h-1 bg-gray-100 rounded-full"></div>
              </div>
          </div>
       </Modal>
@@ -675,125 +767,165 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       {/* Record Payment Modal */}
       <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Record Payment">
           <div className="space-y-4">
-              <div className="bg-green-50 p-3 rounded-lg border border-green-100 text-center mb-4">
-                  <span className="text-xs text-green-700 uppercase font-bold tracking-wider block mb-1">Current Due</span>
-                  <span className="text-2xl font-bold text-green-800">₹{selectedCustomer?.totalDues || 0}</span>
+              <div className="bg-emerald-50 p-4 rounded-2xl border-2 border-emerald-100 text-center mb-2">
+                  <span className="text-[10px] text-emerald-600 uppercase font-black tracking-widest block mb-1">Unpaid Balance</span>
+                  <span className="text-3xl font-black text-emerald-800">₹{selectedCustomer?.totalDues || 0}</span>
               </div>
 
-              <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Payment Amount</label>
-                  <div className="flex items-center relative">
-                      <span className="absolute left-3 text-gray-500 font-bold">₹</span>
-                      <Input 
-                          type="number"
-                          className="pl-8 text-lg font-bold !bg-white"
-                          value={paymentAmount}
-                          onChange={(e) => setPaymentAmount(e.target.value)}
-                          placeholder="0.00"
-                          onWheel={(e) => e.currentTarget.blur()}
+              {/* VERTICALLY STACKED FINANCIAL INPUTS */}
+              <div className="flex flex-col gap-5">
+                  <div className="bg-white border-2 border-gray-50 rounded-2xl p-4 shadow-sm">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Settlement Amount</label>
+                      <div className="flex items-center relative">
+                          <span className="absolute left-4 text-emerald-600 font-black text-xl">₹</span>
+                          <Input 
+                              type="number"
+                              className="pl-10 text-2xl font-black !bg-white border-2 border-emerald-100 focus:border-emerald-500 shadow-sm !py-4 rounded-xl"
+                              value={paymentAmount}
+                              onChange={(e) => setPaymentAmount(e.target.value)}
+                              placeholder="0.00"
+                              onWheel={(e) => e.currentTarget.blur()}
+                          />
+                      </div>
+                  </div>
+
+                  <div className="bg-white border-2 border-gray-50 rounded-2xl p-4 shadow-sm">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Proof of Payment</label>
+                      <input 
+                          type="file" 
+                          ref={receiptInputRef} 
+                          onChange={handleReceiptUpload} 
+                          className="hidden" 
+                          accept="image/*"
                       />
-                  </div>
-              </div>
-
-              <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Payment Date</label>
-                  <Input 
-                      type="date"
-                      value={paymentDate}
-                      onChange={(e) => setPaymentDate(e.target.value)}
-                  />
-              </div>
-
-              <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Payment Method</label>
-                  <div className="grid grid-cols-3 gap-2">
-                      {['Cash', 'UPI', 'Card'].map(method => (
-                          <button
-                              key={method}
-                              onClick={() => setPaymentMethod(method)}
-                              className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${
-                                  paymentMethod === method 
-                                  ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
-                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                              }`}
+                      <div className="flex flex-col gap-3">
+                          <button 
+                            onClick={() => receiptInputRef.current?.click()}
+                            className={`w-full flex items-center justify-center gap-3 py-4 border-2 border-dashed rounded-xl transition-all ${paymentReceipt ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}
                           >
-                              {method === 'Cash' && <Banknote size={20} className="mb-1"/>}
-                              {method === 'UPI' && <Smartphone size={20} className="mb-1"/>}
-                              {method === 'Card' && <CreditCard size={20} className="mb-1"/>}
-                              <span className="text-xs font-bold">{method}</span>
+                              {paymentReceipt ? <CheckCircle2 size={24}/> : <ImageIcon size={24}/>}
+                              <span className="text-sm font-black uppercase tracking-wider">{paymentReceipt ? 'Receipt Captured' : 'Upload Receipt Proof'}</span>
                           </button>
-                      ))}
+                          
+                          {paymentReceipt && (
+                              <div className="relative group w-24 h-24 mx-auto rounded-lg overflow-hidden border border-emerald-200 shadow-sm bg-gray-50 flex items-center justify-center">
+                                  <img src={paymentReceipt} className="w-full h-full object-cover" alt="Preview" />
+                                  <button 
+                                    onClick={() => setPaymentReceipt(null)}
+                                    className="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                      <Trash2 size={20}/>
+                                  </button>
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Receipt Date</label>
+                    <Input 
+                        type="date"
+                        value={paymentDate}
+                        onChange={(e) => setPaymentDate(e.target.value)}
+                        className="rounded-xl border-2 border-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Payment Type</label>
+                    <div className="relative">
+                        <select 
+                            value={paymentMethod}
+                            onChange={(e) => setPaymentMethod(e.target.value)}
+                            className="w-full rounded-xl border-2 border-gray-100 py-2.5 px-3 bg-gray-50 text-sm font-bold focus:outline-none focus:border-blue-500 appearance-none"
+                        >
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI / GPay</option>
+                            <option value="Card">Bank Card</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-3.5 text-gray-400 pointer-events-none"/>
+                    </div>
                   </div>
               </div>
 
               <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Note (Optional)</label>
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Note (Optional)</label>
                   <Input 
-                      placeholder="e.g. Paid via GPay transaction..."
+                      placeholder="e.g. Cleared full balance"
                       value={paymentNote}
                       onChange={(e) => setPaymentNote(e.target.value)}
+                      className="rounded-xl border-2 border-gray-100"
                   />
               </div>
 
-              <div className="flex gap-3 pt-2">
-                  <Button variant="neutral" className="flex-1" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
-                  <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={handleRecordPayment}>Clear Amount</Button>
+              <div className="flex gap-3 pt-6 border-t border-gray-50">
+                  <Button variant="neutral" className="flex-1 py-4 font-bold border-2 border-gray-100" onClick={() => setShowPaymentModal(false)} disabled={isProcessingPayment}>Discard</Button>
+                  <Button 
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 py-4 font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-100 flex justify-center items-center gap-2" 
+                    onClick={handleRecordPayment}
+                    disabled={isProcessingPayment}
+                  >
+                      {isProcessingPayment ? <Loader2 size={20} className="animate-spin" /> : <><CheckCircle2 size={18}/> Settle Dues</>}
+                  </Button>
               </div>
           </div>
       </Modal>
 
       {/* Invoice Details Modal */}
-      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Invoice Details">
+      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Transaction Summary">
         {viewingSale && (
-            <div className="space-y-4">
-                <div className="flex justify-between items-start border-b border-gray-100 pb-3">
+            <div className="space-y-6">
+                <div className="flex justify-between items-start border-b border-gray-100 pb-4">
                     <div>
-                        <p className="text-xs text-gray-500 font-bold uppercase">Invoice #</p>
-                        <p className="font-mono font-bold text-gray-800">{viewingSale.id.slice(0,8).toUpperCase()}</p>
+                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Document No.</p>
+                        <p className="font-mono font-black text-gray-900 text-lg">#{viewingSale.id.slice(0,10).toUpperCase()}</p>
                     </div>
                     <div className="text-right">
-                        <p className="text-xs text-gray-500 font-bold uppercase">Date</p>
-                        <p className="text-sm font-medium text-gray-800">{new Date(viewingSale.timestamp).toLocaleDateString()}</p>
+                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Billing Date</p>
+                        <p className="text-sm font-bold text-gray-950">{new Date(viewingSale.timestamp).toLocaleDateString()}</p>
                     </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
-                    {viewingSale.items.map((item, idx) => (
-                        <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-0 text-sm">
-                            <div>
-                                <span className="font-bold text-gray-700">{item.name}</span>
-                                <div className="text-xs text-gray-500">x{item.quantity} @ {item.sellPrice.toFixed(2)}</div>
+                <div className="bg-gray-50 rounded-2xl p-4 max-h-60 overflow-y-auto border border-gray-100 shadow-inner">
+                    <div className="space-y-1">
+                        {viewingSale.items.map((item, idx) => (
+                            <div key={idx} className="flex justify-between items-center py-2 border-b border-gray-200/50 last:border-0 text-sm">
+                                <div className="min-w-0 flex-1 pr-4">
+                                    <span className="font-black text-gray-800 truncate block">{item.name}</span>
+                                    <div className="text-[10px] text-gray-500 font-bold uppercase">{item.quantity} {item.unit || 'pcs'} @ ₹{item.sellPrice.toFixed(0)}</div>
+                                </div>
+                                <span className="font-black text-gray-950 shrink-0">
+                                    ₹{(item.quantity * item.sellPrice).toFixed(0)}
+                                </span>
                             </div>
-                            <span className="font-bold text-gray-800">
-                                {(item.quantity * item.sellPrice).toFixed(2)}
-                            </span>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
 
-                <div className="space-y-1 pt-2">
-                    <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Subtotal</span>
-                        <span>{viewingSale.subtotal.toFixed(2)}</span>
+                <div className="space-y-2 pt-2 bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
+                    <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        <span>Subtotal</span>
+                        <span>₹{viewingSale.subtotal.toFixed(0)}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Tax</span>
-                        <span>{viewingSale.tax.toFixed(2)}</span>
+                    <div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-wider">
+                        <span>Tax</span>
+                        <span>₹{viewingSale.tax.toFixed(0)}</span>
                     </div>
-                    <div className="flex justify-between text-lg font-bold text-gray-900 border-t border-gray-100 pt-2 mt-2">
-                        <span>Total</span>
-                        <span>{viewingSale.total.toFixed(2)}</span>
+                    <div className="flex justify-between text-xl font-black text-gray-950 border-t border-gray-200 pt-3 mt-2">
+                        <span>Total Paid</span>
+                        <span className="text-emerald-600">₹{viewingSale.total.toFixed(0)}</span>
                     </div>
-                    <div className="flex justify-between text-sm text-gray-600">
-                        <span>Paid via {viewingSale.paymentMethod || 'Cash'}</span>
-                        <span>{viewingSale.amountPaid !== undefined ? viewingSale.amountPaid.toFixed(2) : viewingSale.total.toFixed(2)}</span>
+                    <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mt-2">
+                        <span>Method: {viewingSale.paymentMethod || 'Cash'}</span>
+                        <span>Auth: Verified</span>
                     </div>
                 </div>
 
                 <div className="flex gap-3 mt-4">
-                    <Button variant="neutral" className="flex-1" onClick={() => setViewingSale(null)}>Close</Button>
-                    <Button className="flex-1 flex items-center justify-center gap-2" onClick={() => generateInvoicePDF(viewingSale)}>
-                        <Printer size={16}/> Print Invoice
+                    <Button variant="neutral" className="flex-1 py-3 font-bold border-2 border-gray-200" onClick={() => setViewingSale(null)}>Dismiss</Button>
+                    <Button className="flex-1 flex items-center justify-center gap-3 py-3 font-black uppercase tracking-widest bg-gray-900 rounded-2xl shadow-xl shadow-gray-100 active:scale-95" onClick={() => generateInvoicePDF(viewingSale)}>
+                        <Printer size={18}/> Print Bill
                     </Button>
                 </div>
             </div>

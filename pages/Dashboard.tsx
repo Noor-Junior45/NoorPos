@@ -1,16 +1,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
+import { GeminiService } from '../services/geminiService';
 import { Customer, Sale, Product, Tab, Tag } from '../types';
 import { Card, Badge, Button } from '../components/UI';
-import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers, Loader2, X } from 'lucide-react';
+import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers, Loader2, X, BrainCircuit, RefreshCw, MessageSquareText, ShieldCheck, Lightbulb, BookOpen, Activity, Terminal } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
 
 interface DashboardProps {
   onNavigate: (tab: Tab, action?: string) => void;
 }
 
-// Use 'any' cast for the custom element to bypass IntrinsicElements check robustly
 const AmpAd = 'amp-ad' as any;
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
@@ -18,14 +18,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [sales, setSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [settings, setSettings] = useState<any>({}); // Load settings for expiry days
-  const [isParsingInvoice, setIsParsingInvoice] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
-  const [showSourceOptions, setShowSourceOptions] = useState(false);
-  const [fileInputRef] = useState<any>(null); // Dummy ref placeholder since logic is minimal here
+  const [settings, setSettings] = useState<any>({});
+  
+  // Gemini AI States
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
+    const savedInsight = sessionStorage.getItem('noor_ai_insight');
+    if (savedInsight) setAiInsight(savedInsight);
   }, []);
 
   const loadData = async () => {
@@ -43,57 +46,57 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     setSettings(stData);
   };
 
-  const getDaysUntilExpiry = (dateStr?: string) => {
-      if (!dateStr) return Infinity;
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const exp = new Date(dateStr);
-      exp.setHours(0,0,0,0);
-      return Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const generateAIInsights = async () => {
+      if (products.length === 0 && sales.length === 0) {
+          setAiError("Add some products or sales first to get insights.");
+          return;
+      }
+      
+      setIsLoadingAI(true);
+      setAiError(null);
+      try {
+          const insight = await GeminiService.analyzeInventory(products, sales);
+          setAiInsight(insight);
+          sessionStorage.setItem('noor_ai_insight', insight);
+      } catch (err) {
+          setAiError("Could not connect to AI assistant.");
+          console.error(err);
+      } finally {
+          setIsLoadingAI(false);
+      }
   };
 
   const stats = useMemo(() => {
-    // 1. Financials
     const totalRevenue = sales.reduce((acc, s) => acc + s.total, 0);
     const totalDues = customers.reduce((acc, c) => acc + (c.totalDues || 0), 0);
     const inventoryValue = products.reduce((acc, p) => acc + (p.stock * p.sellPrice), 0);
-    
-    // Inventory Counts
     const totalProducts = products.length;
     const totalStockUnits = products.reduce((acc, p) => acc + p.stock, 0);
 
-    // 2. Sales Trend (Last 7 Days)
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const last7DaysDates = Array.from({ length: 7 }, (_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - i);
         return d.toISOString().split('T')[0];
     }).reverse();
 
-    const salesTrend = last7Days.map(date => {
+    const salesTrend = last7DaysDates.map(date => {
         const dayTotal = sales
             .filter(s => s.timestamp.startsWith(date))
             .reduce((acc, s) => acc + s.total, 0);
         return { name: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }), value: dayTotal };
     });
 
-    // 3. Payment Method Analysis (Last 7 Days)
-    const paymentTrend = last7Days.map(date => {
-        const daySales = sales.filter(s => s.timestamp.startsWith(date));
-        return {
-            name: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
-            Cash: daySales.filter(s => s.paymentMethod === 'Cash').reduce((acc, s) => acc + s.total, 0),
-            UPI: daySales.filter(s => s.paymentMethod === 'UPI').reduce((acc, s) => acc + s.total, 0),
-            Card: daySales.filter(s => s.paymentMethod === 'Card').reduce((acc, s) => acc + s.total, 0),
-        };
-    });
+    // Per-Method Trends for Sparklines
+    const getMethodTrend = (method: string) => last7DaysDates.map(date => ({
+        value: sales.filter(s => s.timestamp.startsWith(date) && s.paymentMethod === method)
+                    .reduce((acc, s) => acc + s.total, 0)
+    }));
 
-    const paymentTotals = {
-        Cash: paymentTrend.reduce((acc, d) => acc + d.Cash, 0),
-        UPI: paymentTrend.reduce((acc, d) => acc + d.UPI, 0),
-        Card: paymentTrend.reduce((acc, d) => acc + d.Card, 0),
-    };
+    const cashTotal = sales.filter(s => s.paymentMethod === 'Cash').reduce((acc, s) => acc + s.total, 0);
+    const upiTotal = sales.filter(s => s.paymentMethod === 'UPI').reduce((acc, s) => acc + s.total, 0);
+    const cardTotal = sales.filter(s => s.paymentMethod === 'Card').reduce((acc, s) => acc + s.total, 0);
+    const payLaterTotal = sales.filter(s => s.paymentMethod === 'Pay Later').reduce((acc, s) => acc + s.total, 0);
 
-    // 4. Customer Insights
     const customersWithDues = customers
         .filter(c => (c.totalDues || 0) > 0)
         .sort((a, b) => b.totalDues - a.totalDues);
@@ -101,647 +104,488 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     const topBuyer = [...customers].sort((a, b) => b.totalSpent - a.totalSpent)[0];
     const mostLoyal = [...customers].sort((a, b) => b.visitCount - a.visitCount)[0];
 
-    // Customer Composition
-    const newCust = customers.filter(c => c.visitCount === 1).length;
-    const returningCust = customers.filter(c => c.visitCount > 1 && c.visitCount <= 5).length;
-    const loyalCust = customers.filter(c => c.visitCount > 5).length;
-    
     const customerComposition = [
-        { name: 'New (1 visit)', value: newCust, color: '#cbd5e1' }, // Slate-300
-        { name: 'Returning (2-5)', value: returningCust, color: '#60a5fa' }, // Blue-400
-        { name: 'Loyal (5+)', value: loyalCust, color: '#2563eb' } // Blue-600
+        { name: 'New', value: customers.filter(c => c.visitCount === 1).length, color: '#94a3b8' },
+        { name: 'Returning', value: customers.filter(c => c.visitCount > 1 && c.visitCount <= 5).length, color: '#60a5fa' },
+        { name: 'Loyal', value: customers.filter(c => c.visitCount > 5).length, color: '#2563eb' }
     ].filter(i => i.value > 0);
 
-    // 5. Inventory Insights
     const lowStockItems = products
-        .filter(p => p.stock <= p.lowStockThreshold && p.stock > 0)
+        .filter(p => p.stock <= (p.lowStockThreshold || settings.lowStockDefault || 10) && p.stock > 0)
         .sort((a, b) => a.stock - b.stock);
 
-    const outOfStockItems = products.filter(p => p.stock === 0);
-    const outOfStockCount = outOfStockItems.length;
-
-    // Expiry Analysis
-    const { expiredItems, expiringItems } = products.reduce((acc, p) => {
-        const days = getDaysUntilExpiry(p.expiryDate);
-        if (days < 0) {
-            acc.expiredItems.push({ ...p, days });
-        } else if (days <= (settings.expiryAlertDays || 7) && days >= 0) {
-            if (p.expiryDate) {
-                acc.expiringItems.push({ ...p, days });
-            }
-        }
-        return acc;
-    }, { expiredItems: [] as (Product & {days: number})[], expiringItems: [] as (Product & {days: number})[] });
-
-    expiredItems.sort((a, b) => b.days - a.days);
-    expiringItems.sort((a, b) => a.days - b.days);
-
-    // 6. Top Products
-    const productSales: Record<string, number> = {};
-    sales.forEach(s => {
-        s.items.forEach(i => {
-            productSales[i.name] = (productSales[i.name] || 0) + i.quantity;
-        });
+    const expiringItems = products.filter(p => {
+        if (!p.expiryDate) return false;
+        const today = new Date();
+        const exp = new Date(p.expiryDate);
+        const diff = (exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+        return diff >= 0 && diff <= (settings.expiryAlertDays || 7);
     });
-    const topProducts = Object.entries(productSales)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 5)
-        .map(([name, count]) => ({ name, count }));
-    
-    const bestSellingProduct = topProducts.length > 0 ? topProducts[0] : null;
 
-    // 7. Stock Value By Category
+    const productSales: Record<string, number> = {};
+    sales.forEach(s => s.items.forEach(i => productSales[i.name] = (productSales[i.name] || 0) + i.quantity));
+    const topProducts = Object.entries(productSales).sort(([, a], [, b]) => b - a).slice(0, 5).map(([name, count]) => ({ name, count }));
+    
     const valueByTag: { [key: string]: { name: string, value: number, color: string } } = {};
     tags.forEach(tag => { valueByTag[tag.id] = { name: tag.name, value: 0, color: tag.color }; });
     products.forEach(p => {
         const value = p.stock * p.sellPrice;
         if (p.tagId && valueByTag[p.tagId]) valueByTag[p.tagId].value += value;
     });
-    const stockValueByCategory = Object.values(valueByTag).filter(d => d.value > 0);
 
     return { 
-        totalRevenue, 
-        totalDues, 
-        inventoryValue,
-        totalProducts,
-        totalStockUnits,
+        totalRevenue, totalDues, inventoryValue, totalProducts, totalStockUnits,
         salesTrend, 
-        paymentTrend,
-        paymentTotals,
-        customersWithDues, 
-        topBuyer, 
-        mostLoyal, 
-        lowStockItems,
-        outOfStockItems,
-        outOfStockCount,
-        expiredItems,
-        expiringItems,
-        customerComposition,
-        topProducts,
-        bestSellingProduct,
-        stockValueByCategory
+        cashTotal, upiTotal, cardTotal, payLaterTotal,
+        cashTrend: getMethodTrend('Cash'),
+        upiTrend: getMethodTrend('UPI'),
+        cardTrend: getMethodTrend('Card'),
+        payLaterTrend: getMethodTrend('Pay Later'),
+        customersWithDues, topBuyer, mostLoyal, 
+        lowStockItems, expiringItems, customerComposition, topProducts,
+        stockValueByCategory: Object.values(valueByTag).sort((a, b) => b.value - a.value)
     };
   }, [customers, sales, products, tags, settings]);
 
-  const handleCall = (phone: string) => {
-      window.location.href = `tel:${phone}`;
-  };
+  const formatDateShort = (dateStr: string) => dateStr ? `${new Date(dateStr).getDate()} ${new Date(dateStr).toLocaleString('default', { month: 'short' })}` : '';
 
-  const formatDateShort = (dateStr: string) => {
-      if (!dateStr) return '';
-      const d = new Date(dateStr);
-      return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`;
-  };
-
-  // Helper for quick actions (simulating Warehouse actions since logic is in Warehouse.tsx)
-  const handleAnalyzeClick = () => {
-      onNavigate(Tab.WAREHOUSE, 'scan_add'); // Redirect to warehouse scan
-  };
+  const MiniSparkline = ({ data, color }: { data: any[], color: string }) => (
+    <div className="h-10 w-full mt-2">
+        <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data}>
+                <defs>
+                    <linearGradient id={`color-${color}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={color} stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor={color} stopOpacity={0}/>
+                    </linearGradient>
+                </defs>
+                <Area type="monotone" dataKey="value" stroke={color} strokeWidth={2} fillOpacity={1} fill={`url(#color-${color})`} isAnimationActive={false} />
+            </AreaChart>
+        </ResponsiveContainer>
+    </div>
+  );
 
   return (
-    <div className="space-y-8 animate-in fade-in pb-32 relative">
-        
-        {/* Floating Scan Button (Transparent Glass Style) */}
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 pointer-events-auto">
+    <div className="space-y-10 animate-in fade-in pb-32 relative max-w-6xl mx-auto">
+        {/* Floating Scanner Action */}
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30">
             <button 
                 onClick={() => onNavigate(Tab.WAREHOUSE, 'scan_add')}
-                className="flex items-center gap-3 pl-3 pr-6 py-2.5 rounded-full bg-white/40 backdrop-blur-xl border border-white/60 text-gray-800 hover:bg-white/60 transition-all active:scale-95 shadow-[0_8px_30px_rgb(0,0,0,0.12)] group"
+                className="flex items-center gap-3 pl-3 pr-6 py-2.5 rounded-full bg-white/40 backdrop-blur-xl border border-white/60 text-gray-800 hover:bg-white/60 transition-all active:scale-95 shadow-lg group"
             >
-                <div className="p-2 bg-red-600 rounded-full shadow-lg shadow-red-500/30 text-white">
+                <div className="p-2 bg-red-600 rounded-full text-white shadow-lg shadow-red-500/30">
                     <Scan size={18} className="group-hover:rotate-12 transition-transform"/>
                 </div>
-                <span className="font-bold tracking-wide text-sm mr-1">Scan to Add</span>
+                <span className="font-bold tracking-wide text-sm mr-1 text-gray-950">Scan to Add</span>
             </button>
         </div>
 
-        {/* Header with Quick Tools */}
+        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-1 pt-2">
             <div className="flex items-center gap-3">
                 <div className="p-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-500/20">
                     <LayoutDashboard size={24} />
                 </div>
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-800">Overview</h2>
-                    <p className="text-gray-500">Business insights & performance</p>
+                    <h2 className="text-2xl font-black text-gray-950">Overview</h2>
+                    <p className="text-gray-500 font-medium">Business insights & performance</p>
                 </div>
             </div>
-            
-            {/* Quick Actions Toolbar */}
             <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-                    <button 
-                        onClick={() => onNavigate(Tab.POS)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors text-xs font-bold whitespace-nowrap"
-                    >
-                        <ShoppingCart size={14}/> New Sale
-                    </button>
-                    <button 
-                        onClick={() => onNavigate(Tab.WAREHOUSE, 'add')}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-bold whitespace-nowrap"
-                    >
-                        <Package size={14}/> Add Manual
-                    </button>
-                    <button 
-                        onClick={() => onNavigate(Tab.CUSTOMERS, 'add')}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors text-xs font-bold whitespace-nowrap"
-                    >
-                        <UserPlus size={14}/> Customer
-                    </button>
+                <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm">
+                    <button onClick={() => onNavigate(Tab.POS)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors text-xs font-black"><ShoppingCart size={14}/> NEW SALE</button>
+                    <button onClick={() => onNavigate(Tab.WAREHOUSE, 'add')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors text-xs font-black"><Package size={14}/> ADD STOCK</button>
                 </div>
             </div>
         </div>
 
-        {/* NEW SECTION: Inventory Overview (MOVED FROM WAREHOUSE) */}
+        {/* --- INVENTORY OVERVIEW --- */}
         <section>
-            <div className="flex items-center gap-2 mb-4 px-1 mt-6">
-                <Box size={20} className="text-gray-500"/>
-                <h3 className="text-lg font-bold text-gray-800">Inventory Overview</h3>
+            <div className="flex items-center gap-2 mb-4 px-1">
+                <Box size={22} className="text-sky-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Inventory Overview</h3>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card className="border-2 border-sky-600 shadow-sm hover:shadow-md transition-shadow">
-                 <div className="text-sky-700 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><Box size={14} /> Total Products</div>
-                 <div className="text-3xl font-bold mt-1 text-gray-900">{stats.totalProducts}</div>
+              <Card className="border-2 border-sky-200 shadow-sm p-5 hover:border-sky-500 transition-colors">
+                  <div className="text-sky-700 text-[10px] uppercase font-black tracking-widest flex items-center gap-1 mb-1"><Box size={12} /> Total Products</div>
+                  <div className="text-4xl font-black text-gray-950">{stats.totalProducts}</div>
               </Card>
-              <Card className="border-2 border-green-500 shadow-sm hover:shadow-md transition-shadow">
-                 <div className="text-green-600 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><IndianRupee size={14} /> Total Value</div>
-                 <div className="text-3xl font-bold mt-1 text-gray-900">{settings.currencySymbol}{stats.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+              <Card className="border-2 border-emerald-200 shadow-sm p-5 hover:border-emerald-500 transition-colors">
+                  <div className="text-emerald-700 text-[10px] uppercase font-black tracking-widest flex items-center gap-1 mb-1"><IndianRupee size={12} /> Total Value</div>
+                  <div className="text-3xl font-black text-gray-950">₹{stats.inventoryValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
               </Card>
-              <Card className="border-2 border-red-400 shadow-sm hover:shadow-md transition-shadow">
-                 <div className="text-red-600 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><AlertTriangle size={14} /> Low Stock</div>
-                 <div className="text-3xl font-bold mt-1 text-gray-900">{stats.lowStockItems.length}</div>
+              <Card className="border-2 border-rose-200 shadow-sm p-5 hover:border-rose-500 transition-colors">
+                  <div className="text-rose-700 text-[10px] uppercase font-black tracking-widest flex items-center gap-1 mb-1"><AlertTriangle size={12} /> Low Stock</div>
+                  <div className="text-4xl font-black text-gray-950">{stats.lowStockItems.length}</div>
               </Card>
-              <Card className="border-2 border-violet-400 shadow-sm hover:shadow-md transition-shadow">
-                 <div className="text-violet-600 text-xs uppercase font-bold tracking-wider flex items-center gap-1"><Layers size={14} /> Stock Units</div>
-                 <div className="text-3xl font-bold mt-1 text-gray-900">{stats.totalStockUnits.toLocaleString()}</div>
+              <Card className="border-2 border-violet-200 shadow-sm p-5 hover:border-violet-500 transition-colors">
+                  <div className="text-violet-700 text-[10px] uppercase font-black tracking-widest flex items-center gap-1 mb-1"><Layers size={12} /> Stock Units</div>
+                  <div className="text-3xl font-black text-gray-950">{stats.totalStockUnits.toLocaleString()}</div>
               </Card>
             </div>
         </section>
 
-        {/* SECTION 1: BUSINESS SNAPSHOT */}
+        {/* --- FINANCIAL SNAPSHOT --- */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1">
-                <LayoutDashboard size={20} className="text-gray-500"/>
-                <h3 className="text-lg font-bold text-gray-800">Financial Snapshot</h3>
+                <Activity size={22} className="text-emerald-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Financial Snapshot</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Total Revenue */}
-                <Card className="border-0 shadow-md bg-gradient-to-br from-green-600 to-emerald-600 text-white relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-full -mr-4 -mt-4 blur-xl transition-transform group-hover:scale-150 duration-700"></div>
-                    <div className="relative z-10 p-2">
-                        <div className="flex items-center gap-2 text-green-100 font-bold text-xs uppercase tracking-wider mb-2">
-                            <Wallet size={16} /> Total Revenue
-                        </div>
-                        <div className="text-3xl font-bold">₹{stats.totalRevenue.toLocaleString()}</div>
-                        <div className="text-xs text-green-100 mt-1 opacity-80 flex items-center gap-1">
-                            <ArrowUpRight size={12}/> {sales.length} Transactions
-                        </div>
+                <Card className="border-0 shadow-xl bg-gradient-to-br from-emerald-600 to-green-700 text-white p-7 rounded-3xl relative overflow-hidden group">
+                    <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-700"><Wallet size={120}/></div>
+                    <div className="relative z-10">
+                        <div className="flex items-center gap-2 text-emerald-100 font-black text-[10px] uppercase tracking-widest mb-2"><Wallet size={16} /> Total Revenue</div>
+                        <div className="text-4xl font-black">₹{stats.totalRevenue.toLocaleString()}</div>
+                        <div className="text-xs text-emerald-100 mt-2 font-bold opacity-80 flex items-center gap-1"><ArrowUpRight size={14}/> {sales.length} Transactions Recorded</div>
                     </div>
                 </Card>
-
-                {/* Outstanding Dues */}
-                <Card className="border-0 shadow-md bg-gradient-to-br from-red-500 to-rose-600 text-white relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-full -mr-4 -mt-4 blur-xl transition-transform group-hover:scale-150 duration-700"></div>
-                    <div className="relative z-10 p-2">
-                        <div className="flex items-center gap-2 text-red-100 font-bold text-xs uppercase tracking-wider mb-2">
-                            <AlertTriangle size={16} /> Pending Dues
-                        </div>
-                        <div className="text-3xl font-bold">₹{stats.totalDues.toLocaleString()}</div>
-                        <div className="text-xs text-red-100 mt-1 opacity-80">
-                            {stats.customersWithDues.length} Customers pending
-                        </div>
+                <Card className="border-0 shadow-xl bg-gradient-to-br from-rose-500 to-red-700 text-white p-7 rounded-3xl relative overflow-hidden group">
+                    <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-700"><AlertTriangle size={120}/></div>
+                    <div className="relative z-10">
+                        <div className="flex items-center gap-2 text-rose-100 font-black text-[10px] uppercase tracking-widest mb-2"><AlertTriangle size={16} /> Outstanding Dues</div>
+                        <div className="text-4xl font-black">₹{stats.totalDues.toLocaleString()}</div>
+                        <div className="text-xs text-rose-100 mt-2 font-bold opacity-80">{stats.customersWithDues.length} Customers pending</div>
                     </div>
                 </Card>
             </div>
         </section>
 
-        {/* SECTION 2: SALES & PAYMENTS */}
+        {/* --- PAYMENT BREAKDOWN WITH GRAPHS --- */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1">
-                <BarChart3 size={20} className="text-blue-600"/>
-                <h3 className="text-lg font-bold text-gray-800">Sales & Payments</h3>
+                <Banknote size={22} className="text-blue-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Live Flow Tracking</h3>
             </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-4">
-                {/* Sales Trend (2 Cols) */}
-                <Card className="lg:col-span-2 border-gray-100 shadow-sm p-6 flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <TrendingUp size={18} className="text-blue-600"/> Revenue Trend
-                        </h3>
-                        <Badge color="bg-blue-50 text-blue-700">Last 7 Days</Badge>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card className="bg-white border-2 border-emerald-100 p-4 hover:border-emerald-500 transition-all flex flex-col justify-between group">
+                    <div className="flex items-center justify-between text-emerald-600 mb-1">
+                        <div className="flex items-center gap-1.5">
+                            <Banknote size={16}/>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Cash</span>
+                        </div>
+                        <Badge color="bg-emerald-50 text-emerald-700 text-[8px] px-1">LIVE</Badge>
                     </div>
-                    <div className="h-64 w-full flex-1">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={stats.salesTrend}>
-                                <defs>
-                                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                                <XAxis 
-                                    dataKey="name" 
-                                    axisLine={false} 
-                                    tickLine={false} 
-                                    tick={{fontSize: 12, fill: '#94a3b8'}} 
-                                    dy={10}
-                                />
-                                <YAxis 
-                                    axisLine={false} 
-                                    tickLine={false} 
-                                    tick={{fontSize: 12, fill: '#94a3b8'}}
-                                    tickFormatter={(val) => `₹${val}`}
-                                />
-                                <Tooltip 
-                                    contentStyle={{backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'}}
-                                    formatter={(val: number) => [`₹${val}`, 'Revenue']}
-                                />
-                                <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorSales)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
+                    <div className="text-2xl font-black text-gray-950">₹{stats.cashTotal.toLocaleString()}</div>
+                    <MiniSparkline data={stats.cashTrend} color="#10b981" />
                 </Card>
-
-                {/* Stock Value by Category (1 Col) */}
-                <Card className="border-gray-100 shadow-sm p-0 flex flex-col relative overflow-hidden h-full max-h-[384px]">
-                    <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <DollarSign size={18} className="text-green-500"/> Category Value
-                        </h3>
-                        <div className="bg-green-50 text-green-700 px-2 py-1 rounded-lg text-xs font-bold border border-green-100">
-                            ₹{(stats.inventoryValue / 1000).toFixed(1)}k
+                <Card className="bg-white border-2 border-blue-100 p-4 hover:border-blue-500 transition-all flex flex-col justify-between group">
+                    <div className="flex items-center justify-between text-blue-600 mb-1">
+                        <div className="flex items-center gap-1.5">
+                            <Smartphone size={16}/>
+                            <span className="text-[10px] font-black uppercase tracking-widest">UPI</span>
                         </div>
+                        <Badge color="bg-blue-50 text-blue-700 text-[8px] px-1">FAST</Badge>
                     </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-                        <div className="space-y-1">
-                            {stats.stockValueByCategory
-                                .sort((a, b) => b.value - a.value)
-                                .map((item, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100 group">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm" style={{ backgroundColor: item.color }}>
-                                            {item.name.charAt(0).toUpperCase()}
-                                        </div>
-                                        <span className="font-bold text-gray-700 text-sm truncate max-w-[100px]">{item.name}</span>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="font-bold text-gray-900">₹{item.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-                                        <div className="text-[10px] text-gray-400 font-medium">
-                                            {((item.value / stats.inventoryValue) * 100).toFixed(1)}% of total
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {stats.stockValueByCategory.length === 0 && (
-                                <div className="text-center text-gray-400 py-10 flex flex-col items-center">
-                                    <Package size={32} className="mb-2 opacity-20"/>
-                                    <p className="text-xs">No categorized stock found</p>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                    <div className="text-2xl font-black text-gray-950">₹{stats.upiTotal.toLocaleString()}</div>
+                    <MiniSparkline data={stats.upiTrend} color="#3b82f6" />
                 </Card>
-            </div>
-
-            {/* Payment Method Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Cash */}
-                <Card className="p-4 border-gray-100 shadow-sm flex flex-col justify-between">
-                    <div className="flex justify-between items-start mb-2">
-                        <div>
-                            <div className="text-xs font-bold text-gray-400 uppercase">Cash Sales</div>
-                            <div className="text-xl font-bold text-gray-800">₹{stats.paymentTotals.Cash.toLocaleString()}</div>
+                <Card className="bg-white border-2 border-indigo-100 p-4 hover:border-indigo-500 transition-all flex flex-col justify-between group">
+                    <div className="flex items-center justify-between text-indigo-600 mb-1">
+                        <div className="flex items-center gap-1.5">
+                            <CreditCard size={16}/>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Card</span>
                         </div>
-                        <div className="p-2 bg-green-50 text-green-600 rounded-lg">
-                            <Banknote size={18} />
-                        </div>
+                        <Badge color="bg-indigo-50 text-indigo-700 text-[8px] px-1">SYNC</Badge>
                     </div>
-                    <div className="h-16 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={stats.paymentTrend}>
-                                <Area type="monotone" dataKey="Cash" stroke="#16a34a" fill="#dcfce7" strokeWidth={2} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
+                    <div className="text-2xl font-black text-gray-950">₹{stats.cardTotal.toLocaleString()}</div>
+                    <MiniSparkline data={stats.cardTrend} color="#8b5cf6" />
                 </Card>
-
-                {/* UPI */}
-                <Card className="p-4 border-gray-100 shadow-sm flex flex-col justify-between">
-                    <div className="flex justify-between items-start mb-2">
-                        <div>
-                            <div className="text-xs font-bold text-gray-400 uppercase">UPI Sales</div>
-                            <div className="text-xl font-bold text-gray-800">₹{stats.paymentTotals.UPI.toLocaleString()}</div>
+                <Card className="bg-white border-2 border-amber-100 p-4 hover:border-amber-500 transition-all flex flex-col justify-between group">
+                    <div className="flex items-center justify-between text-amber-600 mb-1">
+                        <div className="flex items-center gap-1.5">
+                            <Clock size={16}/>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Pay Later</span>
                         </div>
-                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                            <Smartphone size={18} />
-                        </div>
+                        <Badge color="bg-amber-50 text-amber-700 text-[8px] px-1">DUES</Badge>
                     </div>
-                    <div className="h-16 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={stats.paymentTrend}>
-                                <Area type="monotone" dataKey="UPI" stroke="#2563eb" fill="#dbeafe" strokeWidth={2} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </Card>
-
-                {/* Card */}
-                <Card className="p-4 border-gray-100 shadow-sm flex flex-col justify-between">
-                    <div className="flex justify-between items-start mb-2">
-                        <div>
-                            <div className="text-xs font-bold text-gray-400 uppercase">Card Sales</div>
-                            <div className="text-xl font-bold text-gray-800">₹{stats.paymentTotals.Card.toLocaleString()}</div>
-                        </div>
-                        <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
-                            <CreditCard size={18} />
-                        </div>
-                    </div>
-                    <div className="h-16 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={stats.paymentTrend}>
-                                <Area type="monotone" dataKey="Card" stroke="#9333ea" fill="#f3e8ff" strokeWidth={2} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
+                    <div className="text-2xl font-black text-gray-950">₹{stats.payLaterTotal.toLocaleString()}</div>
+                    <MiniSparkline data={stats.payLaterTrend} color="#f59e0b" />
                 </Card>
             </div>
         </section>
 
-        {/* SECTION 3: INVENTORY HEALTH */}
+        {/* --- SALES TREND --- */}
         <section>
             <div className="flex items-center gap-2 mb-4 px-1">
-                <Package size={20} className="text-amber-600"/>
-                <h3 className="text-lg font-bold text-gray-800">Inventory Health</h3>
+                <TrendingUp size={22} className="text-indigo-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Sales Trend</h3>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Column 1: Best Seller Spotlight + Best Sellers List */}
-                <div className="flex flex-col gap-4">
-                    {/* Best Selling Product Spotlight */}
-                    {stats.bestSellingProduct && (
-                        <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-white shadow-md relative overflow-hidden group h-[120px] flex items-center">
-                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-purple-200 rounded-full blur-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
-                            <div className="flex items-center gap-4 relative z-10 p-2 w-full">
-                                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-purple-400 to-fuchsia-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/30 shrink-0">
-                                    <Trophy size={28} fill="white" />
+            <Card className="p-8 border-2 border-indigo-50 shadow-sm h-[350px]">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-black text-gray-900 text-lg">Revenue History (7 Days)</h3>
+                    <Badge color="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full">LIVE FEED</Badge>
+                </div>
+                <div className="h-60 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={stats.salesTrend}>
+                            <defs><linearGradient id="colorSalesMain" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient></defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 'bold'}} dy={10}/>
+                            <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#64748b', fontWeight: 'bold'}} tickFormatter={(val) => `₹${val}`}/>
+                            <Tooltip contentStyle={{borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}/>
+                            <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={4} fillOpacity={1} fill="url(#colorSalesMain)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </Card>
+        </section>
+
+        {/* --- INVENTORY HEALTH --- */}
+        <section>
+            <div className="flex items-center gap-2 mb-4 px-1 mt-8">
+                <AlertTriangle size={22} className="text-red-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Inventory Health</h3>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <Card className="p-0 overflow-hidden h-[320px] flex flex-col border-2 border-indigo-50">
+                    <div className="px-6 py-5 border-b border-indigo-50 bg-indigo-50/20 flex justify-between items-center">
+                        <h3 className="font-black text-gray-950 flex items-center gap-2 text-sm"><Crown size={18} className="text-amber-500"/> TOP MOVING ITEMS</h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                        {stats.topProducts.map((p, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-indigo-200 transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-[10px] font-black">{idx + 1}</div>
+                                    <span className="font-bold text-gray-900 text-sm truncate max-w-[120px]">{p.name}</span>
                                 </div>
-                                <div className="min-w-0">
-                                    <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider mb-0.5">Top Performer</div>
-                                    <div className="text-xl font-bold text-gray-900 truncate" title={stats.bestSellingProduct.name}>{stats.bestSellingProduct.name}</div>
-                                    <div className="text-sm text-gray-500">Sold: <span className="font-bold text-purple-600">{stats.bestSellingProduct.count} units</span></div>
-                                </div>
+                                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full uppercase">{p.count} sold</span>
                             </div>
-                        </Card>
-                    )}
+                        ))}
+                    </div>
+                </Card>
 
-                    {/* Best Sellers List */}
-                    <Card className="border-indigo-100 bg-indigo-50/30 shadow-sm overflow-hidden flex flex-col flex-1 min-h-[200px]">
-                        <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/50 flex justify-between items-center">
-                            <h3 className="font-bold text-indigo-900 flex items-center gap-2 text-sm">
-                                <Crown size={16} /> Top Moving Items
-                            </h3>
+                <Card className="border-2 border-rose-100 bg-rose-50/20 h-[320px] flex flex-col p-0 overflow-hidden">
+                    <div className="px-6 py-5 border-b border-rose-100 bg-rose-100/30 flex justify-between items-center"><h3 className="font-black text-gray-950 flex items-center gap-2 text-sm uppercase"><AlertTriangle size={20} className="text-rose-600"/> Critical Low Stock</h3></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                        {stats.lowStockItems.length > 0 ? stats.lowStockItems.map(p => (
+                            <div key={p.id} className="flex justify-between items-center text-sm py-3 px-4 bg-white rounded-xl border border-rose-100 shadow-sm hover:border-rose-400 transition-colors">
+                                <span className="font-bold truncate text-gray-900 w-2/3">{p.name}</span>
+                                <span className="font-black text-xs text-rose-600 whitespace-nowrap">{p.stock} units</span>
+                            </div>
+                        )) : (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-40">
+                                <CheckCircle size={48} className="mb-3 text-emerald-500"/>
+                                <p className="text-sm font-bold uppercase tracking-widest">Levels Healthy</p>
+                            </div>
+                        )}
+                    </div>
+                </Card>
+
+                <Card className="border-2 border-amber-100 bg-amber-50/20 h-[320px] flex flex-col p-0 overflow-hidden">
+                    <div className="px-6 py-5 border-b border-amber-100 bg-amber-100/30 flex justify-between items-center"><h3 className="font-black text-gray-950 flex items-center gap-2 text-sm uppercase"><Clock size={20} className="text-amber-600"/> Expiring Soon</h3></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                         {stats.expiringItems.length > 0 ? stats.expiringItems.map(p => (
+                            <div key={p.id} className="flex justify-between items-center text-sm py-3 px-4 bg-white rounded-xl border border-amber-100 shadow-sm hover:border-amber-400 transition-colors">
+                                <span className="font-bold truncate text-gray-900 w-2/3">{p.name}</span>
+                                <span className="font-black text-[10px] text-amber-700 whitespace-nowrap bg-amber-50 px-2 py-1 rounded-md">{formatDateShort(p.expiryDate || '')}</span>
+                            </div>
+                        )) : (
+                            <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-40">
+                                <ShieldCheck size={48} className="mb-3 text-emerald-500"/>
+                                <p className="text-sm font-bold uppercase tracking-widest">No Expiry Risk</p>
+                            </div>
+                        )}
+                    </div>
+                </Card>
+            </div>
+        </section>
+
+        {/* --- CUSTOMER INSIGHTS --- */}
+        <section>
+            <div className="flex items-center gap-2 mb-4 px-1">
+                <Users size={22} className="text-purple-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Customer Insights</h3>
+            </div>
+            
+            <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card className="bg-amber-50/30 border-2 border-amber-200 p-6 flex items-center gap-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-200/20 rounded-full -mr-16 -mt-16 blur-3xl group-hover:scale-110 transition-transform"></div>
+                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center shadow-lg shrink-0 group-hover:rotate-3 transition-transform">
+                            <Crown size={36} className="text-white" />
                         </div>
-                        <div className="flex-1 overflow-y-auto p-2">
-                            {stats.topProducts.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
-                                    <ShoppingBag size={32} className="mb-2 opacity-20"/>
-                                    No data.
-                                </div>
-                            ) : (
-                                <div className="space-y-1">
-                                    {stats.topProducts.slice(0, 5).map((p, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-2 bg-white border border-indigo-50 rounded-lg shadow-sm">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${idx === 0 ? 'bg-yellow-400 text-white' : 'bg-indigo-100 text-indigo-600'}`}>
-                                                    {idx + 1}
-                                                </div>
-                                                <span className="font-medium text-gray-800 text-xs truncate">{p.name}</span>
-                                            </div>
-                                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-md">{p.count}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                        <div className="flex-1 relative z-10">
+                            <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 opacity-80">Top Spender</p>
+                            <h4 className="text-2xl font-black text-gray-950 leading-tight mb-1 truncate">{stats.topBuyer?.name || "No data"}</h4>
+                            <p className="text-sm font-medium text-gray-500">Value: <span className="text-green-600 font-black">₹{stats.topBuyer?.totalSpent.toLocaleString() || "0"}</span></p>
+                        </div>
+                    </Card>
+
+                    <Card className="bg-blue-50/30 border-2 border-blue-200 p-6 flex items-center gap-6 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-200/20 rounded-full -mr-16 -mt-16 blur-3xl group-hover:scale-110 transition-transform"></div>
+                        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center shadow-lg shrink-0 group-hover:rotate-3 transition-transform">
+                            <Star size={36} className="text-white" />
+                        </div>
+                        <div className="flex-1 relative z-10">
+                            <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-1 opacity-80">Most Loyal</p>
+                            <h4 className="text-2xl font-black text-gray-950 leading-tight mb-1 truncate">{stats.mostLoyal?.name || "No data"}</h4>
+                            <p className="text-sm font-medium text-gray-500">History: <span className="text-blue-600 font-black">{stats.mostLoyal?.visitCount || "0"} Visits</span></p>
                         </div>
                     </Card>
                 </div>
 
-                {/* Column 2: Low Stock List */}
-                <Card className="border-red-500 bg-red-50/40 flex flex-col shadow-sm h-[400px] overflow-hidden">
-                    <div className="px-5 py-4 border-b border-red-100 bg-red-50/50 flex justify-between items-center">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <AlertTriangle size={20} className="text-red-500"/> Low Stock
-                        </h3>
-                        {(stats.lowStockItems.length > 0 || stats.outOfStockItems.length > 0) && <Badge color="bg-red-100 text-red-700 border border-red-200">{stats.lowStockItems.length + stats.outOfStockItems.length}</Badge>}
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2">
-                        {stats.lowStockItems.length === 0 && stats.outOfStockItems.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                                 <CheckSquare size={32} className="mb-2 opacity-30"/>
-                                 <span className="text-sm">Stock levels healthy</span>
-                            </div>
-                        ) : (
-                            <div className="space-y-1">
-                                {stats.outOfStockItems.map(p => (
-                                    <div key={p.id} className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border border-red-100 shadow-sm hover:shadow-md transition-shadow">
-                                        <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
-                                        <Badge color="bg-red-100 text-red-700">Out of Stock</Badge>
-                                    </div>
-                                ))}
-                                {stats.lowStockItems.map(p => (
-                                    <div key={p.id} className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border border-orange-100 shadow-sm hover:shadow-md transition-shadow">
-                                        <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
-                                        <span className="font-bold text-xs text-orange-600">{p.stock} pcs left</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </Card>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Card className="bg-gradient-to-br from-orange-500 to-red-700 text-white border-0 h-24 p-5 flex items-center justify-between shadow-xl rounded-2xl">
+                        <div>
+                            <p className="text-[10px] uppercase font-black text-orange-100 mb-0.5 tracking-widest">Total Outstanding</p>
+                            <h4 className="font-black text-lg truncate">{stats.customersWithDues.length} ACTIVE DEBTORS</h4>
+                        </div>
+                        <div className="text-2xl font-black">₹{stats.totalDues.toLocaleString()}</div>
+                    </Card>
 
-                {/* Column 3: Expiry List */}
-                <Card className="border-amber-500 bg-amber-50/40 flex flex-col shadow-sm h-[400px] overflow-hidden">
-                    <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50 flex justify-between items-center">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <Clock size={20} className="text-amber-500"/> Expiry Alerts
-                        </h3>
-                        {(stats.expiredItems.length > 0 || stats.expiringItems.length > 0) && <Badge color="bg-amber-100 text-amber-800 border border-amber-200">{stats.expiredItems.length + stats.expiringItems.length}</Badge>}
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2">
-                        {stats.expiredItems.length === 0 && stats.expiringItems.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                                 <Sparkles size={32} className="mb-2 opacity-30"/>
-                                 <span className="text-sm">Everything fresh</span>
-                            </div>
-                        ) : (
-                            <div className="space-y-1">
-                                {stats.expiredItems.map(p => (
-                                    <div 
-                                        key={p.id} 
-                                        className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border-l-4 border-l-red-500 border-y border-r border-gray-100 shadow-sm"
-                                    >
-                                        <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
-                                        <div className="text-right flex flex-col items-end">
-                                            <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-1.5 rounded-sm">Expired</span>
-                                            <span className="text-xs font-bold text-gray-500 mt-0.5">{formatDateShort(p.expiryDate || '')}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                                {stats.expiringItems.map(p => (
-                                    <div 
-                                        key={p.id} 
-                                        className="flex justify-between items-center text-sm py-2 px-3 bg-white rounded-lg border-l-4 border-l-amber-500 border-y border-r border-gray-100 shadow-sm"
-                                    >
-                                        <span className="font-bold truncate text-gray-800 w-2/3">{p.name}</span>
-                                        <div className="text-right flex flex-col items-end">
-                                            <span className="text-[10px] uppercase font-bold text-amber-600 bg-amber-100 px-1.5 rounded-sm">Expiring</span>
-                                            <span className="text-xs font-bold text-gray-500 mt-0.5">{formatDateShort(p.expiryDate || '')}</span>
-                                        </div>
+                    <Card className="h-24 p-4 flex items-center justify-between shadow-md bg-indigo-50/20 border-2 border-indigo-100 rounded-2xl group hover:border-indigo-400 transition-all">
+                        <div className="flex flex-col">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Customer Retention</p>
+                            <div className="text-[10px] text-gray-500 flex flex-col gap-1">
+                                {stats.customerComposition.map(c => (
+                                    <div key={c.name} className="flex items-center gap-1.5">
+                                        <div className="w-2 h-2 rounded-full" style={{backgroundColor: c.color}}></div>
+                                        <span className="font-black text-gray-700 uppercase">{c.name}: {c.value}</span>
                                     </div>
                                 ))}
                             </div>
-                        )}
-                    </div>
-                </Card>
+                        </div>
+                        <div className="w-16 h-16 shrink-0 group-hover:scale-110 transition-transform">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={stats.customerComposition} dataKey="value" cx="50%" cy="50%" innerRadius={14} outerRadius={26} paddingAngle={3}>
+                                        {stats.customerComposition.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                    </Pie>
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </Card>
+                </div>
             </div>
         </section>
 
-        {/* SECTION 4: CUSTOMER INSIGHTS */}
+        {/* --- GEMINI AI ASSISTANT GOOGLE THEME --- */}
         <section>
-            <div className="flex items-center gap-2 mb-4 px-1">
-                <Users size={20} className="text-purple-600"/>
-                <h3 className="text-lg font-bold text-gray-800">Customer Insights</h3>
+            <div className="flex items-center gap-2 mb-4 px-1 mt-8">
+                <BrainCircuit size={22} className="text-indigo-600"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Gemini AI Assistant Pro</h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Column 1: Spotlights Stacked */}
-                <div className="flex flex-col gap-4">
-                    {/* Best Buyer */}
-                    {stats.topBuyer && (
-                        <Card className="border-yellow-200 bg-gradient-to-r from-yellow-50 to-white shadow-md relative overflow-hidden group h-[130px] flex items-center">
-                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-yellow-200 rounded-full blur-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
-                            <div className="flex items-center gap-4 relative z-10 p-2 w-full">
-                                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 text-white flex items-center justify-center shadow-lg shadow-yellow-500/30 shrink-0">
-                                    <Crown size={28} fill="white" />
-                                </div>
-                                <div className="min-w-0">
-                                    <div className="text-[10px] font-bold text-yellow-700 uppercase tracking-wider mb-0.5">Best Buyer</div>
-                                    <div className="text-xl font-bold text-gray-900 truncate" title={stats.topBuyer.name}>{stats.topBuyer.name}</div>
-                                    <div className="text-sm text-gray-500">Spent: <span className="font-bold text-green-600">₹{stats.topBuyer.totalSpent.toLocaleString()}</span></div>
-                                </div>
-                            </div>
-                        </Card>
-                    )}
-
-                    {/* Most Loyal */}
-                    {stats.mostLoyal && (
-                        <Card className="border-blue-200 bg-gradient-to-r from-blue-50 to-white shadow-md relative overflow-hidden group h-[130px] flex items-center">
-                            <div className="absolute -right-6 -top-6 w-24 h-24 bg-blue-200 rounded-full blur-2xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
-                            <div className="flex items-center gap-4 relative z-10 p-2 w-full">
-                                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/30 shrink-0">
-                                    <Star size={28} fill="white" />
-                                </div>
-                                <div className="min-w-0">
-                                    <div className="text-[10px] font-bold text-blue-700 uppercase tracking-wider mb-0.5">Most Loyal</div>
-                                    <div className="text-xl font-bold text-gray-900 truncate" title={stats.mostLoyal.name}>{stats.mostLoyal.name}</div>
-                                    <div className="text-sm text-gray-500">Visits: <span className="font-bold text-blue-600">{stats.mostLoyal.visitCount}</span></div>
-                                </div>
-                            </div>
-                        </Card>
-                    )}
-                </div>
-
-                {/* Column 2: Outstanding Dues List */}
-                <Card className="border-red-100 bg-red-50/30 shadow-sm overflow-hidden flex flex-col h-[280px] md:h-auto">
-                    <div className="px-5 py-4 border-b border-red-100 bg-red-50/50 flex justify-between items-center">
-                        <h3 className="font-bold text-red-900 flex items-center gap-2">
-                            <Wallet size={18} /> Outstanding Dues
-                        </h3>
-                        <Badge color="bg-white text-red-600 border border-red-100 shadow-sm">{stats.customersWithDues.length}</Badge>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                        {stats.customersWithDues.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-400 text-sm">
-                                <Wallet size={32} className="mb-2 opacity-20"/>
-                                No dues.
-                            </div>
-                        ) : (
-                            stats.customersWithDues.map(c => (
-                                <div key={c.id} className="bg-white p-3 rounded-xl border border-red-100 shadow-sm flex items-center justify-between group">
-                                    <div className="min-w-0">
-                                        <div className="font-bold text-gray-900 text-sm truncate">{c.name}</div>
-                                        <div className="text-xs text-red-600 font-bold mt-0.5">₹{c.totalDues.toLocaleString()}</div>
-                                    </div>
-                                    <button 
-                                        onClick={() => handleCall(c.phone)}
-                                        className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-colors border border-red-100"
-                                        title="Call Customer"
-                                    >
-                                        <Phone size={14} />
-                                    </button>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </Card>
-
-                {/* Column 3: Loyalty Pie Chart */}
-                <Card className="border-gray-100 shadow-sm p-0 flex flex-col h-[280px] md:h-auto overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
-                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                            <Users size={18} className="text-purple-600"/> Retention
-                        </h3>
-                    </div>
-                    <div className="flex-1 relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={stats.customerComposition}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={50}
-                                    outerRadius={70}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {stats.customerComposition.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} strokeWidth={0}/>
-                                    ))}
-                                </Pie>
-                                <Tooltip 
-                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                />
-                                <Legend 
-                                    verticalAlign="bottom" 
-                                    height={36} 
-                                    iconType="circle" 
-                                    iconSize={8}
-                                    wrapperStyle={{ fontSize: '10px', fontWeight: 600, color: '#6b7280' }}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
-                            <span className="text-2xl font-bold text-gray-800">{customers.length}</span>
-                            <span className="text-[10px] text-gray-400 uppercase tracking-wide">Total</span>
+            <Card className="border-4 bg-[#fdfdfc] shadow-2xl p-8 rounded-[2.5rem] relative overflow-hidden group transition-all duration-500" style={{ borderImage: 'linear-gradient(45deg, #4285F4, #EA4335, #FBBC05, #34A853) 1' }}>
+                <div className="absolute top-0 right-0 p-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-red-500/5 transition-all duration-1000"></div>
+                <div className="absolute bottom-0 left-0 p-24 bg-green-500/5 rounded-full -ml-8 -mb-8 blur-3xl group-hover:bg-yellow-500/5 transition-all duration-1000"></div>
+                
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                    <div className="flex items-center gap-5">
+                        <div className="w-16 h-16 rounded-3xl bg-white text-gray-900 flex items-center justify-center shadow-xl shrink-0 ring-1 ring-gray-100 group-hover:ring-indigo-100 transition-all">
+                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z" fill="url(#geminiGradient)" />
+                                <defs>
+                                    <linearGradient id="geminiGradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                                        <stop stopColor="#4285F4" />
+                                        <stop offset="0.33" stopColor="#EA4335" />
+                                        <stop offset="0.66" stopColor="#FBBC05" />
+                                        <stop offset="1" stopColor="#34A853" />
+                                    </linearGradient>
+                                </defs>
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 className="text-2xl font-black text-gray-950 flex items-center gap-3">
+                                Gemini AI <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-red-500 to-green-600 text-[10px] tracking-[0.3em] font-black uppercase">Analytics Engine</span>
+                            </h3>
+                            <p className="text-gray-500 text-sm font-bold tracking-wide">Deep context-aware store strategy</p>
                         </div>
                     </div>
-                </Card>
-            </div>
+                    <button 
+                        onClick={generateAIInsights}
+                        disabled={isLoadingAI}
+                        className="flex items-center justify-center gap-3 px-8 py-4 rounded-2xl bg-gray-900 text-white font-black text-sm shadow-xl hover:bg-black transition-all active:scale-95 disabled:opacity-50"
+                    >
+                        {isLoadingAI ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
+                        {aiInsight ? "REFRESH INTELLIGENCE" : "GENERATE STRATEGY"}
+                    </button>
+                </div>
+
+                {/* AI TERMINAL STYLE TALKING BOX */}
+                <div className="mt-8 bg-white/60 backdrop-blur-md border border-gray-200 rounded-[2rem] p-8 shadow-inner min-h-[180px] relative transition-colors group-hover:border-indigo-100">
+                    <div className="absolute -top-3 left-8 bg-white border border-gray-100 text-gray-900 text-[9px] font-black px-5 py-2 rounded-full shadow-md flex items-center gap-2 uppercase tracking-[0.2em]">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> Processing Core
+                    </div>
+                    
+                    {isLoadingAI ? (
+                        <div className="flex flex-col items-center justify-center h-40 space-y-5">
+                            <div className="flex gap-3">
+                                <div className="w-4 h-4 bg-[#4285F4] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                <div className="w-4 h-4 bg-[#EA4335] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                <div className="w-4 h-4 bg-[#FBBC05] rounded-full animate-bounce"></div>
+                            </div>
+                            <p className="text-gray-400 font-black text-[10px] tracking-[0.4em] uppercase animate-pulse">Mapping Data Nodes...</p>
+                        </div>
+                    ) : aiInsight ? (
+                        <div className="max-w-none text-gray-800 whitespace-pre-wrap leading-relaxed italic font-bold border-l-4 border-gray-200 pl-8 py-2 text-lg">
+                            {aiInsight}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-40 text-gray-300 text-sm font-black uppercase tracking-[0.3em] text-center">
+                            <Lightbulb size={40} className="mb-4 opacity-10"/>
+                            System Idle • Standby Mode
+                        </div>
+                    )}
+                </div>
+            </Card>
         </section>
 
-        {/* Ad Unit (AMP) */}
-        <div className="mt-8 mb-20 flex justify-center">
-            <AmpAd width="100vw" height="320"
-                 type="adsense"
-                 data-ad-client="ca-pub-5865716270182311"
-                 data-ad-slot="2691818269"
-                 data-auto-format="rspv"
-                 data-full-width="">
-              {/* @ts-ignore */}
-              <div overflow=""></div>
-            </AmpAd>
+        {/* --- STORE MANAGEMENT GUIDE --- */}
+        <section>
+            <div className="flex items-center gap-2 mb-4 px-1 mt-8">
+                <BookOpen size={22} className="text-gray-700"/>
+                <h3 className="text-sm font-black text-gray-950 uppercase tracking-widest">Growth Guide</h3>
+            </div>
+            <Card className="bg-white rounded-3xl border-2 border-gray-100 shadow-sm p-10 group hover:border-blue-500 transition-all duration-500">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 mb-10">
+                    <div className="space-y-6">
+                        <div className="flex gap-5">
+                            <div className="shrink-0 w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 font-black text-xl shadow-sm border border-blue-100">1</div>
+                            <div>
+                                <h4 className="font-black text-gray-950 text-lg uppercase tracking-tight">Turnover Optimization</h4>
+                                <p className="text-sm text-gray-600 mt-1 font-medium leading-relaxed">High turnover rates mean efficient sales. Use the inventory health section above to flush out dead stock that is freezing your cash.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="space-y-6">
+                        <div className="flex gap-5">
+                            <div className="shrink-0 w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 font-black text-xl shadow-sm border border-emerald-100">2</div>
+                            <div>
+                                <h4 className="font-black text-gray-950 text-lg uppercase tracking-tight">Digital First Billing</h4>
+                                <p className="text-sm text-gray-600 mt-1 font-medium leading-relaxed">The 80/20 rule: 80% of revenue usually comes from 20% of your items. Prioritize keeping your Best Sellers in stock at all times.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-gray-950 rounded-[2rem] p-8 flex flex-col sm:flex-row gap-8 items-center text-white shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500 opacity-20 blur-3xl"></div>
+                    <div className="w-20 h-20 rounded-full bg-white/10 text-white flex items-center justify-center shrink-0 border border-white/20">
+                        <Lightbulb size={40} className="text-amber-400" />
+                    </div>
+                    <div>
+                        <h4 className="font-black text-xl uppercase tracking-wider mb-1">PRO ADVICE</h4>
+                        <p className="text-sm text-gray-400 leading-relaxed font-medium italic">"Maximize revenue by identifying which payment methods your customers prefer. Our data shows UPI transactions often lead to higher cart totals."</p>
+                    </div>
+                </div>
+
+                <div className="w-full flex justify-center mt-10">
+                    <AmpAd width="100vw" height="320" type="adsense" data-ad-client="ca-pub-5865716270182311" data-ad-slot="2691818269" data-auto-format="rspv" data-full-width="">
+                        <div {...{ overflow: "" } as any}></div>
+                    </AmpAd>
+                </div>
+            </Card>
+        </section>
+
+        <div className="mt-12 pt-10 border-t border-gray-100 text-center space-y-3">
+            <div className="flex justify-center gap-6 text-[10px] font-black text-gray-400 uppercase tracking-[0.3em]">
+                <span>Secure Banking Grade Sync</span>
+                <span>•</span>
+                <span>Noor POS Enterprise</span>
+            </div>
+            <p className="text-xs text-gray-300 font-bold uppercase tracking-widest">© 2025 System Status: Verified & Encrypted</p>
         </div>
     </div>
   );
