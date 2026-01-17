@@ -623,8 +623,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-4 mb-4">
                     <div className="p-3 bg-white rounded-xl text-amber-600 shadow-sm"><Clock size={24}/></div>
                     <div>
-                        <h4 className="font-black text-amber-900 uppercase text-xs tracking-widest">Stock Health Report</h4>
-                        <p className="text-amber-700/70 text-sm font-medium leading-relaxed">Showing items expiring within <strong>{settings?.expiryAlertDays || 7} days</strong> based on your preferences. Consider clearance sales.</p>
+                        <h4 className="font-black text-amber-900 uppercase text-xs tracking-widest">Capital Recovery</h4>
+                        <p className="text-amber-700/70 text-sm font-medium leading-relaxed">These items expire within 7 days. Consider a flash sale to recover your investment.</p>
                     </div>
                 </div>
                 <div className="max-h-[50vh] overflow-y-auto pr-2 space-y-2 no-scrollbar">
@@ -636,8 +636,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                     <Badge color={p.daysLeft === 0 ? "bg-red-500 text-white" : "bg-amber-500 text-white"}>{p.daysLeft}d</Badge>
                                 </div>
                                 <div className="flex gap-2 mt-1">
-                                    <Badge color="bg-amber-100 text-amber-700 text-[9px] uppercase">Expires: {formatDateShort(p.expiryDate || '')}</Badge>
-                                    <Badge color="bg-gray-100 text-gray-600 text-[9px] uppercase">Qty: {p.stock}</Badge>
+                                    <Badge color="bg-amber-100 text-amber-700 text-[9px] uppercase">{formatDateShort(p.expiryDate || '')}</Badge>
+                                    <Badge color="bg-gray-100 text-gray-600 text-[9px] uppercase">Stock: {p.stock}</Badge>
                                 </div>
                             </div>
                             <Button onClick={() => { closeDetail(); onNavigate(Tab.POS); }} size="sm" variant="neutral" className="border-amber-200 text-amber-700 font-black uppercase text-[10px] shrink-0">SELL NOW</Button>

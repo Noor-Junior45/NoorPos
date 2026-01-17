@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Customer, Sale, Payment, Tab } from '../types';
 import { StoreService } from '../services/storeService';
@@ -18,33 +19,6 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [showEditModal, setShowEditModal] = useState(false);
   const [formData, setFormData] = useState<Partial<Customer>>({});
   
-  // Navigation Gesture Hook
-  useEffect(() => {
-      const handleNavigationPop = (e: any) => {
-          // If we are in deep view (profile open), and user goes back, just close the profile
-          if (selectedCustomer) {
-              setSelectedCustomer(null);
-          }
-          if (showEditModal) {
-              setShowEditModal(false);
-          }
-      };
-      window.addEventListener('app-navigation-pop' as any, handleNavigationPop);
-      return () => window.removeEventListener('app-navigation-pop' as any, handleNavigationPop);
-  }, [selectedCustomer, showEditModal]);
-
-  // When opening deep view, push a virtual state
-  const handleSelectCustomer = (c: Customer) => {
-      window.history.pushState({ tab: Tab.CUSTOMERS, depth: 1 }, '');
-      setSelectedCustomer(c);
-  };
-
-  const handleOpenAddModal = () => {
-      window.history.pushState({ tab: Tab.CUSTOMERS, depth: 1 }, '');
-      setFormData({});
-      setShowEditModal(true);
-  };
-
   const [validationErrors, setValidationErrors] = useState<Set<string>>(new Set());
   const [shakeTrigger, setShakeTrigger] = useState(false);
 
@@ -57,6 +31,44 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   const [viewingSale, setViewingSale] = useState<Sale | null>(null);
+
+  // DO add comment above each fix.
+  // Fixed error in Customers.tsx: Moved useEffect after state declarations to prevent "Block-scoped variable used before its declaration" error.
+  // --- Navigation Gesture Hook ---
+  useEffect(() => {
+      const handleNavigationPop = (e: any) => {
+          // Priority-based closing of sub-views
+          if (showPaymentModal) {
+              setShowPaymentModal(false);
+              return;
+          }
+          if (showEditModal) {
+              setShowEditModal(false);
+              return;
+          }
+          if (selectedCustomer) {
+              setSelectedCustomer(null);
+              return;
+          }
+          if (viewingSale) {
+              setViewingSale(null);
+              return;
+          }
+      };
+      window.addEventListener('app-navigation-pop' as any, handleNavigationPop);
+      return () => window.removeEventListener('app-navigation-pop' as any, handleNavigationPop);
+  }, [selectedCustomer, showEditModal, showPaymentModal, viewingSale]);
+
+  const handleSelectCustomer = (c: Customer) => {
+      window.history.pushState({ tab: Tab.CUSTOMERS, depth: 1 }, '');
+      setSelectedCustomer(c);
+  };
+
+  const handleOpenAddModal = () => {
+      window.history.pushState({ tab: Tab.CUSTOMERS, depth: 1 }, '');
+      setFormData({});
+      setShowEditModal(true);
+  };
 
   const nameRef = useRef<HTMLInputElement>(null);
   const phoneRef = useRef<HTMLInputElement>(null);
@@ -140,6 +152,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
     const savedCustomer = await StoreService.upsertCustomer({ ...formData, phone: phoneToSave });
     setSearchTerm('');
     setShowEditModal(false);
+    window.history.back();
     await loadData();
     setSelectedCustomer(savedCustomer);
   };
@@ -171,6 +184,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       setPaymentMethod('Cash');
       setPaymentNote('');
       setPaymentReceipt(null);
+      window.history.pushState({ tab: Tab.CUSTOMERS, depth: 2 }, '');
       setShowPaymentModal(true);
   };
 
@@ -195,6 +209,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
         setCustomers(updatedCustomers);
         if (updatedSelf) setSelectedCustomer(updatedSelf);
         setShowPaymentModal(false);
+        window.history.back();
       } finally { setIsProcessingPayment(false); }
   };
 
@@ -310,7 +325,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                                if (item.type === 'sale') {
                                    const sale = item.data as Sale;
                                    return (
-                                       <div key={`sale-${sale.id}`} onClick={() => setViewingSale(sale)} className="flex justify-between items-center bg-gray-50/50 p-4 rounded-2xl border border-gray-100 hover:border-blue-200 cursor-pointer transition-all hover:scale-[1.01]">
+                                       <div key={`sale-${sale.id}`} onClick={() => { window.history.pushState({ tab: Tab.CUSTOMERS, depth: 2 }, ''); setViewingSale(sale); }} className="flex justify-between items-center bg-gray-50/50 p-4 rounded-2xl border border-gray-100 hover:border-blue-200 cursor-pointer transition-all hover:scale-[1.01]">
                                            <div className="flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-gray-400 shadow-sm"><Receipt size={18}/></div><div><div className="text-sm font-black text-gray-900">Sale <span className="text-[10px] font-bold text-gray-400 ml-2 uppercase">#{sale.id.slice(0,5)}</span></div><div className="text-[10px] text-gray-500 font-bold uppercase">{new Date(sale.timestamp).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})}</div></div></div>
                                            <div className="text-right"><div className="text-sm font-black text-gray-950">₹{sale.total.toFixed(0)}</div><div className="text-[10px] font-bold text-indigo-500 uppercase">{sale.items.length} Items</div></div>
                                        </div>
@@ -371,7 +386,7 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
       <Modal isOpen={showDuesError} onClose={() => setShowDuesError(false)} title="Cannot Delete Contact">
           <div className="text-center py-4"><div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={32} /></div><h3 className="text-lg font-bold text-gray-900 mb-2">Outstanding Dues</h3><p className="text-sm text-gray-500 mb-6 px-4">{customerToDelete?.name} has outstanding dues of ₹{customerToDelete?.totalDues}. Please clear the dues before deleting.</p><Button className="w-full" onClick={() => setShowDuesError(false)}>Okay</Button></div>
       </Modal>
-      <Modal isOpen={showPaymentModal} onClose={() => setShowPaymentModal(false)} title="Record Payment">
+      <Modal isOpen={showPaymentModal} onClose={() => { setShowPaymentModal(false); window.history.back(); }} title="Record Payment">
           <div className="space-y-4">
               <div className="bg-emerald-50 p-4 rounded-2xl border-2 border-emerald-100 text-center mb-2"><span className="text-[10px] text-emerald-600 uppercase font-black tracking-widest block mb-1">Unpaid Balance</span><span className="text-3xl font-black text-emerald-800">₹{selectedCustomer?.totalDues || 0}</span></div>
               <div className="flex flex-col gap-5">
@@ -383,7 +398,13 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Proof of Payment</label>
                       <input type="file" ref={receiptInputRef} onChange={handleReceiptUpload} className="hidden" accept="image/*"/>
                       <div className="flex flex-col gap-3">
-                          <button onClick={() => receiptInputRef.current?.click()} className={`w-full flex items-center justify-center gap-3 py-4 border-2 border-dashed rounded-xl transition-all ${paymentReceipt ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}>{paymentReceipt ? <CheckCircle2 size={24}/> : <ImageIcon size={24}/><span className="text-sm font-black uppercase tracking-wider">{paymentReceipt ? 'Receipt Captured' : 'Upload Receipt Proof'}</span>}</button>
+                          <button 
+                            onClick={() => receiptInputRef.current?.click()} 
+                            className={`w-full flex items-center justify-center gap-3 py-4 border-2 border-dashed rounded-xl transition-all ${paymentReceipt ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-blue-400 hover:text-blue-500'}`}
+                          >
+                            {paymentReceipt ? <CheckCircle2 size={24}/> : <ImageIcon size={24}/>}
+                            <span className="text-sm font-black uppercase tracking-wider">{paymentReceipt ? 'Receipt Captured' : 'Upload Receipt Proof'}</span>
+                          </button>
                           {paymentReceipt && <div className="relative group w-24 h-24 mx-auto rounded-lg overflow-hidden border border-emerald-200 shadow-sm bg-gray-50 flex items-center justify-center"><img src={paymentReceipt} className="w-full h-full object-cover" alt="Preview" /><button onClick={() => setPaymentReceipt(null)} className="absolute inset-0 bg-black/40 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={20}/></button></div>}
                       </div>
                   </div>
@@ -393,16 +414,16 @@ export const Customers: React.FC<CustomersProps> = ({ initialAction, onClearActi
                   <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Payment Type</label><div className="relative"><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full rounded-xl border-2 border-gray-100 py-2.5 px-3 bg-gray-50 text-sm font-bold focus:outline-none focus:border-blue-500 appearance-none"><option value="Cash">Cash</option><option value="UPI">UPI / GPay</option><option value="Card">Bank Card</option></select><ChevronDown size={14} className="absolute right-3 top-3.5 text-gray-400 pointer-events-none"/></div></div>
               </div>
               <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Note (Optional)</label><Input placeholder="e.g. Cleared full balance" value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} className="rounded-xl border-2 border-gray-100"/></div>
-              <div className="flex gap-3 pt-6 border-t border-gray-50"><Button variant="neutral" className="flex-1 py-4 font-bold border-2 border-gray-100" onClick={() => setShowPaymentModal(false)} disabled={isProcessingPayment}>Discard</Button><Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 py-4 font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-100 flex justify-center items-center gap-2" onClick={handleRecordPayment} disabled={isProcessingPayment}>{isProcessingPayment ? <Loader2 size={20} className="animate-spin" /> : <><CheckCircle2 size={18}/> Settle Dues</>}</Button></div>
+              <div className="flex gap-3 pt-6 border-t border-gray-50"><Button variant="neutral" className="flex-1 py-4 font-bold border-2 border-gray-100" onClick={() => { setShowPaymentModal(false); window.history.back(); }} disabled={isProcessingPayment}>Discard</Button><Button className="flex-1 bg-emerald-600 hover:bg-emerald-700 py-4 font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-100 flex justify-center items-center gap-2" onClick={handleRecordPayment} disabled={isProcessingPayment}>{isProcessingPayment ? <Loader2 size={20} className="animate-spin" /> : <><CheckCircle2 size={18}/> Settle Dues</>}</Button></div>
           </div>
       </Modal>
-      <Modal isOpen={!!viewingSale} onClose={() => setViewingSale(null)} title="Transaction Summary">
+      <Modal isOpen={!!viewingSale} onClose={() => { setViewingSale(null); window.history.back(); }} title="Transaction Summary">
         {viewingSale && (
             <div className="space-y-6">
                 <div className="flex justify-between items-start border-b border-gray-100 pb-4"><div><p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Document No.</p><p className="font-mono font-black text-gray-900 text-lg">#{viewingSale.id.slice(0,10).toUpperCase()}</p></div><div className="text-right"><p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Billing Date</p><p className="text-sm font-bold text-gray-950">{new Date(viewingSale.timestamp).toLocaleDateString()}</p></div></div>
                 <div className="bg-gray-50 rounded-2xl p-4 max-h-60 overflow-y-auto border border-gray-100 shadow-inner"><div className="space-y-1">{viewingSale.items.map((item, idx) => (<div key={idx} className="flex justify-between items-center py-2 border-b border-gray-200/50 last:border-0 text-sm"><div className="min-w-0 flex-1 pr-4"><span className="font-black text-gray-800 truncate block">{item.name}</span><div className="text-[10px] text-gray-500 font-bold uppercase">{item.quantity} {item.unit || 'pcs'} @ ₹{item.sellPrice.toFixed(0)}</div></div><span className="font-black text-gray-950 shrink-0">₹{(item.quantity * item.sellPrice).toFixed(0)}</span></div>))}</div></div>
                 <div className="space-y-2 pt-2 bg-gray-50/50 p-4 rounded-2xl border border-gray-100"><div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-wider"><span>Subtotal</span><span>₹{viewingSale.subtotal.toFixed(0)}</span></div><div className="flex justify-between text-xs font-bold text-gray-500 uppercase tracking-wider"><span>Tax</span><span>₹{viewingSale.tax.toFixed(0)}</span></div><div className="flex justify-between text-xl font-black text-gray-950 border-t border-gray-200 pt-3 mt-2"><span>Total Paid</span><span className="text-emerald-600">₹{viewingSale.total.toFixed(0)}</span></div><div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] mt-2"><span>Method: {viewingSale.paymentMethod || 'Cash'}</span><span>Auth: Verified</span></div></div>
-                <div className="flex gap-3 mt-4"><Button variant="neutral" className="flex-1 py-3 font-bold border-2 border-gray-200" onClick={() => setViewingSale(null)}>Dismiss</Button><Button className="flex-1 flex items-center justify-center gap-3 py-3 font-black uppercase tracking-widest bg-gray-900 rounded-2xl shadow-xl shadow-gray-100 active:scale-95" onClick={() => generateInvoicePDF(viewingSale)}><Printer size={18}/> Print Bill</Button></div>
+                <div className="flex gap-3 mt-4"><Button variant="neutral" className="flex-1 py-3 font-bold border-2 border-gray-200" onClick={() => { setViewingSale(null); window.history.back(); }}>Dismiss</Button><Button className="flex-1 flex items-center justify-center gap-3 py-3 font-black uppercase tracking-widest bg-gray-900 rounded-2xl shadow-xl shadow-gray-100 active:scale-95" onClick={() => generateInvoicePDF(viewingSale)}><Printer size={18}/> Print Bill</Button></div>
             </div>
         )}
       </Modal>
