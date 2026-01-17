@@ -1,16 +1,24 @@
 
-// Replace this with your actual Vercel deployment URL
-const VERCEL_URL = 'https://noor-pos-your-project.vercel.app'; 
+/**
+ * API CONFIGURATION
+ * 
+ * When running in the Android APK, relative paths (like /api/storage) don't work
+ * because the app runs on a local bridge (capacitor:// or http://localhost).
+ * 
+ * REPLACE the URL below with your actual Vercel deployment URL.
+ */
+const PRODUCTION_URL = 'https://noorpos.vercel.app'; 
 
 export const getApiUrl = (path: string) => {
-  // If we are running in a browser on the actual domain, use relative paths
-  // If we are running in an APK (localhost/capacitor), use the absolute Vercel URL
-  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  const isCapacitor = window.location.protocol === 'capacitor:';
+  // Check if we are running in a Capacitor (Android/iOS) environment
+  const isCapacitor = window.location.protocol === 'capacitor:' || 
+                      window.location.hostname === 'localhost' && !window.location.port;
   
-  if (isCapacitor || (isLocalhost && !window.location.port)) {
-    return `${VERCEL_URL}${path}`;
+  // In mobile or isolated local preview, use absolute production URL
+  if (isCapacitor) {
+    return `${PRODUCTION_URL}${path}`;
   }
   
+  // In the standard browser deployment on Vercel, use relative paths
   return path;
 };
