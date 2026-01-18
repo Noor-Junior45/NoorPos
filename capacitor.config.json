@@ -1,10 +1,12 @@
+
 {
-  "appId": "com.noorpos.app",
+  "appId": "in.noorpos.app",
   "appName": "Noor POS",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https",
+    "hostname": "www.noorpos.in",
     "cleartext": true
   }
 }
