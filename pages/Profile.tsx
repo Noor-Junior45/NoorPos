@@ -14,7 +14,7 @@ import {
   Eye, Users, Shield, Cpu, Gauge, Terminal, HelpCircle, Percent,
   DatabaseZap, Lock, Briefcase, FileSearch, Trash, History, Power,
   Building2, Landmark, Fingerprint, AtSign, Layout, BellRing, Trash2 as TrashIcon, Network,
-  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp, Receipt, Mail, Send
+  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp, Receipt, Mail, Send, Activity as Pulse
 } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
@@ -54,6 +54,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [isDriveConnected, setIsDriveConnected] = useState(false);
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
   
+  // Server Status
+  const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  
   // Modals
   const [showBusinessModal, setShowBusinessModal] = useState(false);
   const [showNasModal, setShowNasModal] = useState(false);
@@ -90,7 +93,18 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
   useEffect(() => {
     loadData();
+    checkServerHealth();
   }, []);
+
+  const checkServerHealth = async () => {
+      try {
+          const res = await fetch(getApiUrl('/api/health'), { method: 'GET' });
+          if (res.ok) setServerStatus('online');
+          else setServerStatus('offline');
+      } catch (e) {
+          setServerStatus('offline');
+      }
+  };
 
   const loadData = async () => {
       setLoading(true);
@@ -146,6 +160,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
   const handleTestEmail = async (e: React.MouseEvent) => {
       e.stopPropagation();
+      if (serverStatus === 'offline') {
+          alert("Cannot send email: Backend server is offline. Please start 'node server.js'.");
+          return;
+      }
       if (!storeSettings?.storeEmail) {
           alert("Please save a Store Email first.");
           return;
@@ -487,14 +505,24 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
         {/* 5. PREFERENCES STACK (New Separate Boxes) */}
         <div className="space-y-4">
-            <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] ml-4">System Preferences</h3>
+            <div className="flex items-center justify-between ml-4">
+                <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">System Preferences</h3>
+                <div className="flex items-center gap-2 mr-2">
+                    {serverStatus === 'online' && <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 uppercase tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100"><Pulse size={10}/> Server Online</span>}
+                    {serverStatus === 'offline' && <span className="flex items-center gap-1 text-[9px] font-black text-red-600 uppercase tracking-wider bg-red-50 px-2 py-0.5 rounded-full border border-red-100"><AlertTriangle size={10}/> Server Offline</span>}
+                </div>
+            </div>
             
             <div className="space-y-3">
                 <ActionButton 
                     icon={storeSettings?.emailAlertsEnabled ? Mail : BellOff} 
                     label="Email Alerts" 
-                    subLabel={storeSettings?.emailAlertsEnabled ? "Notifications sent to store email" : "Email alerts disabled"} 
+                    subLabel={serverStatus === 'offline' ? "Backend Offline - Email Unavailable" : (storeSettings?.emailAlertsEnabled ? "Notifications sent to store email" : "Email alerts disabled")}
                     onClick={() => {
+                        if (serverStatus === 'offline') {
+                            alert("Please start the backend server ('node server.js') to enable emails.");
+                            return;
+                        }
                         if (!storeSettings?.storeEmail) {
                             alert("Please add a Store Email in Business Profile first.");
                             return;
@@ -504,7 +532,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                     colorClass={storeSettings?.emailAlertsEnabled ? "bg-orange-50 text-orange-600" : "bg-gray-100 text-gray-400"}
                     rightContent={
                         <div className="flex items-center gap-3">
-                            {storeSettings?.emailAlertsEnabled && (
+                            {storeSettings?.emailAlertsEnabled && serverStatus === 'online' && (
                                 <button 
                                     onClick={handleTestEmail}
                                     disabled={isSendingTest}
