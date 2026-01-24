@@ -43,7 +43,7 @@ export const Landing: React.FC<LandingProps> = ({ onGetStarted }) => {
           </div>
           <button 
             onClick={onGetStarted}
-            className="px-6 py-2.5 bg-gray-950 text-white rounded-full font-bold text-sm hover:bg-black transition-all active:scale-95 shadow-xl shadow-gray-200 flex items-center gap-2"
+            className="px-6 py-2.5 bg-gray-950 text-white rounded-full font-bold text-sm hover:bg-black transition-all active:scale-95 shadow-xl shadow-gray-200 flex items-center justify-center gap-2"
           >
             Dashboard Login <ArrowRight size={16} />
           </button>
@@ -66,7 +66,7 @@ export const Landing: React.FC<LandingProps> = ({ onGetStarted }) => {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-5">
           <button 
             onClick={onGetStarted}
-            className="px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-lg shadow-2xl shadow-blue-300/40 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+            className="px-10 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-lg shadow-2xl shadow-blue-300/40 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3"
           >
             Get Started Free <ArrowRight size={22} />
           </button>
@@ -210,7 +210,7 @@ export const Landing: React.FC<LandingProps> = ({ onGetStarted }) => {
             <p className="text-gray-500 font-medium mb-12 max-w-xl mx-auto text-lg leading-relaxed">Join hundreds of progressive retailers who have digitized their daily operations with Noor POS.</p>
             <button 
                 onClick={onGetStarted}
-                className="px-14 py-5 bg-gray-950 text-white rounded-full font-black text-xl shadow-2xl hover:bg-black transition-all active:scale-95 flex items-center gap-3 mx-auto"
+                className="px-14 py-5 bg-gray-950 text-white rounded-full font-black text-xl shadow-2xl hover:bg-black transition-all active:scale-95 flex items-center justify-center gap-3 mx-auto"
             >
                 Launch Dashboard <ArrowRight size={24}/>
             </button>
@@ -247,7 +247,6 @@ export const Landing: React.FC<LandingProps> = ({ onGetStarted }) => {
               <li><a href="/privacy.html" className="hover:text-blue-600 transition-colors">Privacy Policy</a></li>
               <li><a href="https://terms-conditions-store.vercel.app" className="hover:text-blue-600 transition-colors">Terms of Use</a></li>
               <li><a href="mailto:newluckypharmacy@gmail.com" className="hover:text-blue-600 transition-colors">Contact Engineering</a></li>
-              <li><a href="https://noorpos.in/ads.txt" className="hover:text-blue-600 transition-colors">Authorized Sellers</a></li>
             </ul>
           </div>
         </div>
