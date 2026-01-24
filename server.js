@@ -9,6 +9,7 @@ import analyzeHandler from './api/analyze.js';
 import parseInvoiceHandler from './api/parse-invoice.js';
 import storageHandler from './api/storage.js';
 import sendAlertHandler from './api/send-alert.js';
+import chatHandler from './api/chat.js';
 
 dotenv.config();
 
@@ -37,7 +38,8 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/analyze', analyzeHandler);
 app.post('/api/parse-invoice', parseInvoiceHandler);
-app.post('/api/send-alert', sendAlertHandler); // Now using the separated handler
+app.post('/api/send-alert', sendAlertHandler);
+app.post('/api/chat', chatHandler); // New Chat Route
 
 // Storage Routes
 app.get('/api/storage', storageHandler);

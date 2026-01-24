@@ -42,5 +42,34 @@ export const GeminiService = {
       };
       reader.onerror = (error) => reject(error);
     });
+  },
+
+  async chatWithAssistant(
+    message: string, 
+    history: Array<{role: 'user'|'model', content: string}>, 
+    context: any, 
+    image?: string,
+    mimeType?: string
+  ): Promise<string> {
+    try {
+      const response = await fetch(getApiUrl('/api/chat'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message, 
+          history, 
+          context,
+          image,
+          mimeType 
+        }),
+      });
+
+      if (!response.ok) throw new Error("Chat failed");
+      const data = await response.json();
+      return data.reply;
+    } catch (error) {
+      console.error("Gemini Chat Error:", error);
+      return "I'm having trouble connecting to the server right now. Please try again.";
+    }
   }
 };
