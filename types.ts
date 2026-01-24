@@ -52,6 +52,7 @@ export interface StoreSettings {
   currencySymbol: string;
   recycleBinRetentionDays: number;
   directPrintEnabled: boolean;
+  printPaperSize?: 'A4' | 'Thermal';
   scannerPreference: 'phone' | 'machine' | 'both'; 
 
   nasUrl?: string;

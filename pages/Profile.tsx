@@ -14,7 +14,7 @@ import {
   Eye, Users, Shield, Cpu, Gauge, Terminal, HelpCircle, Percent,
   DatabaseZap, Lock, Briefcase, FileSearch, Trash, History, Power,
   Building2, Landmark, Fingerprint, AtSign, Layout, BellRing, Trash2 as TrashIcon, Network,
-  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp
+  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp, Receipt
 } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
@@ -475,6 +475,32 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                     onClick={toggleNotifications}
                     colorClass={storeSettings?.notificationsEnabled ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-400"}
                     rightContent={<div className={`w-10 h-6 rounded-full p-1 transition-colors ${storeSettings?.notificationsEnabled ? 'bg-amber-500' : 'bg-gray-200'}`}><div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${storeSettings?.notificationsEnabled ? 'translate-x-4' : ''}`}></div></div>}
+                />
+
+                <ActionButton 
+                    icon={Printer} 
+                    label="Printer Access" 
+                    subLabel={storeSettings?.directPrintEnabled ? "Direct print dialog enabled" : "Download PDF mode"} 
+                    onClick={() => updateSetting('directPrintEnabled', !storeSettings?.directPrintEnabled)}
+                    colorClass={storeSettings?.directPrintEnabled ? "bg-cyan-50 text-cyan-600" : "bg-gray-100 text-gray-400"}
+                    rightContent={<div className={`w-10 h-6 rounded-full p-1 transition-colors ${storeSettings?.directPrintEnabled ? 'bg-cyan-500' : 'bg-gray-200'}`}><div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${storeSettings?.directPrintEnabled ? 'translate-x-4' : ''}`}></div></div>}
+                />
+
+                <ActionButton 
+                    icon={Receipt} 
+                    label="Invoice Format" 
+                    subLabel={storeSettings?.printPaperSize === 'Thermal' ? "80mm Receipt Mode" : "Standard A4 Page"} 
+                    onClick={() => updateSetting('printPaperSize', storeSettings?.printPaperSize === 'Thermal' ? 'A4' : 'Thermal')}
+                    colorClass={storeSettings?.printPaperSize === 'Thermal' ? "bg-rose-50 text-rose-600" : "bg-blue-50 text-blue-600"}
+                    rightContent={
+                        <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-black uppercase tracking-wider transition-colors ${storeSettings?.printPaperSize === 'Thermal' ? 'text-rose-600' : 'text-gray-300'}`}>Thermal</span>
+                            <div className={`w-12 h-6 rounded-full p-1 transition-colors relative ${storeSettings?.printPaperSize === 'Thermal' ? 'bg-rose-100' : 'bg-blue-100'}`}>
+                                <div className={`w-4 h-4 rounded-full shadow-sm transition-all absolute top-1 ${storeSettings?.printPaperSize === 'Thermal' ? 'bg-rose-500 left-1' : 'bg-blue-500 left-7'}`}></div>
+                            </div>
+                            <span className={`text-[10px] font-black uppercase tracking-wider transition-colors ${storeSettings?.printPaperSize !== 'Thermal' ? 'text-blue-600' : 'text-gray-300'}`}>A4</span>
+                        </div>
+                    }
                 />
 
                 <ActionButton 

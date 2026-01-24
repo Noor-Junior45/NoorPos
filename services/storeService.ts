@@ -27,6 +27,7 @@ const defaultSettings: StoreSettings = {
   currencySymbol: '₹',
   recycleBinRetentionDays: 30,
   directPrintEnabled: false,
+  printPaperSize: 'A4',
   scannerPreference: 'both', 
   nasUrl: 'http://localhost:3000/api/storage',
   syncToNas: false,
