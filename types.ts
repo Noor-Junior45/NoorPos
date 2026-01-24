@@ -27,11 +27,24 @@ export interface Product {
 
 export interface StoreSettings {
   storeName: string;
+  businessTagline?: string;
   storeAddress: string;
   storePhone: string;
   storeEmail?: string;
+  businessWebsite?: string;
   logo?: string;
   
+  // Compliance & Branding
+  gstNumber?: string;
+  panNumber?: string;
+  bankDetails?: string;
+  invoiceFooterNote?: string;
+  primaryColor?: string; // Hex for UI accent
+
+  // Global Business Logic
+  globalDefaultTax?: number;
+  maxDiscountLimit?: number;
+
   expiryAlertDays: number;
   lowStockDefault: number;
   soundEnabled: boolean;
@@ -39,7 +52,7 @@ export interface StoreSettings {
   currencySymbol: string;
   recycleBinRetentionDays: number;
   directPrintEnabled: boolean;
-  scannerPreference: 'phone' | 'machine' | 'both'; // New: Scanner preference
+  scannerPreference: 'phone' | 'machine' | 'both'; 
 
   nasUrl?: string;
   syncToNas?: boolean;
@@ -47,8 +60,8 @@ export interface StoreSettings {
 
 export interface CartItem extends Product {
   quantity: number;
-  discount?: number; // Cash discount per line item
-  customPrice?: number; // Overridden price for POS session
+  discount?: number; 
+  customPrice?: number; 
 }
 
 export interface Payment {
@@ -57,7 +70,7 @@ export interface Payment {
   date: string;
   method: string;
   note?: string;
-  receiptImage?: string; // New: Proof of payment
+  receiptImage?: string; 
 }
 
 export interface Customer {

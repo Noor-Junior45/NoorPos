@@ -11,6 +11,7 @@ interface StoreData {
   users: User[];
   deletedItems: DeletedItem[];
   settings: StoreSettings;
+  logs?: string[];
 }
 
 const defaultSettings: StoreSettings = {
@@ -28,7 +29,9 @@ const defaultSettings: StoreSettings = {
   directPrintEnabled: false,
   scannerPreference: 'both', 
   nasUrl: 'http://localhost:3000/api/storage',
-  syncToNas: false
+  syncToNas: false,
+  globalDefaultTax: 0,
+  maxDiscountLimit: 100
 };
 
 const defaultData: StoreData = {
@@ -38,7 +41,8 @@ const defaultData: StoreData = {
   customers: [],
   users: [],
   deletedItems: [],
-  settings: defaultSettings
+  settings: defaultSettings,
+  logs: []
 };
 
 const LS_BACKUP_KEY = 'glassstore_offline_backup';
@@ -52,8 +56,6 @@ let saveTimeout: any = null;
 let lastBackupTime: string | null = localStorage.getItem('noor_last_backup');
 let isCloudSyncHealthy = true; 
 let isServerAvailable = true;
-
-const CLIENT_ID = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -69,13 +71,19 @@ const StoreService = {
   getLastBackupTime() { return lastBackupTime; },
   getSyncStatus() { return isCloudSyncHealthy; },
 
+  async addLog(message: string) {
+      const data = await this.loadData();
+      if (!data.logs) data.logs = [];
+      data.logs.unshift(`[${new Date().toLocaleTimeString()}] ${message}`);
+      if (data.logs.length > 50) data.logs.pop();
+      await this.saveData();
+  },
+
   async loadData(): Promise<StoreData> {
     if (cache) return cache;
     if (loadPromise) return loadPromise;
 
     const session = GoogleDriveUtils.getSession();
-    const nasUrl = localStorage.getItem(LS_NAS_URL);
-    const syncToNas = localStorage.getItem(LS_SYNC_NAS) === 'true';
 
     loadPromise = new Promise(async (resolve) => {
         let remoteData = null;
@@ -149,6 +157,27 @@ const StoreService = {
   async getCustomers() { const data = await this.loadData(); return [...data.customers]; },
   async getSettings() { const data = await this.loadData(); return data.settings; },
   async saveSettings(settings: StoreSettings) { const data = await this.loadData(); data.settings = settings; await this.saveData(); },
+  
+  // Local Staff Management
+  async addStaff(user: Omit<User, 'id'>) {
+      const data = await this.loadData();
+      const newUser = { ...user, id: generateId() };
+      data.users.push(newUser);
+      await this.saveData();
+      await this.addLog(`Staff member added: ${user.name}`);
+      return newUser;
+  },
+
+  async removeStaff(id: string) {
+      const data = await this.loadData();
+      const idx = data.users.findIndex(u => u.id === id);
+      if (idx > -1) {
+          const removed = data.users.splice(idx, 1)[0];
+          await this.saveData();
+          await this.addLog(`Staff member removed: ${removed.name}`);
+      }
+  },
+
   async addProduct(p: any) { const data = await this.loadData(); const np = { ...p, id: generateId(), createdAt: new Date().toISOString() }; data.products.push(np); await this.saveData(); return np; },
   async createSale(s: any) { const data = await this.loadData(); const ns = { ...s, id: generateId(), timestamp: new Date().toISOString() }; data.sales.push(ns); await this.saveData(); return ns; },
   async upsertCustomer(c: any) { const data = await this.loadData(); const nc = { ...c, id: c.id || generateId() }; const idx = data.customers.findIndex(cx => cx.id === nc.id); if(idx > -1) data.customers[idx] = nc; else data.customers.push(nc); await this.saveData(); return nc; },
@@ -158,8 +187,6 @@ const StoreService = {
   clearPOSDraft() { localStorage.removeItem(LS_POS_DRAFT); },
   async logout() { GoogleDriveUtils.clearSession(); localStorage.removeItem(LS_BACKUP_KEY); window.location.reload(); },
 
-  // DO add comment above each fix.
-  // Fixed error in StoreService: Added missing updateProduct method.
   async updateProduct(id: string, updates: Partial<Product>) {
     const data = await this.loadData();
     const idx = data.products.findIndex(p => p.id === id);
@@ -169,7 +196,6 @@ const StoreService = {
     }
   },
 
-  // Fixed error in StoreService: Added missing batchAddProducts method.
   async batchAddProducts(products: Partial<Product>[]) {
     const data = await this.loadData();
     const newProducts = products.map(p => ({
@@ -181,7 +207,6 @@ const StoreService = {
     await this.saveData();
   },
 
-  // Fixed error in StoreService: Added missing updateTag method.
   async updateTag(id: string, updates: Partial<Tag>) {
     const data = await this.loadData();
     const idx = data.tags.findIndex(t => t.id === id);
@@ -191,7 +216,6 @@ const StoreService = {
     }
   },
 
-  // Fixed error in StoreService: Added missing addTag method.
   async addTag(tag: Tag) {
     const data = await this.loadData();
     const nt = { ...tag, id: tag.id || generateId() };
@@ -200,7 +224,6 @@ const StoreService = {
     return nt;
   },
 
-  // Fixed error in StoreService: Added missing deleteProduct method.
   async deleteProduct(id: string) {
     const data = await this.loadData();
     const idx = data.products.findIndex(p => p.id === id);
@@ -217,7 +240,6 @@ const StoreService = {
     }
   },
 
-  // Fixed error in StoreService: Added missing deleteTag method.
   async deleteTag(id: string) {
     const data = await this.loadData();
     const idx = data.tags.findIndex(t => t.id === id);
@@ -234,7 +256,6 @@ const StoreService = {
     }
   },
 
-  // Fixed error in StoreService: Added missing deleteSales method.
   async deleteSales(ids: string[]) {
     const data = await this.loadData();
     ids.forEach(id => {
@@ -253,7 +274,6 @@ const StoreService = {
     await this.saveData();
   },
 
-  // Fixed error in StoreService: Added missing updateSale method.
   async updateSale(sale: Sale) {
     const data = await this.loadData();
     const idx = data.sales.findIndex(s => s.id === sale.id);
@@ -263,7 +283,6 @@ const StoreService = {
     }
   },
 
-  // Fixed error in StoreService: Added missing deleteCustomer method.
   async deleteCustomer(id: string) {
     const data = await this.loadData();
     const idx = data.customers.findIndex(c => c.id === id);
@@ -280,7 +299,6 @@ const StoreService = {
     }
   },
 
-  // Fixed error in StoreService: Added missing addCustomerPayment method.
   async addCustomerPayment(customerId: string, amount: number, method: string, note: string, date: string, receiptImage?: string) {
       const data = await this.loadData();
       const customer = data.customers.find(c => c.id === customerId);
@@ -292,7 +310,6 @@ const StoreService = {
       }
   },
 
-  // Fixed error in StoreService: Added missing restoreItem method.
   async restoreItem(id: string) {
       const data = await this.loadData();
       const idx = data.deletedItems.findIndex(item => item.id === id);
@@ -306,7 +323,6 @@ const StoreService = {
       }
   },
 
-  // Fixed error in StoreService: Added missing permanentlyDelete method.
   async permanentlyDelete(id: string) {
       const data = await this.loadData();
       const idx = data.deletedItems.findIndex(item => item.id === id);
@@ -316,64 +332,57 @@ const StoreService = {
       }
   },
 
-  // Fixed error in StoreService: Added missing emptyRecycleBin method.
   async emptyRecycleBin() {
       const data = await this.loadData();
       data.deletedItems = [];
       await this.saveData();
   },
 
-  // Fixed error in StoreService: Added missing getRawData method.
   async getRawData() {
       return await this.loadData();
   },
 
-  // Fixed error in StoreService: Added missing importData method.
   async importData(newData: any) {
       cache = { ...defaultData, ...newData, settings: { ...defaultData.settings, ...newData.settings } };
       await this.saveData();
+      await this.addLog("Database manually imported");
+  },
+
+  async factoryReset() {
+      localStorage.clear();
       window.location.reload();
   },
 
-  // Fixed error in StoreService: Added missing factoryReset method.
-  async factoryReset() {
-      if (confirm("THIS WILL ERASE EVERYTHING FROM THIS BROWSER. ARE YOU SURE?")) {
-          localStorage.clear();
-          window.location.reload();
-      }
-  },
-
-  // Fixed error in StoreService: Added missing forceSync method.
   async forceSync() {
       const session = GoogleDriveUtils.getSession();
       if (session) {
           loadPromise = null;
           cache = null;
           await this.loadData();
+          await this.addLog("Manual cloud sync forced");
       }
   },
 
-  // Fixed error in StoreService: Added missing getCloudBackups method.
   async getCloudBackups(): Promise<DriveFile[]> {
       const session = GoogleDriveUtils.getSession();
       if (!session) return [];
       return await GoogleDriveUtils.listCloudBackups(session.accessToken);
   },
 
-  // Fixed error in StoreService: Added missing createCloudBackup method.
   async createCloudBackup() {
       const session = GoogleDriveUtils.getSession();
       if (!session) return;
       const data = await this.loadData();
       await GoogleDriveUtils.createCloudBackup(session.accessToken, data);
+      await this.addLog("Cloud snapshot captured");
   },
 
-  // Fixed error in StoreService: Added missing restoreCloudBackup method.
   async restoreCloudBackup(fileId: string) {
       const session = GoogleDriveUtils.getSession();
       if (!session) return;
       const backupData = await GoogleDriveUtils.downloadBackupFile(session.accessToken, fileId);
       await this.importData(backupData);
+      await this.addLog("Restored from cloud snapshot");
   }
 };
 

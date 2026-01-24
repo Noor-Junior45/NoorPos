@@ -141,11 +141,6 @@ export const GoogleDriveUtils = {
     const folderName = 'NoorPOS_Data';
     const fileName = 'StoreManager_DB';
     
-    // STRATEGY:
-    // 1. Search for the file GLOBALLY (covers Own Files AND Shared Files).
-    // 2. If found, return it (Staff/Shared Login).
-    // 3. If not found, Create Folder -> Create File (Owner Init).
-
     // 1. Global Search
     const globalQuery = `name='${fileName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
     const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQuery)}&fields=files(id, name, parents)`, {
@@ -155,18 +150,14 @@ export const GoogleDriveUtils = {
     if (globalRes.ok) {
         const globalData = await globalRes.json();
         if (globalData.files && globalData.files.length > 0) {
-            console.log("Found existing/shared database.");
             const fileId = globalData.files[0].id;
             await GoogleDriveUtils.ensureSheetsExist(accessToken, fileId);
             return fileId;
         }
     }
 
-    // 2. Not found, initiate Owner Creation Sequence
-    console.log("Database not found. Creating new environment...");
     const folderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, folderName);
 
-    // Double check inside folder just in case global search missed due to propagation delay
     const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id, name)`;
     const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
     const searchData = await searchRes.json();
@@ -240,21 +231,11 @@ export const GoogleDriveUtils = {
     const userRows = (data.users || []).map((u: any) => [u.id, u.name, u.username, u.role, u.pin, u.lastLogin || '']);
     bodyData.push({ range: "Users!A2", values: userRows.length ? userRows : [['']] });
 
-    // 6. Settings (Single Row)
-    const settingsJson = JSON.stringify({
-        expiryAlertDays: data.settings.expiryAlertDays,
-        soundEnabled: data.settings.soundEnabled,
-        notificationsEnabled: data.settings.notificationsEnabled,
-        recycleBinRetentionDays: data.settings.recycleBinRetentionDays,
-        directPrintEnabled: data.settings.directPrintEnabled,
-        scannerPreference: data.settings.scannerPreference,
-        nasUrl: data.settings.nasUrl,
-        syncToNas: data.settings.syncToNas,
-        lowStockDefault: data.settings.lowStockDefault
-    });
+    // 6. Settings (Serializing the entire object for robustness)
+    const settingsJson = JSON.stringify(data.settings);
     const settingRow = [
         data.settings.storeName || '', data.settings.storeAddress || '', data.settings.storePhone || '', data.settings.storeEmail || '', 
-        data.settings.logo || '', data.settings.currencySymbol || '₹', '', settingsJson
+        data.settings.logo || '', data.settings.currencySymbol || '₹', data.settings.gstNumber || '', settingsJson
     ];
     bodyData.push({ range: "Settings!A2", values: [settingRow] });
 
@@ -264,7 +245,6 @@ export const GoogleDriveUtils = {
     ]);
     bodyData.push({ range: "RecycleBin!A2", values: deletedRows.length ? deletedRows : [['']] });
 
-    // EXECUTE: Clear old data then write new
     const ranges = Object.keys(HEADERS).map(k => `${k}!A2:ZZ`);
     await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`, {
         method: 'POST',
@@ -272,21 +252,17 @@ export const GoogleDriveUtils = {
         body: JSON.stringify({ ranges })
     });
 
-    // CRITICAL FIX: Use valueInputOption: "RAW" to prevent +91 phone numbers from becoming formula errors
     const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ valueInputOption: "RAW", data: bodyData })
     });
 
-    if (!res.ok) {
-        throw new Error(`${res.status}: Save failed`);
-    }
+    if (!res.ok) throw new Error(`${res.status}: Save failed`);
   },
 
   // --- LOAD LOGIC (Smart Migration) ---
   loadFromSheet: async (accessToken: string, spreadsheetId: string) => {
-      // 1. Try to load from Table Format (Products Sheet)
       const ranges = Object.keys(HEADERS).map(k => `${k}!A2:Z`);
       const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?majorDimension=ROWS&ranges=${ranges.join('&ranges=')}`, {
           headers: { Authorization: `Bearer ${accessToken}` }
@@ -304,7 +280,6 @@ export const GoogleDriveUtils = {
       const productRows = getSheetRows('Products');
 
       // --- MIGRATION CHECK ---
-      // If Products sheet is empty, check for old "RawData" blob to restore it
       if (!productRows || productRows.length === 0) {
           try {
               const rawRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/RawData!A1`, {
@@ -313,13 +288,11 @@ export const GoogleDriveUtils = {
               if (rawRes.ok) {
                   const rawJson = await rawRes.json();
                   if (rawJson.values && rawJson.values[0] && rawJson.values[0][0]) {
-                      console.log("Migrating from Legacy RawData format...");
-                      return JSON.parse(rawJson.values[0][0]); // Return old structure, it will be saved as new Table structure next time
+                      return JSON.parse(rawJson.values[0][0]); 
                   }
               }
           } catch (e) { console.warn("No legacy data found"); }
       }
-      // -----------------------
 
       // Parse Tables
       const products = productRows.map((r: any[]) => ({
@@ -411,9 +384,7 @@ export const GoogleDriveUtils = {
       return await res.json();
   },
 
-  // UPDATED: Share the Parent Folder AND the File
   shareDatabase: async (accessToken: string, spreadsheetId: string, email: string) => {
-    // 1. Get File Info (to find parent folder)
     const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
         headers: { Authorization: `Bearer ${accessToken}` }
     });
@@ -422,14 +393,9 @@ export const GoogleDriveUtils = {
     const fileInfo = await fileRes.json();
     
     const targets = [];
-    // Add Parent Folder(s) to targets
-    if (fileInfo.parents && fileInfo.parents.length > 0) {
-        targets.push(fileInfo.parents[0]); // Usually the main folder
-    }
-    // Add Spreadsheet itself to targets (Double insurance)
+    if (fileInfo.parents && fileInfo.parents.length > 0) targets.push(fileInfo.parents[0]);
     targets.push(spreadsheetId);
 
-    // 2. Share Targets
     for (const targetId of targets) {
         await fetch(`https://www.googleapis.com/drive/v3/files/${targetId}/permissions?emailMessage=You have been invited to manage Noor POS Store.&sendNotificationEmail=true`, {
             method: 'POST', 
