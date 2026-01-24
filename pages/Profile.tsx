@@ -14,7 +14,7 @@ import {
   Eye, Users, Shield, Cpu, Gauge, Terminal, HelpCircle, Percent,
   DatabaseZap, Lock, Briefcase, FileSearch, Trash, History, Power,
   Building2, Landmark, Fingerprint, AtSign, Layout, BellRing, Trash2 as TrashIcon, Network,
-  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn
+  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
@@ -65,6 +65,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [showRetentionModal, setShowRetentionModal] = useState(false);
   const [customRetentionDays, setCustomRetentionDays] = useState('');
+  
+  // Backup Dropdown State
+  const [showBackupOptions, setShowBackupOptions] = useState(false);
 
   // Staff & Sharing
   const [shareEmail, setShareEmail] = useState('');
@@ -350,7 +353,29 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
              <Button variant="neutral" onClick={() => StoreService.logout()} className="w-full md:w-auto border-2 border-gray-100 hover:border-red-100 hover:bg-red-50 hover:text-red-600 px-6 rounded-xl font-bold">Sign Out</Button>
         </div>
 
-        {/* 2. BUSINESS DETAILS CARD */}
+        {/* 2. Google Login Prompt for Guest Mode */}
+        {!isDriveConnected && (
+            <button 
+                onClick={handleConnectDrive}
+                disabled={isConnectingDrive}
+                className="w-full bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm flex items-center justify-between group hover:border-blue-200 hover:shadow-md transition-all animate-in fade-in slide-in-from-top-2"
+            >
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center border border-gray-100 group-hover:bg-white group-hover:scale-110 transition-transform">
+                        <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6" alt="Google" />
+                    </div>
+                    <div className="text-left">
+                        <div className="font-black text-gray-900 text-sm group-hover:text-blue-600 transition-colors">Login with Google</div>
+                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Sync Guest Data to Cloud</div>
+                    </div>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                    {isConnectingDrive ? <Loader2 size={18} className="animate-spin"/> : <LogIn size={18}/>}
+                </div>
+            </button>
+        )}
+
+        {/* 3. BUSINESS DETAILS CARD */}
         <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
             
@@ -406,7 +431,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </div>
 
-        {/* 3. OPERATIONS STACK */}
+        {/* 4. OPERATIONS STACK */}
         <div className="space-y-4">
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Operations Center</h3>
             
@@ -429,7 +454,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </div>
 
-        {/* 4. PREFERENCES STACK (New Separate Boxes) */}
+        {/* 5. PREFERENCES STACK (New Separate Boxes) */}
         <div className="space-y-4">
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] ml-4">System Preferences</h3>
             
@@ -472,7 +497,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </div>
 
-        {/* 5. DATA & STORAGE STACK */}
+        {/* 6. DATA & STORAGE STACK */}
         <div className="space-y-4">
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] ml-4">Data & Storage</h3>
             
@@ -515,7 +540,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             </div>
         </div>
 
-        {/* 6. SYSTEM ZONE STACK */}
+        {/* 7. SYSTEM ZONE STACK */}
         <div className="space-y-4">
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] ml-4">System Zone</h3>
             
@@ -750,10 +775,58 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         {/* 7. Cloud Snapshots Modal */}
         <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="Vault Snapshots">
             <div className="space-y-6">
-                <Button onClick={async () => { setIsCreatingBackup(true); try { await StoreService.createCloudBackup(); const files = await StoreService.getCloudBackups(); setCloudBackups(files); } finally { setIsCreatingBackup(false); } }} disabled={isCreatingBackup} className="w-full bg-blue-600 hover:bg-blue-700 flex justify-center items-center gap-3 py-4 font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl shadow-xl shadow-blue-100">
-                    {isCreatingBackup ? <Loader2 size={18} className="animate-spin"/> : <Cloud size={18} />} Capture New State
-                </Button>
-                <div className="border-t border-gray-100 pt-4">
+                <div className="relative z-20">
+                     <Button 
+                        onClick={() => setShowBackupOptions(!showBackupOptions)} 
+                        className="w-full bg-blue-600 hover:bg-blue-700 flex justify-between items-center px-6 py-4 font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl shadow-xl shadow-blue-100"
+                    >
+                        <span className="flex items-center gap-3"><Cloud size={18} /> Backup Actions</span>
+                        {showBackupOptions ? <ChevronUp size={18}/> : <ChevronDown size={18}/>}
+                    </Button>
+                    
+                    {showBackupOptions && (
+                        <div className="absolute top-full left-0 right-0 mt-3 bg-white border border-gray-100 rounded-2xl shadow-2xl p-2 animate-in fade-in zoom-in-95 origin-top">
+                            <button 
+                                onClick={async () => { 
+                                    setIsCreatingBackup(true); 
+                                    try { 
+                                        await StoreService.createCloudBackup(); 
+                                        const files = await StoreService.getCloudBackups(); 
+                                        setCloudBackups(files); 
+                                        setShowBackupOptions(false);
+                                    } finally { 
+                                        setIsCreatingBackup(false); 
+                                    } 
+                                }} 
+                                disabled={isCreatingBackup}
+                                className="w-full text-left px-4 py-3 hover:bg-blue-50 rounded-xl flex items-center gap-4 transition-colors group"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                     {isCreatingBackup ? <Loader2 size={18} className="animate-spin"/> : <Cloud size={18}/>}
+                                </div>
+                                <div>
+                                    <div className="font-bold text-gray-800 text-sm group-hover:text-blue-700">Create Cloud Snapshot</div>
+                                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Save to Google Drive</div>
+                                </div>
+                            </button>
+
+                            <button 
+                                onClick={() => { handleExportData(); setShowBackupOptions(false); }} 
+                                className="w-full text-left px-4 py-3 hover:bg-emerald-50 rounded-xl flex items-center gap-4 transition-colors group"
+                            >
+                                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                                     <Download size={18}/>
+                                </div>
+                                <div>
+                                    <div className="font-bold text-gray-800 text-sm group-hover:text-emerald-700">Local Export</div>
+                                    <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Download JSON File</div>
+                                </div>
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                <div className="border-t border-gray-100 pt-4 relative z-10">
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 ml-1">History</h3>
                     <div className="max-h-[35vh] overflow-y-auto space-y-2 no-scrollbar px-1">
                         {cloudBackups.length === 0 ? <p className="text-center text-gray-300 text-[10px] py-12 font-black uppercase tracking-widest opacity-40">Scanning for vault records...</p> : (
@@ -788,8 +861,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
         </Modal>
 
         {/* 9. Recycle Bin Modal */}
-        <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Secure Archive" className="!max-w-3xl h-[80vh] flex flex-col p-0 overflow-hidden bg-gray-50 rounded-[2.5rem]">
-            <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <Modal isOpen={showRecycleBin} onClose={() => setShowRecycleBin(false)} title="Secure Archive" className="!max-w-3xl h-[80vh] flex flex-col overflow-hidden bg-gray-50 rounded-[2.5rem]">
+            <div className="flex-1 flex flex-col h-full overflow-hidden -mx-6 -mb-6">
                 <div className="px-8 py-6 bg-white border-b border-gray-100 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-3"><History size={20} className="text-gray-400"/><span className="text-[10px] text-gray-950 font-black uppercase tracking-widest">{deletedItems.length} Archived Objects</span></div>
                     {deletedItems.length > 0 && <button onClick={async () => { if(confirm("Permanently erase?")) { await StoreService.emptyRecycleBin(); loadData(); } }} className="text-rose-600 text-[10px] font-black uppercase tracking-widest hover:underline">Full Purge</button>}
