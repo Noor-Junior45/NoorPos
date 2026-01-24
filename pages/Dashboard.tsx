@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
@@ -5,6 +6,7 @@ import { Customer, Sale, Product, Tab, Tag, StoreSettings } from '../types';
 import { Card, Badge, Button, Modal } from '../components/UI';
 import { TrendingUp, Crown, Star, LayoutDashboard, IndianRupee, AlertTriangle, Phone, ArrowUpRight, Package, Wallet, ShoppingBag, PieChart as PieChartIcon, Users, UserPlus, Plus, ShoppingCart, ArrowRight, CheckCircle, DollarSign, Scan, Clock, CheckSquare, Sparkles, Banknote, Smartphone, CreditCard, Trophy, BarChart3, Box, Layers, Loader2, X, BrainCircuit, RefreshCw, MessageSquareText, ShieldCheck, Lightbulb, BookOpen, Activity, Terminal, ChevronRight, Search, Hourglass } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
+import { getApiUrl } from '../services/apiConfig';
 
 interface DashboardProps {
   onNavigate: (tab: Tab, action?: string) => void;
@@ -67,6 +69,47 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     setProducts(pData);
     setTags(tData);
     setSettings(stData);
+
+    // --- CHECK EMAIL ALERT TRIGGER ---
+    if (stData?.emailAlertsEnabled && stData?.storeEmail && pData.length > 0) {
+        checkAndSendAlerts(pData, stData);
+    }
+  };
+
+  const checkAndSendAlerts = async (inventory: Product[], config: StoreSettings) => {
+      const lastSent = localStorage.getItem('noor_last_email_alert');
+      const today = new Date().toISOString().split('T')[0];
+
+      if (lastSent === today) return; // Already sent today
+
+      // Calculate Expiring Items
+      const expiringList = inventory.filter(p => {
+          if (!p.expiryDate) return false;
+          const expiry = new Date(p.expiryDate);
+          const now = new Date();
+          now.setHours(0,0,0,0);
+          const diffDays = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          return diffDays >= 0 && diffDays <= (config.expiryAlertDays || 7);
+      }).map(p => ({ name: p.name, stock: p.stock, date: p.expiryDate }));
+
+      if (expiringList.length > 0) {
+          try {
+              await fetch(getApiUrl('/api/send-alert'), {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      to: config.storeEmail,
+                      subject: `Expiry Alert (${expiringList.length} Items) - ${config.storeName}`,
+                      items: expiringList,
+                      storeName: config.storeName
+                  })
+              });
+              localStorage.setItem('noor_last_email_alert', today);
+              console.log("Email alert sent successfully.");
+          } catch (err) {
+              console.error("Failed to send email alert:", err);
+          }
+      }
   };
 
   const generateAIInsights = async () => {

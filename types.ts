@@ -49,6 +49,7 @@ export interface StoreSettings {
   lowStockDefault: number;
   soundEnabled: boolean;
   notificationsEnabled: boolean;
+  emailAlertsEnabled?: boolean; // NEW: Email alert toggle
   currencySymbol: string;
   recycleBinRetentionDays: number;
   directPrintEnabled: boolean;

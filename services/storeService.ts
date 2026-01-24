@@ -24,6 +24,7 @@ const defaultSettings: StoreSettings = {
   lowStockDefault: 10,
   soundEnabled: true,
   notificationsEnabled: false,
+  emailAlertsEnabled: false, // Default off
   currencySymbol: '₹',
   recycleBinRetentionDays: 30,
   directPrintEnabled: false,

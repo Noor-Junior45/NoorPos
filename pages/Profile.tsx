@@ -14,10 +14,11 @@ import {
   Eye, Users, Shield, Cpu, Gauge, Terminal, HelpCircle, Percent,
   DatabaseZap, Lock, Briefcase, FileSearch, Trash, History, Power,
   Building2, Landmark, Fingerprint, AtSign, Layout, BellRing, Trash2 as TrashIcon, Network,
-  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp, Receipt
+  X, Check, Pencil, Volume2, VolumeX, BellOff, List, Phone, Moon, Map, LogIn, ChevronDown, ChevronUp, Receipt, Mail, Send
 } from 'lucide-react';
 import { StoreService } from '../services/storeService';
 import { GoogleDriveUtils, DriveFile } from '../utils/googleDrive';
+import { getApiUrl } from '../services/apiConfig';
 
 const THEME_COLORS = [
     { name: 'Indigo', hex: '#4f46e5' },
@@ -81,6 +82,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isSendingTest, setIsSendingTest] = useState(false);
 
   // Refs
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -139,6 +141,33 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
           }
       } else {
           updateSetting('notificationsEnabled', false);
+      }
+  };
+
+  const handleTestEmail = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!storeSettings?.storeEmail) {
+          alert("Please save a Store Email first.");
+          return;
+      }
+      setIsSendingTest(true);
+      try {
+          const res = await fetch(getApiUrl('/api/send-alert'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  to: storeSettings.storeEmail,
+                  subject: `Test Alert - ${storeSettings.storeName}`,
+                  items: [{ name: "Sample Product", stock: 5, date: new Date().toISOString().split('T')[0] }],
+                  storeName: storeSettings.storeName
+              })
+          });
+          if(res.ok) alert(`Test email sent to ${storeSettings.storeEmail}. Check your inbox or spam folder.`);
+          else alert("Failed to send. Check server console for SMTP errors.");
+      } catch (err) {
+          alert("Connection error. Ensure server is running.");
+      } finally {
+          setIsSendingTest(false);
       }
   };
 
@@ -459,6 +488,36 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
             <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] ml-4">System Preferences</h3>
             
             <div className="space-y-3">
+                <ActionButton 
+                    icon={storeSettings?.emailAlertsEnabled ? Mail : BellOff} 
+                    label="Email Alerts" 
+                    subLabel={storeSettings?.emailAlertsEnabled ? "Notifications sent to store email" : "Email alerts disabled"} 
+                    onClick={() => {
+                        if (!storeSettings?.storeEmail) {
+                            alert("Please add a Store Email in Business Profile first.");
+                            return;
+                        }
+                        updateSetting('emailAlertsEnabled', !storeSettings?.emailAlertsEnabled);
+                    }}
+                    colorClass={storeSettings?.emailAlertsEnabled ? "bg-orange-50 text-orange-600" : "bg-gray-100 text-gray-400"}
+                    rightContent={
+                        <div className="flex items-center gap-3">
+                            {storeSettings?.emailAlertsEnabled && (
+                                <button 
+                                    onClick={handleTestEmail}
+                                    disabled={isSendingTest}
+                                    className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-[9px] font-black uppercase hover:bg-orange-200 transition-colors flex items-center gap-1"
+                                >
+                                    {isSendingTest ? <Loader2 size={10} className="animate-spin"/> : <Send size={10}/>} Test
+                                </button>
+                            )}
+                            <div className={`w-10 h-6 rounded-full p-1 transition-colors ${storeSettings?.emailAlertsEnabled ? 'bg-orange-500' : 'bg-gray-200'}`}>
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${storeSettings?.emailAlertsEnabled ? 'translate-x-4' : ''}`}></div>
+                            </div>
+                        </div>
+                    }
+                />
+
                 <ActionButton 
                     icon={storeSettings?.soundEnabled ? Volume2 : VolumeX} 
                     label="Sound Effects" 
