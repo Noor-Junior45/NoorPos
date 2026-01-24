@@ -36,8 +36,10 @@ app.post('/api/parse-invoice', parseInvoiceHandler);
 app.post('/api/send-alert', async (req, res) => {
   const { to, subject, items, storeName } = req.body;
 
+  // Debugging: Check if env vars are loaded (Don't log the password!)
   if (!process.env.SMTP_EMAIL || !process.env.SMTP_PASSWORD) {
-    return res.status(500).json({ error: "Server email configuration missing." });
+    console.error("Missing Email Credentials in .env file");
+    return res.status(500).json({ error: "Server missing SMTP_EMAIL or SMTP_PASSWORD in .env file." });
   }
 
   const htmlContent = `
@@ -76,8 +78,9 @@ app.post('/api/send-alert', async (req, res) => {
     });
     res.status(200).json({ success: true, message: "Email sent" });
   } catch (error) {
-    console.error("Email Error:", error);
-    res.status(500).json({ error: "Failed to send email" });
+    console.error("Nodemailer Error:", error);
+    // Send the actual error message back to client for debugging
+    res.status(500).json({ error: error.message || "Failed to send email" });
   }
 });
 

@@ -162,10 +162,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                   storeName: storeSettings.storeName
               })
           });
+          const result = await res.json();
           if(res.ok) alert(`Test email sent to ${storeSettings.storeEmail}. Check your inbox or spam folder.`);
-          else alert("Failed to send. Check server console for SMTP errors.");
+          else alert(`Server Error: ${result.error}`);
       } catch (err) {
-          alert("Connection error. Ensure server is running.");
+          console.error(err);
+          alert("Connection failed. Is the backend server running?");
       } finally {
           setIsSendingTest(false);
       }
