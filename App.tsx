@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, Suspense } from 'react';
 import { Tab, User } from './types';
 import { Package, ShoppingCart, Users, User as UserIcon, LayoutDashboard } from 'lucide-react';
@@ -12,6 +13,7 @@ const Customers = React.lazy(() => import('./pages/Customers').then(m => ({ defa
 const Profile = React.lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const Auth = React.lazy(() => import('./pages/Auth').then(m => ({ default: m.Auth })));
 const PublicInvoice = React.lazy(() => import('./pages/PublicInvoice').then(m => ({ default: m.PublicInvoice })));
+const Landing = React.lazy(() => import('./pages/Landing').then(m => ({ default: m.Landing })));
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
@@ -23,22 +25,18 @@ const App: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<string | undefined>(undefined);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isPublicMode, setIsPublicMode] = useState(false);
+  const [showAuthFlow, setShowAuthFlow] = useState(false);
 
   // --- Browser/Gesture Back Navigation Logic ---
   useEffect(() => {
-    // Handle popstate (Back/Forward buttons)
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.tab) {
         setActiveTab(event.state.tab as Tab);
-        // Dispatch a custom event for sub-views (like CRM Profile or Warehouse Editor)
-        // so they can decide whether to close themselves or let the tab change
         window.dispatchEvent(new CustomEvent('app-navigation-pop', { detail: event.state }));
       }
     };
 
     window.addEventListener('popstate', handlePopState);
-    
-    // Initial history entry if none exists
     if (!window.history.state) {
       window.history.replaceState({ tab: activeTab, depth: 0 }, '');
     }
@@ -48,8 +46,6 @@ const App: React.FC = () => {
 
   const handleTabChange = (newTab: Tab) => {
     if (newTab === activeTab) return;
-    
-    // Push new tab to history stack
     window.history.pushState({ tab: newTab, depth: 0 }, '');
     setActiveTab(newTab);
     localStorage.setItem('noor_active_tab', newTab);
@@ -62,15 +58,7 @@ const App: React.FC = () => {
         return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('access_mode') === 'crawler_granted') {
-        const botUser: User = { id: 'adsense_bot', username: 'adsense_bot', name: 'Google Crawler', role: 'admin', pin: '0000' };
-        setCurrentUser(botUser);
-        setIsCheckingAuth(false);
-        window.history.replaceState({}, document.title, "/");
-        return;
-    }
-
+    // Check for existing session automatically
     const session = GoogleDriveUtils.getSession();
     if (session) {
        const user: User = { id: session.profile.email, username: session.profile.email.split('@')[0], name: session.profile.name, role: 'admin', pin: '0000' };
@@ -79,10 +67,15 @@ const App: React.FC = () => {
     setIsCheckingAuth(false);
   }, []);
 
-  const handleLogin = (user: User) => setCurrentUser(user);
+  const handleLogin = (user: User) => {
+      setCurrentUser(user);
+      setShowAuthFlow(false);
+  };
+
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('noor_active_tab');
+    setShowAuthFlow(false); // Return to Landing
   };
 
   const handleNavigate = (tab: Tab, action?: string) => {
@@ -100,11 +93,23 @@ const App: React.FC = () => {
       );
   }
 
+  // --- CHANGED LOGIC: Show Landing Page if not logged in ---
   if (!currentUser) {
+      if (showAuthFlow) {
+          return (
+            <Suspense fallback={<div className="h-screen flex items-center justify-center"><LoadingSpinner/></div>}>
+                <div className="relative">
+                    <button onClick={() => setShowAuthFlow(false)} className="absolute top-4 left-4 z-50 p-2 bg-gray-100 rounded-full hover:bg-gray-200">← Back</button>
+                    <Auth onLogin={handleLogin} />
+                </div>
+            </Suspense>
+          );
+      }
+      // Default State: Public Landing Page (Content for AdSense)
       return (
-        <Suspense fallback={<div className="h-screen flex items-center justify-center"><LoadingSpinner/></div>}>
-            <Auth onLogin={handleLogin} />
-        </Suspense>
+          <Suspense fallback={<div className="h-screen flex items-center justify-center"><LoadingSpinner/></div>}>
+              <Landing onGetStarted={() => setShowAuthFlow(true)} />
+          </Suspense>
       );
   }
 

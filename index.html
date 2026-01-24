@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -54,29 +55,6 @@
     <!-- AMP Ads Script -->
     <script async custom-element="amp-ad" src="https://cdn.ampproject.org/v0/amp-ad-0.1.js"></script>
     
-    <!-- JSON-LD Structured Data for SEO -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Noor POS",
-      "author": {
-        "@type": "Person",
-        "name": "Noor Junior",
-        "alternateName": "@noor_junior45",
-        "url": "https://twitter.com/noor_junior45"
-      },
-      "applicationCategory": "BusinessApplication",
-      "operatingSystem": "Web",
-      "description": "Smart store management tool for inventory, billing, and warehouse management.",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "INR"
-      }
-    }
-    </script>
-
     <style>
       body {
         font-family: 'Inter', sans-serif;
@@ -88,7 +66,7 @@
         width: 8px;
       }
       ::-webkit-scrollbar-track {
-        background: #f1f5f9; 
+        background: #fdfdfc; 
       }
       ::-webkit-scrollbar-thumb {
         background: #cbd5e1; 
@@ -97,22 +75,16 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #94a3b8; 
       }
-      .glass-panel {
-        background: rgba(255, 255, 255, 0.7);
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(0, 0, 0, 0.05);
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+      .glass-card {
+        background: rgba(255, 255, 255, 0.4);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.03);
       }
-      .glass-input {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        color: #1f2937;
-      }
-      .glass-input:focus {
-        outline: none;
-        border-color: #3b82f6;
-        background: #ffffff;
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+      .glass-nav {
+        background: rgba(253, 253, 252, 0.6);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.5);
       }
     </style>
   <script type="importmap">
@@ -141,11 +113,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
-    
-    <!-- Static Footer for Verification Bots -->
-    <footer style="text-align:center; padding: 20px; font-size: 11px; color: #cbd5e1;">
-        <a href="/privacy.html" style="color: inherit; text-decoration: none; margin-right: 10px;">Privacy Policy</a>
-        <a href="https://terms-conditions-store.vercel.app" style="color: inherit; text-decoration: none;">Terms</a>
-    </footer>
   </body>
 </html>
