@@ -77,7 +77,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const [shareEmail, setShareEmail] = useState('');
   const [isSharing, setIsSharing] = useState(false);
   const [isAddingStaff, setIsAddingStaff] = useState(false);
-  const [staffForm, setStaffForm] = useState<Omit<User, 'id'>>({ name: '', username: '', pin: '', role: 'staff' });
+  const [isSavingStaff, setIsSavingStaff] = useState(false);
+  const [staffForm, setStaffForm] = useState<Omit<User, 'id'>>({ name: '', username: '', pin: '0000', role: 'staff' });
 
   // Data
   const [deletedItems, setDeletedItems] = useState<DeletedItem[]>([]);
@@ -109,7 +110,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   const loadData = async () => {
       setLoading(true);
       const data = await StoreService.getRawData();
-      setRawData(data);
+      setRawData({ ...data }); // Spread to ensure React detects change
       setStoreSettings(data.settings);
       setDeletedItems(data.deletedItems || []);
       
@@ -325,17 +326,27 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
   };
 
   const handleAddStaff = async () => {
-      if (!staffForm.name || !staffForm.username || !staffForm.pin) return;
-      await StoreService.addStaff(staffForm);
-      setStaffForm({ name: '', username: '', pin: '', role: 'staff' });
-      setIsAddingStaff(false);
-      loadData();
+      if (!staffForm.name || !staffForm.username) {
+          alert("Please fill all fields.");
+          return;
+      }
+      setIsSavingStaff(true);
+      try {
+          await StoreService.addStaff({ ...staffForm, pin: '0000' });
+          setStaffForm({ name: '', username: '', pin: '0000', role: 'staff' });
+          setIsAddingStaff(false);
+          loadData();
+      } catch (err: any) {
+          alert(err.message || "Failed to add staff.");
+      } finally {
+          setIsSavingStaff(false);
+      }
   };
 
   const handleRemoveStaff = async (id: string) => {
-      if (confirm("Remove this staff member?")) {
+      if (confirm("Remove this staff member? We will try to revoke their Google Drive access automatically.")) {
           await StoreService.removeStaff(id);
-          loadData();
+          await loadData();
       }
   };
 
@@ -839,16 +850,25 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
 
                 {isAddingStaff ? (
                     <div className="space-y-4 animate-in fade-in zoom-in-95 bg-gray-50 p-5 rounded-2xl border border-gray-100">
-                        <Input placeholder="Full Name" value={staffForm.name} onChange={e => setStaffForm({...staffForm, name: e.target.value})} className="!bg-white"/>
-                        <Input placeholder="Username" value={staffForm.username} onChange={e => setStaffForm({...staffForm, username: e.target.value})} className="!bg-white"/>
-                        <div className="grid grid-cols-2 gap-3">
-                            <Input placeholder="PIN (4 digits)" type="password" maxLength={4} value={staffForm.pin} onChange={e => setStaffForm({...staffForm, pin: e.target.value})} className="!bg-white"/>
-                            <select className="bg-white border-2 border-gray-200 rounded-lg px-3 py-2.5 font-bold text-sm outline-none" value={staffForm.role} onChange={e => setStaffForm({...staffForm, role: e.target.value as any})}>
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Staff Name</label>
+                            <Input placeholder="e.g. John Doe" value={staffForm.name} onChange={e => setStaffForm({...staffForm, name: e.target.value})} className="!bg-white"/>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Google Email (For Login)</label>
+                            <Input placeholder="staff@gmail.com" type="email" value={staffForm.username} onChange={e => setStaffForm({...staffForm, username: e.target.value})} className="!bg-white"/>
+                            <p className="text-[10px] text-gray-400 mt-1 ml-1">This email will be granted access to the store database.</p>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Role</label>
+                            <select className="bg-white border-2 border-gray-200 rounded-lg px-3 py-2.5 font-bold text-sm outline-none w-full" value={staffForm.role} onChange={e => setStaffForm({...staffForm, role: e.target.value as any})}>
                                 <option value="staff">Staff Role</option>
                                 <option value="admin">Admin Role</option>
                             </select>
                         </div>
-                        <Button className="w-full py-3 font-black uppercase tracking-widest text-[10px]" onClick={handleAddStaff}>Authorize Access</Button>
+                        <Button className="w-full py-3 font-black uppercase tracking-widest text-[10px]" onClick={handleAddStaff} disabled={isSavingStaff}>
+                            {isSavingStaff ? <Loader2 className="animate-spin mx-auto" size={16} /> : "Authorize & Share Database"}
+                        </Button>
                     </div>
                 ) : (
                     <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1 no-scrollbar">
@@ -856,7 +876,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
                             <div key={u.id} className="flex justify-between items-center p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-indigo-200 transition-all">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-lg bg-gray-900 text-white flex items-center justify-center font-black">{u.name.charAt(0)}</div>
-                                    <div><div className="text-sm font-bold text-gray-950">{u.name}</div><div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{u.role}</div></div>
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-bold text-gray-950">{u.name}</div>
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate max-w-[150px]">{u.username}</div>
+                                    </div>
                                 </div>
                                 <button onClick={() => handleRemoveStaff(u.id)} className="p-2 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"><Trash2 size={18}/></button>
                             </div>

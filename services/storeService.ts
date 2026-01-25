@@ -163,10 +163,29 @@ const StoreService = {
   // Local Staff Management
   async addStaff(user: Omit<User, 'id'>) {
       const data = await this.loadData();
+      
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(user.username)) {
+          throw new Error("Please enter a valid Google Email address for the staff member.");
+      }
+
+      // Check Cloud Connection for Sharing
+      const session = GoogleDriveUtils.getSession();
+      if (session && isCloudSyncHealthy) {
+          try {
+              // Share the spreadsheet with the staff email
+              await GoogleDriveUtils.shareDatabase(session.accessToken, session.spreadsheetId, user.username);
+          } catch (e: any) {
+              console.error("Failed to share database:", e);
+              throw new Error("Could not share Google Sheet with this email. Ensure you are online and have permissions.");
+          }
+      }
+
       const newUser = { ...user, id: generateId() };
       data.users.push(newUser);
       await this.saveData();
-      await this.addLog(`Staff member added: ${user.name}`);
+      await this.addLog(`Staff member added: ${user.name} (${user.username})`);
       return newUser;
   },
 
@@ -174,6 +193,19 @@ const StoreService = {
       const data = await this.loadData();
       const idx = data.users.findIndex(u => u.id === id);
       if (idx > -1) {
+          const userToRemove = data.users[idx];
+          
+          // Attempt Cloud Revoke if connected
+          const session = GoogleDriveUtils.getSession();
+          if (session && isCloudSyncHealthy && userToRemove.username.includes('@')) {
+             try {
+                 await GoogleDriveUtils.removeAccess(session.accessToken, session.spreadsheetId, userToRemove.username);
+                 await this.addLog(`Drive access revoked for: ${userToRemove.username}`);
+             } catch(e) { 
+                 console.error("Failed to revoke drive access", e);
+             }
+          }
+
           const removed = data.users.splice(idx, 1)[0];
           await this.saveData();
           await this.addLog(`Staff member removed: ${removed.name}`);

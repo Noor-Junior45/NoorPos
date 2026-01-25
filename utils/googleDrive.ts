@@ -138,10 +138,10 @@ export const GoogleDriveUtils = {
   },
 
   findOrCreateBackend: async (accessToken: string): Promise<string> => {
-    const folderName = 'NoorPOS_Data';
     const fileName = 'StoreManager_DB';
     
-    // 1. Global Search
+    // 1. Staff Login Scenario: Search Globally for the file first (shared or owned)
+    // We do NOT restrict by parent folder initially, so we can find files shared with this user.
     const globalQuery = `name='${fileName}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`;
     const globalRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(globalQuery)}&fields=files(id, name, parents)`, {
         headers: { Authorization: `Bearer ${accessToken}` }
@@ -149,51 +149,46 @@ export const GoogleDriveUtils = {
     
     if (globalRes.ok) {
         const globalData = await globalRes.json();
+        // If file exists (either owned or shared), return it immediately.
         if (globalData.files && globalData.files.length > 0) {
             const fileId = globalData.files[0].id;
+            // Ensure sheets exist in case it's a raw file or corrupted
             await GoogleDriveUtils.ensureSheetsExist(accessToken, fileId);
             return fileId;
         }
     }
 
+    // 2. Admin/New User Scenario: Create folder structure and file
+    const folderName = 'NoorPOS_Data';
     const folderId = await GoogleDriveUtils.findOrCreateFolder(accessToken, folderName);
 
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false&fields=files(id, name)`;
-    const searchRes = await fetch(searchUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-    const searchData = await searchRes.json();
+    // Create New Spreadsheet inside the folder
+    const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            properties: { title: fileName },
+            sheets: Object.keys(HEADERS).map(title => ({ properties: { title, gridProperties: { frozenRowCount: 1 } } }))
+        }),
+    });
+    const createData = await createRes.json();
+    const spreadsheetId = createData.spreadsheetId;
 
-    let spreadsheetId = '';
+    // Move to folder
+    // Get current parents
+    const fileGet = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    const fileInfo = await fileGet.json();
+    const previousParents = fileInfo.parents ? fileInfo.parents.join(',') : '';
 
-    if (searchData.files && searchData.files.length > 0) {
-        spreadsheetId = searchData.files[0].id;
-        await GoogleDriveUtils.ensureSheetsExist(accessToken, spreadsheetId);
-    } else {
-        // Create New Spreadsheet
-        const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                properties: { title: fileName },
-                sheets: Object.keys(HEADERS).map(title => ({ properties: { title, gridProperties: { frozenRowCount: 1 } } }))
-            }),
-        });
-        const createData = await createRes.json();
-        spreadsheetId = createData.spreadsheetId;
-
-        // Move to folder
-        const fileGet = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        const fileInfo = await fileGet.json();
-        const previousParents = fileInfo.parents ? fileInfo.parents.join(',') : '';
-
-        await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=${previousParents}`, {
-            method: 'PATCH',
-            headers: { Authorization: `Bearer ${accessToken}` }
-        });
-        
-        await GoogleDriveUtils.ensureSheetsExist(accessToken, spreadsheetId);
-    }
+    // Update parents
+    await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?addParents=${folderId}&removeParents=${previousParents}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    
+    await GoogleDriveUtils.ensureSheetsExist(accessToken, spreadsheetId);
 
     return spreadsheetId;
   },
@@ -385,26 +380,56 @@ export const GoogleDriveUtils = {
   },
 
   shareDatabase: async (accessToken: string, spreadsheetId: string, email: string) => {
-    const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=parents`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    
-    if (!fileRes.ok) throw new Error("Failed to locate database folder.");
-    const fileInfo = await fileRes.json();
-    
-    const targets = [];
-    if (fileInfo.parents && fileInfo.parents.length > 0) targets.push(fileInfo.parents[0]);
-    targets.push(spreadsheetId);
+    // 1. Share the Spreadsheet File Directly
+    const permissionBody = {
+        role: 'writer',
+        type: 'user',
+        emailAddress: email
+    };
 
-    for (const targetId of targets) {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${targetId}/permissions?emailMessage=You have been invited to manage Noor POS Store.&sendNotificationEmail=true`, {
-            method: 'POST', 
-            headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: 'writer', type: 'user', emailAddress: email })
-        });
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions?sendNotificationEmail=true&emailMessage=You have been added as a staff member to Noor POS. Please login with this Google Account.`, {
+        method: 'POST', 
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(permissionBody)
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || "Failed to share file.");
     }
     
     return true;
+  },
+
+  removeAccess: async (accessToken: string, fileId: string, email: string) => {
+    try {
+      // 1. List permissions to find the specific ID for this user email
+      const listUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?fields=permissions(id,emailAddress,role)`;
+      const listRes = await fetch(listUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      
+      if (!listRes.ok) return false;
+      const listData = await listRes.json();
+      
+      // 2. Find permission ID for the email
+      const perm = listData.permissions?.find((p: any) => p.emailAddress?.toLowerCase() === email.toLowerCase());
+      
+      if (!perm) return true; // Already gone or not found
+
+      if (perm.role === 'owner') return false; // Cannot remove owner
+
+      // 3. Delete permission
+      const delRes = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions/${perm.id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      
+      return delRes.ok;
+    } catch (e) {
+      console.error("Drive remove access error:", e);
+      return false;
+    }
   },
 
   saveSession: (data: GoogleUser) => {
