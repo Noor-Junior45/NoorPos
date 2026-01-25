@@ -42,7 +42,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [isTyping, setIsTyping] = useState(false);
   const [attachedImage, setAttachedImage] = useState<{data: string, mime: string} | null>(null);
   
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Browser/Gesture Back Navigation Logic ---
@@ -71,8 +71,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-      if (chatEndRef.current) {
-          chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+      // Use internal container scroll to prevent page jumping
+      if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTo({
+              top: chatContainerRef.current.scrollHeight,
+              behavior: "smooth"
+          });
       }
   }, [chatHistory, isTyping]);
 
@@ -188,9 +192,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     const mostLoyal = [...customers].sort((a, b) => b.visitCount - a.visitCount)[0];
 
     const customerComposition = [
-        { name: 'New', value: customers.filter(c => c.visitCount === 1).length, color: '#94a3b8' },
-        { name: 'Returning', value: customers.filter(c => c.visitCount > 1 && c.visitCount <= 5).length, color: '#60a5fa' },
-        { name: 'Loyal', value: customers.filter(c => c.visitCount > 5).length, color: '#2563eb' }
+        { name: 'New', value: customers.filter(c => c.visitCount === 1).length, color: '#e2e8f0' }, // Lighter gray for dark background
+        { name: 'Returning', value: customers.filter(c => c.visitCount > 1 && c.visitCount <= 5).length, color: '#6ee7b7' }, // Emerald-300
+        { name: 'Loyal', value: customers.filter(c => c.visitCount > 5).length, color: '#ffffff' } // White
     ].filter(i => i.value > 0);
 
     const lowStockItems = products
@@ -572,28 +576,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     <div className="text-2xl font-black relative z-10">₹{stats.totalDues.toLocaleString()}</div>
                 </Card>
 
-                <Card className="h-36 p-0 relative flex items-center justify-between overflow-hidden border-2 border-gray-100 bg-gradient-to-br from-gray-50 to-white">
+                <Card className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white border-0 h-36 p-0 relative flex items-center justify-between overflow-hidden shadow-lg shadow-emerald-200">
+                    <div className="absolute top-0 right-0 p-8 bg-white/10 rounded-full -mr-4 -mt-4 blur-xl"></div>
                     <div className="absolute top-3 left-4 z-10">
-                        <p className="text-[10px] uppercase font-black text-gray-400 tracking-widest">Retention Rate</p>
+                        <p className="text-[10px] uppercase font-bold text-emerald-100 tracking-widest">Retention Rate</p>
                     </div>
-                    <div className="w-full h-full pt-4">
+                    <div className="w-full h-full pt-4 relative z-10">
                         {stats.customerComposition.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                     <Pie data={stats.customerComposition} dataKey="value" cx="50%" cy="50%" innerRadius={25} outerRadius={40} paddingAngle={4}>
-                                        {stats.customerComposition.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />)}
+                                        {stats.customerComposition.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} stroke="rgba(255,255,255,0.2)" strokeWidth={2} />)}
                                     </Pie>
                                 </PieChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="flex items-center justify-center h-full text-gray-300 text-[10px] font-bold uppercase">No Data</div>
+                            <div className="flex items-center justify-center h-full text-emerald-200 text-[10px] font-bold uppercase">No Data</div>
                         )}
                     </div>
-                    <div className="flex flex-col justify-center gap-1 pr-4 absolute right-0 top-0 bottom-0">
+                    <div className="flex flex-col justify-center gap-1 pr-4 absolute right-0 top-0 bottom-0 z-10">
                         {stats.customerComposition.map(c => (
                             <div key={c.name} className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full" style={{backgroundColor: c.color}}></div>
-                                <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wide">{c.name}</span>
+                                <div className="w-2 h-2 rounded-full shadow-sm" style={{backgroundColor: c.color}}></div>
+                                <span className="text-[9px] font-bold text-emerald-50 uppercase tracking-wide">{c.name}</span>
                             </div>
                         ))}
                     </div>
@@ -632,7 +637,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <div className="flex flex-col h-[600px] relative z-10 bg-white/50 backdrop-blur-sm">
                     
                     {/* Messages Area */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-gray-200">
+                    <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-gray-200">
                         {chatHistory.map((msg, idx) => (
                             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 {msg.role === 'model' && (
@@ -664,7 +669,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 </div>
                             </div>
                         )}
-                        <div ref={chatEndRef}></div>
+                        {/* Removed chatEndRef here as we scroll the container */}
                     </div>
 
                     {/* Input Area */}

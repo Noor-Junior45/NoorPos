@@ -181,7 +181,34 @@ const StoreService = {
   },
 
   async addProduct(p: any) { const data = await this.loadData(); const np = { ...p, id: generateId(), createdAt: new Date().toISOString() }; data.products.push(np); await this.saveData(); return np; },
-  async createSale(s: any) { const data = await this.loadData(); const ns = { ...s, id: generateId(), timestamp: new Date().toISOString() }; data.sales.push(ns); await this.saveData(); return ns; },
+  
+  async createSale(s: any) { 
+      const data = await this.loadData(); 
+      const ns = { ...s, id: generateId(), timestamp: new Date().toISOString() }; 
+      data.sales.push(ns); 
+      
+      // Update Customer Stats
+      if (ns.customerId) {
+          const cIdx = data.customers.findIndex(c => c.id === ns.customerId);
+          if (cIdx > -1) {
+              const cust = data.customers[cIdx];
+              const paid = ns.amountPaid !== undefined ? ns.amountPaid : (ns.paymentMethod === 'Pay Later' ? 0 : ns.total);
+              const due = ns.total - paid;
+              
+              cust.totalSpent = (cust.totalSpent || 0) + ns.total;
+              cust.totalDues = (cust.totalDues || 0) + due;
+              cust.visitCount = (cust.visitCount || 0) + 1;
+              if (!cust.history) cust.history = [];
+              cust.history.push(ns.id);
+              
+              data.customers[cIdx] = cust;
+          }
+      }
+      
+      await this.saveData(); 
+      return ns; 
+  },
+  
   async upsertCustomer(c: any) { const data = await this.loadData(); const nc = { ...c, id: c.id || generateId() }; const idx = data.customers.findIndex(cx => cx.id === nc.id); if(idx > -1) data.customers[idx] = nc; else data.customers.push(nc); await this.saveData(); return nc; },
   async getDeletedItems() { const data = await this.loadData(); return data.deletedItems || []; },
   savePOSDraft(d: any) { localStorage.setItem(LS_POS_DRAFT, JSON.stringify(d)); },
@@ -307,7 +334,7 @@ const StoreService = {
       if (customer) {
           if (!customer.payments) customer.payments = [];
           customer.payments.push({ id: generateId(), amount, method, note, date, receiptImage });
-          customer.totalDues = Math.max(0, customer.totalDues - amount);
+          customer.totalDues = Math.max(0, (customer.totalDues || 0) - amount);
           await this.saveData();
       }
   },

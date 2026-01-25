@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Product, CartItem, Customer, Sale, Tag, StoreSettings, Tab } from '../types';
 import { StoreService } from '../services/storeService';
-import { generateInvoicePDF } from '../services/pdfService';
+import { generateInvoicePDF, getInvoicePdfBlob } from '../services/pdfService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
 import { Search, ShoppingCart, Trash2, User, CreditCard, Printer, Scan, Plus, X, Clock, ChevronDown, CircleCheck, Package, History, MoreVertical, FileText, RotateCcw, ArrowLeft, Save, CircleAlert, MapPin, Mail, Phone, ChevronRight, Calculator, Factory, Layers, Scale, AlertTriangle, Box, Tag as TagIcon, Percent, CheckSquare, Square, LayoutGrid, List as ListIcon, Receipt, Banknote, Smartphone, Share2, Pencil, Edit3, CheckCircle, UserPlus, Info, Star } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -117,6 +117,10 @@ export const POS: React.FC = () => {
               setShowScanner(false);
               return;
           }
+          if (showEditWarning) {
+              setShowEditWarning(false);
+              return;
+          }
           if (isEditingSale) {
               setIsEditingSale(false);
               return;
@@ -156,7 +160,7 @@ export const POS: React.FC = () => {
 
       window.addEventListener('app-navigation-pop' as any, handleNavigationPop);
       return () => window.removeEventListener('app-navigation-pop' as any, handleNavigationPop);
-  }, [showScanner, isEditingSale, saleDetail, showDeleteConfirm, showDuesError, showProductLookup, showCheckout, isNewCustomerMode, viewMode]);
+  }, [showScanner, isEditingSale, showEditWarning, saleDetail, showDeleteConfirm, showDuesError, showProductLookup, showCheckout, isNewCustomerMode, viewMode]);
 
   useEffect(() => {
     loadData();
@@ -251,8 +255,12 @@ export const POS: React.FC = () => {
       if (!saleDetail) return;
       const paid = saleDetail.amountPaid !== undefined ? saleDetail.amountPaid : (saleDetail.paymentMethod === 'Pay Later' ? 0 : saleDetail.total);
       const isDue = (saleDetail.total - paid) > 1;
-      if (isDue) setShowEditWarning(true);
-      else openEditModal();
+      if (isDue) {
+          window.history.pushState({ tab: Tab.POS, depth: 3 }, '');
+          setShowEditWarning(true);
+      } else {
+          openEditModal();
+      }
   };
 
   const openEditModal = () => {
@@ -268,15 +276,42 @@ export const POS: React.FC = () => {
       if (!editingSaleData) return;
       const updatedItems = [...editingSaleData.items];
       updatedItems[index] = { ...updatedItems[index], [field]: value };
+      
       let newSubtotal = 0;
       let newTax = 0;
+      
       updatedItems.forEach(item => {
-          const price = item.sellPrice;
+          const price = item.customPrice ?? item.sellPrice;
           const lineTotal = price * item.quantity; 
           const taxAmt = item.taxRate ? (lineTotal * (item.taxRate / 100)) : 0;
           newSubtotal += lineTotal;
           newTax += taxAmt;
       });
+      
+      setEditingSaleData({
+          ...editingSaleData,
+          items: updatedItems,
+          subtotal: newSubtotal,
+          tax: newTax,
+          total: newSubtotal + newTax
+      });
+  };
+
+  const handleDeleteEditingSaleItem = (index: number) => {
+      if (!editingSaleData) return;
+      const updatedItems = editingSaleData.items.filter((_, i) => i !== index);
+      
+      let newSubtotal = 0;
+      let newTax = 0;
+      
+      updatedItems.forEach(item => {
+          const price = item.customPrice ?? item.sellPrice;
+          const lineTotal = price * item.quantity; 
+          const taxAmt = item.taxRate ? (lineTotal * (item.taxRate / 100)) : 0;
+          newSubtotal += lineTotal;
+          newTax += taxAmt;
+      });
+      
       setEditingSaleData({
           ...editingSaleData,
           items: updatedItems,
@@ -438,23 +473,108 @@ export const POS: React.FC = () => {
   const handleCheckout = async (action: 'save' | 'print' | 'share') => {
     if (cart.length === 0) return;
     const paidAmountValue = parseFloat(partialPaidAmount) || 0;
+    
+    // --- CUSTOMER HANDLING ---
+    // If no customer selected, but user provided details in "Quick" fields, CREATE/USE them.
     let activeCustomer = selectedCustomer;
-    if ((totals.net - paidAmountValue) > 1 && !activeCustomer) { 
-        if (!quickCustName || !quickCustPhone) { triggerErrorState(); return; }
+    const hasQuickDetails = quickCustName && quickCustPhone;
+    const hasDues = (totals.net - paidAmountValue) > 1;
+
+    // Check strict requirement: If Dues, MUST have name/phone (either selected or quick)
+    if (hasDues && !activeCustomer && (!quickCustName || !quickCustPhone)) {
+        triggerErrorState();
+        // If user is trying to 'share' specifically, we can alert, otherwise just shake for save
+        if (action === 'share') alert("Customer Name & Phone are mandatory for unpaid bills.");
+        return;
+    }
+
+    // If we have details but no customer object yet, create one
+    if (!activeCustomer && hasQuickDetails) { 
         const phoneFormatted = quickCustPhone.startsWith('+') ? quickCustPhone : `+91 ${quickCustPhone}`;
         activeCustomer = await StoreService.upsertCustomer({ name: quickCustName, phone: phoneFormatted, totalSpent: 0, totalDues: 0, visitCount: 0, history: [] });
-        setCustomers(prev => [...prev, activeCustomer!]);
+        setCustomers(prev => {
+            const exists = prev.find(c => c.id === activeCustomer?.id);
+            return exists ? prev : [...prev, activeCustomer!];
+        });
     }
+
+    // Special Check for Sharing: Must have phone number
+    if (action === 'share' && (!activeCustomer || !activeCustomer.phone)) {
+        triggerErrorState();
+        alert("Please enter customer Name & Phone to share via WhatsApp.");
+        return;
+    }
+    
+    // Capture previous dues before sale creation (snapshot)
+    const previousDues = activeCustomer ? (activeCustomer.totalDues || 0) : 0;
+
     const sale = await StoreService.createSale({ items: cart.map(i => ({ ...i, sellPrice: i.customPrice ?? i.sellPrice, discount: i.discount })), customerName: activeCustomer ? activeCustomer.name : 'Walk-in Customer', customerId: activeCustomer?.id, subtotal: totals.gross, tax: totals.tax, total: totals.net, amountPaid: paidAmountValue, paymentMethod });
-    if (action === 'print') generateInvoicePDF(sale);
-    else if (action === 'share') {
+    
+    if (action === 'print') {
+        generateInvoicePDF(sale);
+    } else if (action === 'share') {
         if (activeCustomer && activeCustomer.phone) {
-            const itemsList = sale.items.map(i => `• ${i.name} x${i.quantity}`).join('%0A');
-            const link = `${window.location.origin}/invoice/${sale.id}.html`; 
-            const message = `*${settings.storeName || "Noor Store"}*%0A%0A*Items:*%0A${itemsList}%0A%0A*Total: ₹${sale.total.toFixed(0)}*%0A*Invoice Link:* ${link}`;
-            window.open(`https://wa.me/${activeCustomer.phone.replace(/[^0-9]/g, '')}?text=${message}`, '_blank');
+            const date = new Date(sale.timestamp).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+            
+            // Build Item List Text
+            const itemsText = sale.items.map(i => {
+                const lineTotal = ((i.customPrice ?? i.sellPrice) * i.quantity) - (i.discount || 0);
+                return `• ${i.name} x${i.quantity}  ₹${lineTotal}`;
+            }).join('%0A');
+
+            // Financials
+            const currentBill = sale.total;
+            const paidNow = paidAmountValue;
+            const currentBalance = currentBill - paidNow;
+            const totalOutstanding = previousDues + currentBalance;
+
+            let message = `*${settings.storeName || "Noor Store"}*%0A`;
+            message += `Bill No: #${sale.id.slice(0, 4).toUpperCase()} | ${date}%0A`;
+            message += `Customer: ${activeCustomer.name}%0A%0A`;
+            
+            message += `*Items Purchased:*%0A${itemsText}%0A`;
+            message += `------------------------------%0A`;
+            
+            message += `*Bill Total: ₹${currentBill.toFixed(0)}*%0A`;
+            message += `Paid: ₹${paidNow.toFixed(0)}%0A`;
+            
+            if (previousDues > 0 || currentBalance > 0) {
+                message += `------------------------------%0A`;
+                if (previousDues > 0) message += `Previous Due: ₹${previousDues.toFixed(0)}%0A`;
+                if (currentBalance > 0) message += `Current Due: ₹${currentBalance.toFixed(0)}%0A`;
+                message += `*Net Payable: ₹${totalOutstanding.toFixed(0)}*%0A`;
+            }
+            
+            message += `%0AThank you for shopping with us!`;
+
+            // ATTEMPT FILE SHARE (Mobile Only)
+            let fileShared = false;
+            try {
+                // Try generating PDF Blob
+                const pdfBlob = await getInvoicePdfBlob(sale);
+                if (pdfBlob && navigator.share && navigator.canShare) {
+                    const file = new File([pdfBlob], `Invoice_${sale.id.slice(0,8)}.pdf`, { type: 'application/pdf' });
+                    if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({
+                            files: [file],
+                            title: 'Invoice',
+                            text: message.replace(/%0A/g, '\n') // Decode for native share
+                        });
+                        fileShared = true;
+                    }
+                }
+            } catch (err) {
+                console.log("Native share failed, falling back to WhatsApp link", err);
+            }
+
+            // Fallback to Link if file share didn't happen
+            if (!fileShared) {
+                window.open(`https://wa.me/${activeCustomer.phone.replace(/[^0-9]/g, '')}?text=${message}`, '_blank');
+            }
         }
     }
+    // If action === 'save', we just fall through here to clear cart and close modal
+    
     setCart([]); setShowCheckout(false); setSelectedCustomer(null); setPaymentMethod('Cash'); setQuickCustName(''); setQuickCustPhone('');
     StoreService.clearPOSDraft();
     window.history.back();
@@ -533,7 +653,39 @@ export const POS: React.FC = () => {
               </div>
               <Modal isOpen={showDeleteConfirm} onClose={() => { setShowDeleteConfirm(false); window.history.back(); }} title="Confirm Deletion"><div className="text-center py-4"><h3 className="text-lg font-bold text-gray-900 mb-2">Delete {selectedSales.size} Records?</h3><div className="flex gap-3 mt-6"><Button variant="neutral" className="flex-1" onClick={() => { setShowDeleteConfirm(false); window.history.back(); }}>Cancel</Button><Button variant="danger" className="flex-1" onClick={deleteSelectedSales}>Yes, Delete</Button></div></div></Modal>
               <Modal isOpen={!!saleDetail} onClose={() => { setSaleDetail(null); window.history.back(); }} title="Sale Details" className="!max-w-lg">{saleDetail && <div className="animate-in fade-in zoom-in-95"><div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4"><div><div className="text-xs text-gray-400 font-bold uppercase mb-1">Customer</div><div className="text-lg font-bold text-gray-900">{saleDetail.customerName}</div><div className="text-sm text-gray-500 mt-1">{new Date(saleDetail.timestamp).toLocaleString()}</div></div><div className="text-right"><div className="text-xs text-gray-400 font-bold uppercase mb-1">Total</div><div className="text-2xl font-extrabold text-gray-800">₹{saleDetail.total.toFixed(2)}</div></div></div><div className="space-y-2 mb-6 max-h-60 overflow-y-auto bg-gray-50 p-3 rounded-lg border border-gray-200">{saleDetail.items.map((item, i) => (<div key={i} className="flex justify-between text-sm py-1 border-b border-gray-200 last:border-0"><span>{item.name} <span className="text-gray-400 text-xs">x{item.quantity}</span></span><span className="font-bold text-gray-700">₹{((item.sellPrice * item.quantity) - (item.discount || 0)).toFixed(2)}</span></div>))}</div><div className="grid grid-cols-2 gap-3"><Button variant="neutral" onClick={initiateEditSale} className="flex items-center justify-center gap-2 border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 hover:border-amber-300"><Edit3 size={18} /> Edit</Button><Button className="flex items-center justify-center gap-2" onClick={() => generateInvoicePDF(saleDetail)}><Printer size={18} /> Print</Button></div></div>}</Modal>
-              <Modal isOpen={isEditingSale} onClose={() => { setIsEditingSale(false); window.history.back(); }} title="Edit Transaction" className="!max-w-3xl !p-0 overflow-hidden border-0 shadow-2xl bg-white">{editingSaleData && <div className="animate-in fade-in flex flex-col h-full"><div className="bg-indigo-600 px-6 py-5 text-white"><div className="flex items-center gap-2 text-indigo-100 text-[10px] font-extrabold uppercase tracking-widest mb-1"><Edit3 size={12}/> Editing Record</div><h2 className="text-xl font-bold"># {editingSaleData.id.slice(0,12).toUpperCase()}</h2></div><div className="p-6 overflow-y-auto max-h-[70vh] space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100"><label className="text-[10px] font-extrabold text-blue-400 uppercase tracking-widest block mb-2">Billing Customer</label><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0"><User size={20}/></div><Input value={editingSaleData.customerName} onChange={(e) => setEditingSaleData({...editingSaleData, customerName: e.target.value})} className="!bg-white !border-blue-200 !py-2 !px-3 font-bold" placeholder="Customer Name" /></div></div><div className="bg-purple-50 p-4 rounded-2xl border-2 border-purple-100"><label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest block mb-2">Original Method</label><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white shrink-0"><Banknote size={20}/></div><select className="w-full rounded-lg px-3 py-2 bg-white border-2 border-purple-200 text-gray-900 font-bold focus:outline-none focus:border-purple-500 appearance-none" value={editingSaleData.paymentMethod} onChange={(e) => setEditingSaleData({...editingSaleData, paymentMethod: e.target.value})}>{['Cash', 'UPI', 'Card', 'Pay Later'].map(m => <option key={m} value={m}>{m}</option>)}</select></div></div></div><div className="bg-green-600 p-5 rounded-2xl text-white shadow-lg shadow-green-100 flex flex-col md:flex-row items-center justify-between gap-4"><div><div className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Amount Paid</div></div><div className="flex items-center bg-white rounded-xl px-4 py-2 w-full md:w-48 shadow-inner"><span className="text-green-600 font-black text-xl mr-2">₹</span><input type="number" className="w-full outline-none font-black text-green-700 text-2xl bg-transparent" value={editingSaleData.amountPaid ?? editingSaleData.total} onChange={(e) => setEditingSaleData({...editingSaleData, amountPaid: parseFloat(e.target.value) || 0})} /></div></div></div><div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row gap-3"><Button variant="neutral" onClick={() => { setIsEditingSale(false); window.history.back(); }} className="flex-1 !py-4 font-bold border-2 border-gray-200 text-gray-500 hover:bg-white">Discard</Button><Button onClick={saveEditedSale} className="flex-1 !py-4 font-bold bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-2"><Save size={20}/> Save Record</Button></div></div>}</Modal>
+              
+              <Modal isOpen={showEditWarning} onClose={() => { setShowEditWarning(false); window.history.back(); }} title="Modification Warning">
+                  <div className="text-center py-4">
+                      <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-200 shadow-sm"><AlertTriangle size={32}/></div>
+                      <h3 className="text-lg font-black text-gray-900 mb-2">Unpaid Balance Detected</h3>
+                      <p className="text-sm text-gray-600 px-2 mb-6">This transaction has partial payment recorded. Editing items will recalculate the totals, but existing payments will remain. Please verify the new balance due.</p>
+                      <Button onClick={() => { window.history.replaceState({ tab: Tab.POS, depth: 2 }, ''); openEditModal(); }} className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 shadow-lg shadow-amber-200">Proceed to Edit</Button>
+                  </div>
+              </Modal>
+
+              <Modal isOpen={isEditingSale} onClose={() => { setIsEditingSale(false); window.history.back(); }} title="Edit Transaction" className="!max-w-3xl !p-0 overflow-hidden border-0 shadow-2xl bg-white">{editingSaleData && <div className="animate-in fade-in flex flex-col h-full"><div className="bg-indigo-600 px-6 py-5 text-white"><div className="flex items-center gap-2 text-indigo-100 text-[10px] font-extrabold uppercase tracking-widest mb-1"><Edit3 size={12}/> Editing Record</div><h2 className="text-xl font-bold"># {editingSaleData.id.slice(0,12).toUpperCase()}</h2></div><div className="p-6 overflow-y-auto max-h-[70vh] space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100"><label className="text-[10px] font-extrabold text-blue-400 uppercase tracking-widest block mb-2">Billing Customer</label><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0"><User size={20}/></div><Input value={editingSaleData.customerName} onChange={(e) => setEditingSaleData({...editingSaleData, customerName: e.target.value})} className="!bg-white !border-blue-200 !py-2 !px-3 font-bold" placeholder="Customer Name" /></div></div><div className="bg-purple-50 p-4 rounded-2xl border-2 border-purple-100"><label className="text-[10px] font-extrabold text-purple-400 uppercase tracking-widest block mb-2">Original Method</label><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white shrink-0"><Banknote size={20}/></div><select className="w-full rounded-lg px-3 py-2 bg-white border-2 border-purple-200 text-gray-900 font-bold focus:outline-none focus:border-purple-500 appearance-none" value={editingSaleData.paymentMethod} onChange={(e) => setEditingSaleData({...editingSaleData, paymentMethod: e.target.value})}>{['Cash', 'UPI', 'Card', 'Pay Later'].map(m => <option key={m} value={m}>{m}</option>)}</select></div></div></div>
+              
+              <div className="border border-gray-200 rounded-2xl overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center text-xs font-bold text-gray-500 uppercase"><span>Items ({editingSaleData.items.length})</span><span>Actions</span></div>
+                  <div className="divide-y divide-gray-100 max-h-60 overflow-y-auto">
+                      {editingSaleData.items.map((item, idx) => (
+                          <div key={idx} className="p-3 flex items-center gap-3 bg-white">
+                              <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-gray-800 text-sm truncate">{item.name}</div>
+                                  <div className="text-[10px] text-gray-400 mt-0.5">Original Price: ₹{(item.customPrice ?? item.sellPrice)}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                  <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden h-8 w-24">
+                                      <input type="number" className="w-full h-full text-center text-sm font-bold outline-none" value={item.quantity} onChange={(e) => handleUpdateEditingSaleItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
+                                  </div>
+                                  <button onClick={() => handleDeleteEditingSaleItem(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><X size={16}/></button>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+
+              <div className="bg-green-600 p-5 rounded-2xl text-white shadow-lg shadow-green-100 flex flex-col md:flex-row items-center justify-between gap-4"><div><div className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Amount Paid</div></div><div className="flex items-center bg-white rounded-xl px-4 py-2 w-full md:w-48 shadow-inner"><span className="text-green-600 font-black text-xl mr-2">₹</span><input type="number" className="w-full outline-none font-black text-green-700 text-2xl bg-transparent" value={editingSaleData.amountPaid ?? editingSaleData.total} onChange={(e) => setEditingSaleData({...editingSaleData, amountPaid: parseFloat(e.target.value) || 0})} /></div></div></div><div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row gap-3"><Button variant="neutral" onClick={() => { setIsEditingSale(false); window.history.back(); }} className="flex-1 !py-4 font-bold border-2 border-gray-200 text-gray-500 hover:bg-white">Discard</Button><Button onClick={saveEditedSale} className="flex-1 !py-4 font-bold bg-indigo-600 hover:bg-indigo-700 shadow-xl shadow-indigo-100 active:scale-95 transition-all flex items-center justify-center gap-2"><Save size={20}/> Save Record</Button></div></div>}</Modal>
           </div>
       );
   }
@@ -584,14 +736,12 @@ export const POS: React.FC = () => {
                     onChange={(e) => setInlineSearch(e.target.value)} 
                     onKeyDown={(e) => { 
                         if (e.key === 'Enter') {
-                            // 1. Priority: Exact SKU/ID match (for Scanners)
                             const exactMatch = products.find(p => p.sku === inlineSearch.trim() || p.id === inlineSearch.trim());
                             if (exactMatch) {
                                 addToCart(exactMatch);
                                 setInlineSearch('');
                                 return;
                             }
-                            // 2. Fallback: First filter result (for typing)
                             if (filteredInlineProducts.length > 0) {
                                 addToCart(filteredInlineProducts[0]);
                             }
@@ -604,7 +754,7 @@ export const POS: React.FC = () => {
       </div>
 
       <Modal isOpen={showProductLookup && isCreatingProduct} onClose={() => { setShowProductLookup(false); setIsCreatingProduct(false); window.history.back(); }} title="Add New Product" className="!max-w-2xl"><div className="animate-in fade-in slide-in-from-right-4"><div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6"><div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Product Name</label><Input ref={prodNameRef} onKeyDown={(e) => handleKeyDown(e, prodSkuRef)} value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} autoFocus /></div><div className="md:col-span-2"><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Barcode / SKU</label><div className="flex w-full"><Input ref={prodSkuRef} onKeyDown={(e) => handleKeyDown(e, prodSellRef)} value={newProduct.sku} onChange={e => setNewProduct({...newProduct, sku: e.target.value})} className="rounded-r-none"/><button onClick={() => { window.history.pushState({ tab: Tab.POS, depth: 2 }, ''); setShowScanner(true); }} className="px-3 bg-white border border-l-0 rounded-r-lg text-gray-600"><Scan size={20}/></button></div></div><div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Sell Price</label><Input ref={prodSellRef} onKeyDown={(e) => handleKeyDown(e, prodBuyRef)} type="number" value={newProduct.sellPrice || ''} onChange={e => setNewProduct({...newProduct, sellPrice: parseFloat(e.target.value) || 0})} className="!text-green-700 !font-bold"/></div><div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Buy Price</label><Input ref={prodBuyRef} onKeyDown={(e) => handleKeyDown(e, prodStockRef)} type="number" value={newProduct.buyPrice || ''} onChange={e => setNewProduct({...newProduct, buyPrice: parseFloat(e.target.value) || 0})} /></div><div><label className="text-xs font-bold text-gray-500 uppercase block mb-1">Stock</label><Input ref={prodStockRef} onKeyDown={(e) => handleKeyDown(e, null, handleSaveProduct)} type="number" value={newProduct.stock || ''} onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} /></div></div><div className="flex justify-end gap-3 pt-4 border-t"><Button variant="neutral" onClick={() => { setIsCreatingProduct(false); setShowProductLookup(false); window.history.back(); }}>Cancel</Button><Button onClick={handleSaveProduct} className="bg-green-600">Save & Add</Button></div></div></Modal>
-      <Modal isOpen={showCheckout} onClose={() => { setShowCheckout(false); window.history.back(); }} title="Payment"><div className="text-center px-4 pb-4"><h2 className="text-4xl font-extrabold text-gray-900 mb-2">₹{totals.net.toFixed(2)}</h2><p className="text-gray-500 text-sm mb-6">Total Amount Due</p><div className={`bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-6 border ${showCheckoutWarning ? 'border-red-400 bg-red-50/50' : 'border-gray-100'} ${shakeError ? 'shake-element' : ''}`}>{selectedCustomer ? <div className="flex justify-between text-sm"><span className="text-gray-500">Customer</span><span className="font-bold text-gray-900 flex items-center gap-1">{selectedCustomer.name} {selectedCustomer.isWholesaler && <Star size={12} className="text-amber-500 fill-amber-500"/>}</span></div> : <div className="space-y-3"><div className="relative"><User size={14} className="absolute left-3 top-3 text-gray-400" /><input ref={quickNameRef} className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:border-blue-500 outline-none" placeholder="Customer Name" value={quickCustName} onChange={(e) => setQuickCustName(e.target.value)} /></div><div className="relative"><Phone size={14} className="absolute left-3 top-3 text-gray-400" /><input className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:border-blue-500 outline-none" placeholder="Phone Number" value={quickCustPhone} onChange={(e) => setQuickCustPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} /></div></div>}</div><div className="mb-6"><div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-left mb-6"><label className="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1">Paying Now</label><div className="flex items-center relative"><span className="absolute left-3 text-lg font-bold text-gray-400">₹</span><input type="number" className="w-full pl-8 pr-3 py-2 text-2xl font-bold bg-white border border-blue-200 rounded-lg outline-none" value={partialPaidAmount} onChange={(e) => setPartialPaidAmount(e.target.value)} /></div></div><div className="grid grid-cols-4 gap-2 mb-4">{[{ id: 'Cash', icon: Banknote }, { id: 'UPI', icon: Smartphone }, { id: 'Card', icon: CreditCard }, { id: 'Pay Later', icon: Clock }].map(method => (<button key={method.id} onClick={() => handlePaymentMethodClick(method.id as PaymentMethod)} className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${paymentMethod === method.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600'}`}><method.icon size={20} className="mb-1"/><span className="text-xs font-bold">{method.id}</span></button>))}</div></div><div className="grid grid-cols-2 gap-3"><Button onClick={() => handleCheckout('print')} className="py-3 font-bold bg-indigo-600 text-white flex items-center justify-center gap-2"><Printer size={20}/> Save & Print</Button><Button onClick={() => handleCheckout('share')} className="py-3 font-bold bg-[#25D366] text-white flex items-center justify-center gap-2"><WhatsAppLogo /> Share & Save</Button></div></div></Modal>
+      <Modal isOpen={showCheckout} onClose={() => { setShowCheckout(false); window.history.back(); }} title="Payment"><div className="text-center px-4 pb-4"><h2 className="text-4xl font-extrabold text-gray-900 mb-2">₹{totals.net.toFixed(2)}</h2><p className="text-gray-500 text-sm mb-6">Total Amount Due</p><div className={`bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-6 border ${showCheckoutWarning ? 'border-red-400 bg-red-50/50' : 'border-gray-100'} ${shakeError ? 'shake-element' : ''}`}>{selectedCustomer ? <div className="flex justify-between text-sm"><span className="text-gray-500">Customer</span><span className="font-bold text-gray-900 flex items-center gap-1">{selectedCustomer.name} {selectedCustomer.isWholesaler && <Star size={12} className="text-amber-500 fill-amber-500"/>}</span></div> : <div className="space-y-3"><div className="relative"><User size={14} className="absolute left-3 top-3 text-gray-400" /><input ref={quickNameRef} className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:border-blue-500 outline-none" placeholder="Customer Name" value={quickCustName} onChange={(e) => setQuickCustName(e.target.value)} /></div><div className="relative"><Phone size={14} className="absolute left-3 top-3 text-gray-400" /><input className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:border-blue-500 outline-none" placeholder="Phone Number" value={quickCustPhone} onChange={(e) => setQuickCustPhone(e.target.value.replace(/\D/g, ''))} maxLength={10} /></div></div>}</div><div className="mb-6"><div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 text-left mb-6"><label className="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1">Paying Now</label><div className="flex items-center relative"><span className="absolute left-3 text-lg font-bold text-gray-400">₹</span><input type="number" className="w-full pl-8 pr-3 py-2 text-2xl font-bold bg-white border border-blue-200 rounded-lg outline-none" value={partialPaidAmount} onChange={(e) => setPartialPaidAmount(e.target.value)} /></div></div><div className="grid grid-cols-4 gap-2 mb-4">{[{ id: 'Cash', icon: Banknote }, { id: 'UPI', icon: Smartphone }, { id: 'Card', icon: CreditCard }, { id: 'Pay Later', icon: Clock }].map(method => (<button key={method.id} onClick={() => handlePaymentMethodClick(method.id as PaymentMethod)} className={`flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${paymentMethod === method.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600'}`}><method.icon size={20} className="mb-1"/><span className="text-xs font-bold">{method.id}</span></button>))}</div></div><div className="grid grid-cols-2 gap-3 mb-3"><Button onClick={() => handleCheckout('print')} className="py-3 font-bold bg-indigo-600 text-white flex items-center justify-center gap-2"><Printer size={20}/> Save & Print</Button><Button onClick={() => handleCheckout('share')} className="py-3 font-bold bg-[#25D366] text-white flex items-center justify-center gap-2"><WhatsAppLogo /> Share & Save</Button></div><Button onClick={() => handleCheckout('save')} variant="neutral" className="w-full py-3 font-bold border-2 border-gray-200 text-gray-600 flex items-center justify-center gap-2"><CheckCircle size={20}/> Save Only</Button></div></Modal>
       <Modal isOpen={showScanner} onClose={() => { setShowScanner(false); window.history.back(); }} title="Scan Barcode"><div className="relative bg-black rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center"><div id="pos-reader" className="w-full h-full"></div></div></Modal>
     </div>
   );

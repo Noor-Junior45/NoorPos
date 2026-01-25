@@ -2,13 +2,14 @@
 import { Sale, Customer } from "../types";
 import { StoreService } from "./storeService";
 
-export const generateInvoicePDF = async (sale: Sale) => {
+// Internal helper to create the PDF document object
+const createPDFDoc = async (sale: Sale) => {
     // @ts-ignore
     const jspdf = window.jspdf;
 
     if (typeof jspdf === 'undefined') {
         alert("PDF Library not loaded yet. Check internet connection.");
-        return;
+        return null;
     }
 
     const settings = await StoreService.getSettings();
@@ -18,7 +19,6 @@ export const generateInvoicePDF = async (sale: Sale) => {
     const isThermal = settings.printPaperSize === 'Thermal';
     
     // Setup Document
-    // Thermal paper is usually 80mm wide. Height is continuous, so we set a long height.
     const doc = isThermal 
         ? new jsPDF({ unit: 'mm', format: [80, 2000] }) // Long strip for thermal
         : new jsPDF(); // Default A4
@@ -265,8 +265,21 @@ export const generateInvoicePDF = async (sale: Sale) => {
         doc.setTextColor(darkHeader[0], darkHeader[1], darkHeader[2]);
         doc.text("Thank you for your business!", pageWidth / 2, currentY, { align: 'center' });
     }
+    
+    return { doc, settings };
+};
 
-    // --- OUTPUT ---
+export const getInvoicePdfBlob = async (sale: Sale) => {
+    const result = await createPDFDoc(sale);
+    if (!result) return null;
+    return result.doc.output('blob');
+};
+
+export const generateInvoicePDF = async (sale: Sale) => {
+    const result = await createPDFDoc(sale);
+    if (!result) return;
+    const { doc, settings } = result;
+
     if (settings.directPrintEnabled) {
         // Direct Print
         const blob = doc.output('blob');
