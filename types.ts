@@ -23,6 +23,11 @@ export interface Product {
   tagId?: string;
   category?: string;
   capacity?: string;
+  brand?: string;
+  model?: string;
+  warrantyMonths?: number;
+  supplier?: string;
+  customFields?: string; // JSON stringified array of {key, value}
 }
 
 export interface StoreSettings {
@@ -58,6 +63,14 @@ export interface StoreSettings {
 
   nasUrl?: string;
   syncToNas?: boolean;
+  
+  // Advanced Settings
+  aiPrivacyEnabled?: boolean;
+  timezone?: string;
+  locale?: string;
+  receiptHeader?: string;
+  loyaltyProgramEnabled?: boolean;
+  pointsPerCurrency?: number;
 }
 
 export interface CartItem extends Product {
@@ -87,13 +100,14 @@ export interface Customer {
   history: string[];
   payments?: Payment[];
   isWholesaler?: boolean;
+  loyaltyPoints?: number;
 }
 
 export interface User {
   id: string;
   username: string;
   pin: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'staff' | 'manager' | 'viewer';
   name: string;
   lastLogin?: string;
 }

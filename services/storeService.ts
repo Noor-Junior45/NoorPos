@@ -101,7 +101,10 @@ const StoreService = {
         
         if (!remoteData && !session && isServerAvailable) {
             try {
-                const res = await fetch(getApiUrl('/api/storage'));
+                const local = localStorage.getItem(LS_BACKUP_KEY);
+                const localSettings = local ? JSON.parse(local).settings : defaultSettings;
+                const url = localSettings?.syncToNas && localSettings?.nasUrl ? localSettings.nasUrl : getApiUrl('/api/storage');
+                const res = await fetch(url);
                 if (res.ok) {
                     const json = await res.json();
                     if (json) remoteData = json;
@@ -143,7 +146,8 @@ const StoreService = {
             await GoogleDriveUtils.saveToSheet(session.accessToken, session.spreadsheetId, cache);
         } else if (isServerAvailable) {
             try {
-                await fetch(getApiUrl('/api/storage'), {
+                const url = cache?.settings?.syncToNas && cache?.settings?.nasUrl ? cache.settings.nasUrl : getApiUrl('/api/storage');
+                await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(cache)

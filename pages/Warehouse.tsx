@@ -3,7 +3,7 @@ import { Product, Tag, StoreSettings, Sale, Tab } from '../types';
 import { StoreService } from '../services/storeService';
 import { GeminiService } from '../services/geminiService';
 import { Card, Button, Input, Modal, Badge } from '../components/UI';
-import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, Box, Trash2, Pencil, X, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Loader2, Save, Eye, Camera, Check, Smartphone, FileType, ListPlus, Edit2, Info } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Scan, Tag as TagIcon, Box, Trash2, Pencil, X, ArrowLeft, Settings, Bell, Hash, MapPin, Factory, Clock, ChevronDown, Sparkles, Layers, DollarSign, Percent, FileText, Scale, ChevronUp, Loader2, Save, Eye, Camera, Check, Smartphone, FileType, ListPlus, Edit2, Info, ShieldCheck, Truck, Cpu, ArrowDownAZ, ArrowUpZA, ArrowUpDown } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 
 enum SubTab {
@@ -82,6 +82,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [settingsSearch, setSettingsSearch] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [pendingBulkItems, setPendingBulkItems] = useState<Partial<Product>[]>([]);
   const [newProduct, setNewProduct] = useState<Partial<Product>>({ 
@@ -102,8 +103,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const [validationErrors, setValidationErrors] = useState<Set<string>>(new Set());
   const [shakeTrigger, setShakeTrigger] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ProductFilter>(ProductFilter.ALL);
-  const [settingsSearch, setSettingsSearch] = useState('');
-  const [showMoreFields, setShowMoreFields] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'none' | 'asc' | 'desc'>('none');
   const [touchStart, setTouchStart] = useState<{x: number, y: number} | null>(null);
   const [touchEnd, setTouchEnd] = useState<{x: number, y: number} | null>(null);
   const minSwipeDistance = 50;
@@ -130,6 +130,10 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const editUnitSizeRef = useRef<HTMLInputElement>(null);
   const editLowStockRef = useRef<HTMLInputElement>(null);
   const editMfgRef = useRef<HTMLInputElement>(null);
+  const editBrandRef = useRef<HTMLInputElement>(null);
+  const editModelRef = useRef<HTMLInputElement>(null);
+  const editWarrantyRef = useRef<HTMLInputElement>(null);
+  const editSupplierRef = useRef<HTMLInputElement>(null);
 
   // --- Browser/Gesture Back Navigation Handling ---
   useEffect(() => {
@@ -266,6 +270,47 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   const handleUpdateSettings = async (newSettings: StoreSettings) => { setSettings(newSettings); await StoreService.saveSettings(newSettings); };
   const handleInlineProductUpdate = async (id: string, updates: Partial<Product>) => { setProducts(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p)); await StoreService.updateProduct(id, updates); };
+
+  const exportToCSV = () => {
+    const headers = ['ID', 'Name', 'SKU', 'Stock', 'Unit', 'Buy Price', 'Sell Price', 'Category', 'Location'];
+    const rows = products.map(p => [p.id, p.name, p.sku, p.stock, p.unit, p.buyPrice, p.sellPrice, p.category || '', p.location || '']);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `inventory_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const importFromCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        const text = event.target?.result as string;
+        const lines = text.split('\n');
+        const headers = lines[0].split(',');
+        const newItems: Partial<Product>[] = [];
+        for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',');
+            if (values.length < 2) continue;
+            const item: any = {};
+            headers.forEach((h, idx) => {
+                const head = h.trim().toLowerCase();
+                const val = values[idx]?.trim();
+                if (head === 'name') item.name = val;
+                if (head === 'sku') item.sku = val;
+                if (head === 'stock') item.stock = parseFloat(val) || 0;
+                if (head === 'unit') item.unit = val;
+                if (head === 'buy price') item.buyPrice = parseFloat(val) || 0;
+                if (head === 'sell price') item.sellPrice = parseFloat(val) || 0;
+            });
+            if (item.name) newItems.push({ ...item, id: Math.random().toString(36).substr(2, 9) });
+        }
+        if (newItems.length > 0) { await StoreService.batchAddProducts(newItems as Product[]); loadData(); alert(`Imported ${newItems.length} products`); }
+    };
+    reader.readAsText(file);
+  };
   const handleBatchChange = (field: 'packs' | 'perPack', value: string) => { const newConfig = { ...batchConfig, [field]: value }; setBatchConfig(newConfig); const packs = parseFloat(newConfig.packs); const perPack = parseFloat(newConfig.perPack); if (!isNaN(packs) && !isNaN(perPack) && packs >= 0 && perPack >= 0) { setNewProduct(prev => ({ ...prev, stock: Math.floor(packs * perPack) })); } };
   const getTag = (id?: string) => tags.find(t => t.id === id);
   const getDaysUntilExpiry = (dateStr?: string) => { if (!dateStr) return Infinity; const today = new Date(); today.setHours(0,0,0,0); const exp = new Date(dateStr); return Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)); };
@@ -296,7 +341,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       const itemToEdit = pendingBulkItems[index];
       setPendingBulkItems(prev => prev.filter((_, i) => i !== index));
       setNewProduct(itemToEdit);
-      setShowMoreFields(true);
       setTimeout(() => editNameRef.current?.focus(), 100);
   };
 
@@ -351,7 +395,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   
   const resetForm = () => { 
       setNewProduct({ name: '', sku: '', stock: 0, unit: 'pcs', capacity: '', buyPrice: 0, sellPrice: 0, wholesalePrice: 0, lowStockThreshold: settings.lowStockDefault, location: '', taxRate: 0, expiryDate: '', manufacturingDate: '' }); 
-      setBatchConfig({ packs: '', perPack: '' }); setShowMoreFields(false); setValidationErrors(new Set());
+      setBatchConfig({ packs: '', perPack: '' }); setValidationErrors(new Set());
   };
 
   const toggleGroup = (groupId: string) => { const newExpanded = new Set(expandedGroups); if (newExpanded.has(groupId)) newExpanded.delete(groupId); else newExpanded.add(groupId); setExpandedGroups(newExpanded); };
@@ -364,7 +408,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       setIsEditing(true); 
       window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
       setIsEditorOpen(true); 
-      setShowMoreFields(false); 
   };
   
   const handleCloneProduct = (p: Product) => { 
@@ -373,7 +416,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
       setIsEditing(false); 
       window.history.pushState({ tab: Tab.WAREHOUSE, depth: 1 }, '');
       setIsEditorOpen(true); 
-      setShowMoreFields(false); 
   };
 
   const handleOpenAdd = () => { 
@@ -403,18 +445,6 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   const handleEditorKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null, action?: () => void) => { 
       if (e.key === 'Enter') { e.preventDefault(); if (nextRef?.current) nextRef.current.focus(); else if (action) action(); } 
-  };
-
-  const handleExpiryEnter = (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-          e.preventDefault();
-          if (!showMoreFields) {
-              setShowMoreFields(true);
-              setTimeout(() => editBuyRef.current?.focus(), 150);
-          } else {
-              editBuyRef.current?.focus();
-          }
-      }
   };
 
   const handleAnalyzeClick = () => { 
@@ -450,7 +480,7 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
   const removeParsedProduct = (index: number) => { const updated = parsedProducts.filter((_, i) => i !== index); setParsedProducts(updated); };
 
   const filteredProducts = useMemo(() => {
-    return products.filter(p => {
+    let result = products.filter(p => {
         const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
         if (!matchesSearch) return false;
 
@@ -459,7 +489,15 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
         if (activeFilter === ProductFilter.EXPIRING_SOON) return isAboutToExpire(p.expiryDate);
         return true;
     });
-  }, [products, activeFilter, searchTerm]);
+
+    if (sortOrder === 'asc') {
+        result.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortOrder === 'desc') {
+        result.sort((a, b) => b.name.localeCompare(a.name));
+    }
+
+    return result;
+  }, [products, activeFilter, searchTerm, sortOrder]);
 
   const groupProductList = (list: Product[]) => {
       const groups: { [key: string]: Product[] } = {}; const order: string[] = [];
@@ -485,6 +523,29 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     </div>
                 </div>
                 <div className="text-xs font-mono font-bold text-gray-400">SKU: {p.sku || 'N/A'}</div>
+                {(p.brand || p.model) && (
+                    <div className="text-xs font-bold text-gray-500 flex items-center gap-1 mt-1">
+                        {p.brand && <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">{p.brand}</span>}
+                        {p.model && <span className="text-gray-400">{p.model}</span>}
+                    </div>
+                )}
+                {p.customFields && (() => {
+                    try {
+                        const cfs = JSON.parse(p.customFields);
+                        if (cfs.length > 0) {
+                            return (
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {cfs.map((cf: any, idx: number) => (
+                                        <span key={idx} className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100">
+                                            <span className="font-semibold opacity-70">{cf.k}:</span> <span className="font-bold">{cf.v}</span>
+                                        </span>
+                                    ))}
+                                </div>
+                            );
+                        }
+                    } catch(e) {}
+                    return null;
+                })()}
                 <div className="grid grid-cols-3 gap-2 border-b border-dashed border-gray-200 pb-2 mb-1 mt-2">
                     <div className="flex flex-col"><span className="text-[10px] uppercase font-bold text-gray-500">Buy</span><span className="font-bold text-gray-700">₹{p.buyPrice}</span></div>
                     <div className="flex flex-col border-l border-gray-200 pl-2"><span className="text-[10px] uppercase font-bold text-gray-500">Wholesale</span><span className="font-bold text-blue-600">₹{p.wholesalePrice || '-'}</span></div>
@@ -526,21 +587,51 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
 
   const renderEditor = () => {
     // Standard shared styling to match Category box (h-[52px], px-6)
-    const inputBaseClass = "w-full rounded-lg px-6 py-3 text-base bg-white border-2 border-blue-200 text-gray-900 focus:outline-none focus:border-blue-500 h-[52px] transition-all placeholder-gray-400";
-    const errorClass = "border-red-400 bg-red-50/50";
-    const amberBorderClass = "border-amber-200";
-    const purpleBorderClass = "border-purple-200";
-    const greenBorderClass = "border-green-200";
+    const inputBaseClass = "w-full rounded-md px-3 py-2 text-sm bg-white border border-gray-300 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent h-10 transition-all placeholder-gray-400 shadow-sm";
+    const errorClass = "border-red-300 focus:ring-red-500 bg-red-50";
+    const amberBorderClass = "border-amber-300 focus:ring-amber-500";
+    const purpleBorderClass = "border-purple-300 focus:ring-purple-500";
+    const greenBorderClass = "border-green-300 focus:ring-green-500";
+
+    let customFieldsList: {k: string, v: string}[] = [];
+    try {
+        customFieldsList = newProduct.customFields ? JSON.parse(newProduct.customFields) : [];
+    } catch(e) {}
+
+    const updateCustomField = (index: number, key: string, value: string) => {
+        const newList = [...customFieldsList];
+        newList[index] = { k: key, v: value };
+        setNewProduct({...newProduct, customFields: JSON.stringify(newList)});
+    };
+
+    const addCustomField = () => {
+        const newList = [...customFieldsList, { k: '', v: '' }];
+        setNewProduct({...newProduct, customFields: JSON.stringify(newList)});
+    };
+
+    const removeCustomField = (index: number) => {
+        const newList = customFieldsList.filter((_, i) => i !== index);
+        setNewProduct({...newProduct, customFields: JSON.stringify(newList)});
+    };
 
     return (
-        <div className={`animate-in slide-in-from-bottom-4 duration-300 pb-24 ${shakeTrigger ? 'shake-element' : ''}`}>
-            <div className="flex items-center gap-4 mb-6">
-                <button onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
-                <h2 className="text-2xl font-bold text-gray-800">{isEditing ? 'Edit Product' : 'Add New Product'}</h2>
+        <div className={`animate-in slide-in-from-bottom-4 duration-300 pb-12 ${shakeTrigger ? 'shake-element' : ''}`}>
+            <div className="flex items-center justify-between mb-6 max-w-6xl mx-auto px-2">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"><ArrowLeft size={20} /></button>
+                    <h2 className="text-2xl font-bold text-gray-800">{isEditing ? 'Edit Product' : 'Add New Product'}</h2>
+                </div>
+                <div className="flex gap-2">
+                    <Button variant="neutral" onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="hidden sm:flex font-bold bg-white border border-gray-200">Cancel</Button>
+                    <Button onClick={handleSaveProduct} className="font-bold shadow-md flex items-center gap-2">
+                        {isEditing ? <Save size={18}/> : <Plus size={18}/>} 
+                        {isEditing ? "Update" : "Save"}
+                    </Button>
+                </div>
             </div>
 
             {pendingBulkItems.length > 0 && (
-                <div className="max-w-5xl mx-auto mb-6 px-1">
+                <div className="max-w-6xl mx-auto mb-6 px-2">
                     <div className="bg-indigo-50 border border-indigo-200 rounded-xl overflow-hidden shadow-sm">
                         <div className="px-4 py-3 bg-indigo-100/50 border-b border-indigo-200 flex justify-between items-center">
                             <h3 className="font-bold text-indigo-900 flex items-center gap-2"><ListPlus size={18}/> Bulk Queue ({pendingBulkItems.length})</h3>
@@ -564,193 +655,256 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                 </div>
             )}
 
-            <Card className="max-w-5xl mx-auto !p-10 shadow-lg">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8">
-                    {/* Product Name - Row 1 Full Width */}
-                    <div className="md:col-span-2 space-y-2">
-                        <label className={`font-bold text-sm flex items-center gap-2 ${validationErrors.has('name') ? 'text-red-600' : 'text-gray-700'}`}>
-                            <FileText size={16}/> Product Name *
-                        </label>
-                        <input 
-                            ref={editNameRef} 
-                            onKeyDown={(e) => handleEditorKeyDown(e, editSkuRef)} 
-                            placeholder="e.g. Organic Bananas" 
-                            value={newProduct.name} 
-                            onChange={e => setNewProduct({...newProduct, name: e.target.value})} 
-                            onBlur={handleNameBlur} 
-                            autoFocus={!isEditing} 
-                            className={`${inputBaseClass} ${validationErrors.has('name') ? errorClass : 'border-blue-200'}`} 
-                        />
-                    </div>
-
-                    {/* SKU / Barcode */}
-                    <div className="space-y-2">
-                        <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Scan size={16}/> SKU / Barcode</label>
-                        <div className="relative group">
-                            <input 
-                                ref={editSkuRef} 
-                                onKeyDown={(e) => handleEditorKeyDown(e, editCategoryRef)} 
-                                placeholder="Scan or type" 
-                                value={newProduct.sku} 
-                                onChange={e => setNewProduct({...newProduct, sku: e.target.value})} 
-                                className={`${inputBaseClass} pr-14`} 
-                            />
-                            <button 
-                                onClick={() => { window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, ''); setShowScanner(true); }} 
-                                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Scan Barcode"
-                            >
-                                <Scan size={22}/>
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Category */}
-                    <div className="space-y-2">
-                        <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Layers size={16}/> Category</label>
-                        <select 
-                            ref={editCategoryRef} 
-                            onKeyDown={(e) => handleEditorKeyDown(e, editSellRef)} 
-                            value={newProduct.tagId || ''} 
-                            onChange={(e) => { 
-                                if (e.target.value === 'NEW_TAG_TRIGGER') {
-                                    window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, '');
-                                    setShowTagModal(true);
-                                } else {
-                                    setNewProduct({...newProduct, tagId: e.target.value});
-                                }
-                            }} 
-                            className={`${inputBaseClass} cursor-pointer`}
-                        >
-                            <option value="">Select Category</option>
-                            {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            <option value="NEW_TAG_TRIGGER" className="font-bold text-blue-600">+ Create New</option>
-                        </select>
-                    </div>
-
-                    {/* Sell Price */}
-                    <div className="space-y-2">
-                        <label className={`font-bold text-sm flex items-center gap-2 ${validationErrors.has('sellPrice') ? 'text-red-600' : 'text-gray-700'}`}>
-                            <TagIcon size={16}/> Sell Price ({settings.currencySymbol}) *
-                        </label>
-                        <input 
-                            ref={editSellRef} 
-                            onKeyDown={(e) => handleEditorKeyDown(e, editStockRef)} 
-                            type="number" 
-                            placeholder="0.00" 
-                            value={newProduct.sellPrice || ''} 
-                            onChange={e => setNewProduct({...newProduct, sellPrice: parseFloat(e.target.value) || 0})} 
-                            className={`${inputBaseClass} ${validationErrors.has('sellPrice') ? errorClass : 'border-blue-200'}`} 
-                        />
-                    </div>
-
-                    {/* Stock Quantity with Calculator */}
-                    <div className="space-y-2">
-                        <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Box size={16}/> Stock Quantity</label>
-                        <div className={`flex items-center bg-white border-2 border-purple-200 rounded-lg overflow-hidden h-[52px]`}>
-                            <input 
-                                ref={editStockRef} 
-                                onKeyDown={(e) => handleEditorKeyDown(e, editExpiryRef)} 
-                                type="number" 
-                                placeholder="0" 
-                                className="flex-1 px-6 py-3 outline-none font-bold text-gray-900 h-full w-full bg-transparent" 
-                                value={newProduct.stock || ''} 
-                                onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} 
-                            />
-                            <div className="flex items-center gap-2 px-4 bg-purple-50 h-full border-l border-purple-200 shrink-0">
-                                <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest mr-1">CALC:</span>
+            <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 px-2">
+                {/* Left Column - Main Details */}
+                <div className="lg:col-span-2 space-y-6">
+                    {/* Basic Info Card */}
+                    <Card className="!p-5 shadow-sm border border-gray-200">
+                        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2"><FileText size={18} className="text-blue-500"/> Basic Information</h3>
+                        <div className="space-y-4">
+                            <div className="space-y-1.5">
+                                <label className={`font-bold text-sm flex items-center gap-2 ${validationErrors.has('name') ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Product Name *
+                                </label>
                                 <input 
-                                    type="number" 
-                                    placeholder="Box" 
-                                    className="w-12 h-8 text-center border border-purple-200 rounded text-xs py-1 focus:ring-1 focus:ring-purple-400 outline-none" 
-                                    value={batchConfig.packs} 
-                                    onChange={(e) => handleBatchChange('packs', e.target.value)} 
-                                />
-                                <span className="text-gray-400 font-bold">×</span>
-                                <input 
-                                    type="number" 
-                                    placeholder="Qty" 
-                                    className="w-12 h-8 text-center border border-purple-200 rounded text-xs py-1 focus:ring-1 focus:ring-purple-400 outline-none" 
-                                    value={batchConfig.perPack} 
-                                    onChange={(e) => handleBatchChange('perPack', e.target.value)} 
+                                    ref={editNameRef} 
+                                    onKeyDown={(e) => handleEditorKeyDown(e, editSkuRef)} 
+                                    placeholder="e.g. Organic Bananas" 
+                                    value={newProduct.name} 
+                                    onChange={e => setNewProduct({...newProduct, name: e.target.value})} 
+                                    onBlur={handleNameBlur} 
+                                    autoFocus={!isEditing} 
+                                    className={`${inputBaseClass} ${validationErrors.has('name') ? errorClass : 'border-blue-200 focus:border-blue-500'}`} 
                                 />
                             </div>
-                        </div>
-                    </div>
 
-                    {/* Expiry Date */}
-                    <div className="md:col-span-2 space-y-2">
-                        <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Clock size={16}/> Expiry Date</label>
-                        <input 
-                            ref={editExpiryRef} 
-                            onKeyDown={handleExpiryEnter} 
-                            type="date" 
-                            value={newProduct.expiryDate || ''} 
-                            onChange={(e) => setNewProduct({...newProduct, expiryDate: e.target.value})} 
-                            className={`${inputBaseClass} ${amberBorderClass}`} 
-                        />
-                    </div>
-                </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="font-bold text-gray-700 text-sm flex items-center gap-2">SKU / Barcode</label>
+                                    <div className="relative group">
+                                        <input 
+                                            ref={editSkuRef} 
+                                            onKeyDown={(e) => handleEditorKeyDown(e, editCategoryRef)} 
+                                            placeholder="Scan or type" 
+                                            value={newProduct.sku} 
+                                            onChange={e => setNewProduct({...newProduct, sku: e.target.value})} 
+                                            className={`${inputBaseClass} pr-12`} 
+                                        />
+                                        <button 
+                                            onClick={() => { window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, ''); setShowScanner(true); }} 
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                            title="Scan Barcode"
+                                        >
+                                            <Scan size={18}/>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Category</label>
+                                    <select 
+                                        ref={editCategoryRef} 
+                                        onKeyDown={(e) => handleEditorKeyDown(e, editBrandRef)} 
+                                        value={newProduct.tagId || ''} 
+                                        onChange={(e) => { 
+                                            if (e.target.value === 'NEW_TAG_TRIGGER') {
+                                                window.history.pushState({ tab: Tab.WAREHOUSE, depth: 2 }, '');
+                                                setShowTagModal(true);
+                                            } else {
+                                                setNewProduct({...newProduct, tagId: e.target.value});
+                                            }
+                                        }} 
+                                        className={`${inputBaseClass} cursor-pointer`}
+                                    >
+                                        <option value="">Select Category</option>
+                                        {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                        <option value="NEW_TAG_TRIGGER" className="font-bold text-blue-600">+ Create New</option>
+                                    </select>
+                                </div>
+                            </div>
 
-                <div className="mt-12 flex justify-center">
-                    <button 
-                        onClick={() => setShowMoreFields(!showMoreFields)} 
-                        className="flex items-center gap-2 text-blue-600 font-black uppercase tracking-widest text-xs bg-blue-50 px-6 py-3 rounded-full hover:bg-blue-100 transition-colors"
-                    >
-                        {showMoreFields ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
-                        {showMoreFields ? 'Hide Details' : 'Fill More Fields'}
-                    </button>
-                </div>
-
-                {showMoreFields && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-8 mt-10 animate-in slide-in-from-top-4 duration-300">
-                        <div className="space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Factory size={16}/> Buy Price</label>
-                            <input ref={editBuyRef} onKeyDown={(e) => handleEditorKeyDown(e, editWholesaleRef)} type="number" placeholder="0.00" value={newProduct.buyPrice || ''} onChange={e => setNewProduct({...newProduct, buyPrice: parseFloat(e.target.value) || 0})} className={`${inputBaseClass} ${greenBorderClass}`} />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><TagIcon size={16}/> Wholesale Price</label>
-                            <input ref={editWholesaleRef} onKeyDown={(e) => handleEditorKeyDown(e, editTaxRef)} type="number" placeholder="0.00" value={newProduct.wholesalePrice || ''} onChange={e => setNewProduct({...newProduct, wholesalePrice: parseFloat(e.target.value) || 0})} className={`${inputBaseClass} ${greenBorderClass}`} />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Percent size={16}/> Tax Rate (%)</label>
-                            <input ref={editTaxRef} onKeyDown={(e) => handleEditorKeyDown(e, editLocationRef)} type="number" placeholder="0" value={newProduct.taxRate || ''} onChange={e => setNewProduct({...newProduct, taxRate: parseFloat(e.target.value) || 0})} className={`${inputBaseClass} ${greenBorderClass}`} />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><MapPin size={16}/> Location</label>
-                            <input ref={editLocationRef} onKeyDown={(e) => handleEditorKeyDown(e, editUnitSizeRef)} placeholder="e.g. Aisle 3" value={newProduct.location} onChange={e => setNewProduct({...newProduct, location: e.target.value})} className={`${inputBaseClass} ${purpleBorderClass}`} />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Scale size={16}/> Unit Size</label>
-                            <div className={`flex w-full rounded-lg overflow-hidden border-2 ${purpleBorderClass} h-[52px]`}>
-                                <input ref={editUnitSizeRef} onKeyDown={(e) => handleEditorKeyDown(e, editLowStockRef)} type="text" placeholder="1" className="w-1/3 bg-transparent px-4 text-center border-r-2 border-purple-100 font-bold" value={newProduct.capacity || ''} onChange={(e) => setNewProduct({...newProduct, capacity: e.target.value})} />
-                                <select value={newProduct.unit || 'pcs'} onChange={e => setNewProduct({...newProduct, unit: e.target.value})} className="w-2/3 bg-transparent px-4 font-bold outline-none cursor-pointer">
-                                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                                </select>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Brand / Make</label>
+                                    <input ref={editBrandRef} onKeyDown={(e) => handleEditorKeyDown(e, editModelRef)} placeholder="e.g. Samsung, Havells" value={newProduct.brand || ''} onChange={e => setNewProduct({...newProduct, brand: e.target.value})} className={inputBaseClass} />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Model / Part No.</label>
+                                    <input ref={editModelRef} onKeyDown={(e) => handleEditorKeyDown(e, editStockRef)} placeholder="e.g. SM-G998B" value={newProduct.model || ''} onChange={e => setNewProduct({...newProduct, model: e.target.value})} className={inputBaseClass} />
+                                </div>
                             </div>
                         </div>
-                        <div className="space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><AlertTriangle size={16}/> Low Stock Alert</label>
-                            <input ref={editLowStockRef} onKeyDown={(e) => handleEditorKeyDown(e, editMfgRef)} type="number" placeholder="10" value={newProduct.lowStockThreshold || ''} onChange={e => setNewProduct({...newProduct, lowStockThreshold: parseInt(e.target.value) || 0})} className={`${inputBaseClass} ${purpleBorderClass}`} />
-                        </div>
-                        <div className="md:col-span-2 space-y-2">
-                            <label className="font-bold text-gray-700 text-sm flex items-center gap-2"><Factory size={16}/> Manufacturing Date</label>
-                            <input ref={editMfgRef} onKeyDown={(e) => handleEditorKeyDown(e, null, handleSaveProduct)} type="date" value={newProduct.manufacturingDate || ''} onChange={(e) => setNewProduct({...newProduct, manufacturingDate: e.target.value})} className={`${inputBaseClass} ${amberBorderClass}`} />
-                        </div>
-                    </div>
-                )}
+                    </Card>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-12 pt-10 border-t border-gray-100">
-                    <Button variant="neutral" onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="py-4 !rounded-xl font-black uppercase tracking-widest text-xs border-2 border-gray-100">Cancel</Button>
-                    <Button variant="neutral" onClick={handleAddToBatch} className="bg-indigo-50 text-indigo-700 py-4 !rounded-xl font-black uppercase tracking-widest text-xs border-2 border-indigo-100 flex items-center justify-center gap-2">
-                        <ListPlus size={20}/> Queue
+                    {/* Inventory Card */}
+                    <Card className="!p-5 shadow-sm border border-gray-200">
+                        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2"><Box size={18} className="text-purple-500"/> Inventory & Tracking</h3>
+                        <div className="space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center justify-between">
+                                    <span>Stock Quantity</span>
+                                </label>
+                                <div className={`flex flex-col sm:flex-row gap-3`}>
+                                    <div className={`flex items-center bg-white border ${purpleBorderClass} rounded-md overflow-hidden h-10 flex-1 shadow-sm`}>
+                                        <button 
+                                            onClick={() => setNewProduct({...newProduct, stock: Math.max(0, (newProduct.stock || 0) - 1)})}
+                                            className="w-10 h-full flex items-center justify-center bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors border-r border-purple-200"
+                                        >
+                                            <span className="text-lg font-bold">-</span>
+                                        </button>
+                                        <input 
+                                            ref={editStockRef} 
+                                            onKeyDown={(e) => handleEditorKeyDown(e, editUnitSizeRef)} 
+                                            type="number" 
+                                            placeholder="0" 
+                                            className="flex-1 px-3 py-1 outline-none font-bold text-center text-gray-900 h-full w-full bg-transparent text-base" 
+                                            value={newProduct.stock || ''} 
+                                            onChange={e => setNewProduct({...newProduct, stock: parseInt(e.target.value) || 0})} 
+                                        />
+                                        <button 
+                                            onClick={() => setNewProduct({...newProduct, stock: (newProduct.stock || 0) + 1})}
+                                            className="w-10 h-full flex items-center justify-center bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors border-l border-purple-200"
+                                        >
+                                            <span className="text-lg font-bold">+</span>
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Bulk Calculator */}
+                                    <div className="flex items-center gap-2 px-3 bg-purple-50 h-10 border border-purple-200 rounded-md shrink-0 shadow-sm">
+                                        <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest hidden sm:inline">BULK:</span>
+                                        <input 
+                                            type="number" 
+                                            placeholder="Box" 
+                                            className="w-14 h-8 text-center border border-purple-200 rounded text-xs py-1 focus:ring-1 focus:ring-purple-400 outline-none font-bold" 
+                                            value={batchConfig.packs} 
+                                            onChange={(e) => handleBatchChange('packs', e.target.value)} 
+                                        />
+                                        <span className="text-gray-400 font-bold">×</span>
+                                        <input 
+                                            type="number" 
+                                            placeholder="Qty" 
+                                            className="w-14 h-8 text-center border border-purple-200 rounded text-xs py-1 focus:ring-1 focus:ring-purple-400 outline-none font-bold" 
+                                            value={batchConfig.perPack} 
+                                            onChange={(e) => handleBatchChange('perPack', e.target.value)} 
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Unit Size</label>
+                                    <div className={`flex w-full rounded-md overflow-hidden border ${purpleBorderClass} h-10 shadow-sm`}>
+                                        <input ref={editUnitSizeRef} onKeyDown={(e) => handleEditorKeyDown(e, editLocationRef)} type="text" placeholder="1" className="w-1/3 bg-transparent px-3 text-center border-r border-purple-200 font-bold outline-none" value={newProduct.capacity || ''} onChange={(e) => setNewProduct({...newProduct, capacity: e.target.value})} />
+                                        <select value={newProduct.unit || 'pcs'} onChange={e => setNewProduct({...newProduct, unit: e.target.value})} className="w-2/3 bg-transparent px-3 font-bold outline-none cursor-pointer">
+                                            {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Location</label>
+                                    <input ref={editLocationRef} onKeyDown={(e) => handleEditorKeyDown(e, editLowStockRef)} placeholder="e.g. Aisle 3" value={newProduct.location} onChange={e => setNewProduct({...newProduct, location: e.target.value})} className={`${inputBaseClass} ${purpleBorderClass}`} />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Low Stock Alert</label>
+                                <input ref={editLowStockRef} onKeyDown={(e) => handleEditorKeyDown(e, editSellRef)} type="number" placeholder="10" value={newProduct.lowStockThreshold || ''} onChange={e => setNewProduct({...newProduct, lowStockThreshold: parseInt(e.target.value) || 0})} className={`${inputBaseClass} ${purpleBorderClass}`} />
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* Custom Attributes Card */}
+                    <Card className="!p-5 shadow-sm border border-gray-200">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-base font-bold text-gray-800 flex items-center gap-2"><Layers size={18} className="text-indigo-500"/> Custom Fields</h3>
+                            <Button size="sm" variant="neutral" onClick={addCustomField} className="text-xs py-1 h-8 bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"><Plus size={14} className="mr-1"/> Add Field</Button>
+                        </div>
+                        <div className="space-y-3">
+                            {customFieldsList.length === 0 && <div className="text-sm text-gray-400 italic text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-200">No custom fields added. Create your own boxes!</div>}
+                            {customFieldsList.map((cf, idx) => (
+                                <div key={idx} className="flex flex-col sm:flex-row items-center gap-2">
+                                    <input placeholder="Field Name (e.g. Color)" value={cf.k} onChange={e => updateCustomField(idx, e.target.value, cf.v)} className={`${inputBaseClass} sm:w-1/3`} />
+                                    <input placeholder="Value (e.g. Red)" value={cf.v} onChange={e => updateCustomField(idx, cf.k, e.target.value)} className={`${inputBaseClass} flex-1`} />
+                                    <button onClick={() => removeCustomField(idx)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"><Trash2 size={18}/></button>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
+                </div>
+
+                {/* Right Column - Pricing & Extra */}
+                <div className="space-y-6">
+                    {/* Pricing Card */}
+                    <Card className="!p-5 shadow-sm border border-green-200 bg-green-50/30">
+                        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2"><TagIcon size={18} className="text-green-600"/> Pricing</h3>
+                        <div className="space-y-4">
+                            <div className="space-y-1.5">
+                                <label className={`font-bold text-sm flex items-center gap-2 ${validationErrors.has('sellPrice') ? 'text-red-600' : 'text-gray-700'}`}>
+                                    Sell Price ({settings.currencySymbol}) *
+                                </label>
+                                <input 
+                                    ref={editSellRef} 
+                                    onKeyDown={(e) => handleEditorKeyDown(e, editBuyRef)} 
+                                    type="number" 
+                                    placeholder="0.00" 
+                                    value={newProduct.sellPrice || ''} 
+                                    onChange={e => setNewProduct({...newProduct, sellPrice: parseFloat(e.target.value) || 0})} 
+                                    className={`${inputBaseClass} !text-base !font-bold ${validationErrors.has('sellPrice') ? errorClass : greenBorderClass}`} 
+                                />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Buy Price</label>
+                                <input ref={editBuyRef} onKeyDown={(e) => handleEditorKeyDown(e, editWholesaleRef)} type="number" placeholder="0.00" value={newProduct.buyPrice || ''} onChange={e => setNewProduct({...newProduct, buyPrice: parseFloat(e.target.value) || 0})} className={`${inputBaseClass} ${greenBorderClass}`} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Wholesale Price</label>
+                                <input ref={editWholesaleRef} onKeyDown={(e) => handleEditorKeyDown(e, editTaxRef)} type="number" placeholder="0.00" value={newProduct.wholesalePrice || ''} onChange={e => setNewProduct({...newProduct, wholesalePrice: parseFloat(e.target.value) || 0})} className={`${inputBaseClass} ${greenBorderClass}`} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Tax Rate (%)</label>
+                                <input ref={editTaxRef} onKeyDown={(e) => handleEditorKeyDown(e, editSupplierRef)} type="number" placeholder="0" value={newProduct.taxRate || ''} onChange={e => setNewProduct({...newProduct, taxRate: parseFloat(e.target.value) || 0})} className={`${inputBaseClass} ${greenBorderClass}`} />
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* Additional Details Card */}
+                    <Card className="!p-5 shadow-sm border border-gray-200">
+                        <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2"><Info size={18} className="text-amber-500"/> Extra Details</h3>
+                        <div className="space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Supplier / Vendor</label>
+                                <input ref={editSupplierRef} onKeyDown={(e) => handleEditorKeyDown(e, editWarrantyRef)} placeholder="e.g. ABC Distributors" value={newProduct.supplier || ''} onChange={e => setNewProduct({...newProduct, supplier: e.target.value})} className={inputBaseClass} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Warranty (Months)</label>
+                                <input ref={editWarrantyRef} onKeyDown={(e) => handleEditorKeyDown(e, editMfgRef)} type="number" placeholder="12" value={newProduct.warrantyMonths || ''} onChange={e => setNewProduct({...newProduct, warrantyMonths: parseInt(e.target.value) || 0})} className={inputBaseClass} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Manufacturing Date</label>
+                                <input ref={editMfgRef} onKeyDown={(e) => handleEditorKeyDown(e, editExpiryRef)} type="date" value={newProduct.manufacturingDate || ''} onChange={(e) => setNewProduct({...newProduct, manufacturingDate: e.target.value})} className={`${inputBaseClass} ${amberBorderClass}`} />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="font-bold text-gray-700 text-sm flex items-center gap-2">Expiry Date</label>
+                                <input ref={editExpiryRef} onKeyDown={(e) => handleEditorKeyDown(e, null, handleSaveProduct)} type="date" value={newProduct.expiryDate || ''} onChange={(e) => setNewProduct({...newProduct, expiryDate: e.target.value})} className={`${inputBaseClass} ${amberBorderClass}`} />
+                            </div>
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            {/* Bottom Action Bar */}
+            <div className="mt-8 max-w-6xl mx-auto flex justify-between items-center gap-4 px-2">
+                <Button variant="neutral" onClick={() => { setIsEditorOpen(false); window.history.back(); }} className="py-2.5 px-6 font-bold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 shadow-sm">Cancel</Button>
+                <div className="flex gap-3">
+                    <Button variant="neutral" onClick={handleAddToBatch} className="bg-indigo-50 text-indigo-700 py-2.5 px-6 font-bold border border-indigo-200 flex items-center gap-2 hover:bg-indigo-100 shadow-sm">
+                        <ListPlus size={18}/> Queue
                     </Button>
-                    <Button onClick={handleSaveProduct} className="py-4 !rounded-xl font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-200 flex items-center justify-center gap-2">
-                        {isEditing ? <Save size={20}/> : <Plus size={20}/>} 
-                        {isEditing ? "Update" : "Save"}
+                    <Button onClick={handleSaveProduct} className="py-2.5 px-8 font-bold shadow-sm flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                        {isEditing ? <Save size={18}/> : <Plus size={18}/>} 
+                        {isEditing ? "Update Product" : "Save Product"}
                     </Button>
                 </div>
-            </Card>
+            </div>
         </div>
     );
   };
@@ -772,17 +926,37 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                     </button>
                </div>
 
-               <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-hide no-scrollbar">
+               <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-hide no-scrollbar justify-start md:justify-center">
+                    <button
+                        onClick={() => {
+                            if (sortOrder === 'none') setSortOrder('asc');
+                            else if (sortOrder === 'asc') setSortOrder('desc');
+                            else setSortOrder('none');
+                        }}
+                        className={`flex items-center gap-1 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all duration-200
+                            ${sortOrder !== 'none'
+                                ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-sm' 
+                                : 'bg-white text-gray-500 border-gray-100 hover:border-gray-200 hover:bg-gray-50'
+                            }
+                        `}
+                        title="Sort A-Z"
+                    >
+                        {sortOrder === 'none' && <ArrowUpDown size={14} />}
+                        {sortOrder === 'asc' && <ArrowDownAZ size={14} />}
+                        {sortOrder === 'desc' && <ArrowUpZA size={14} />}
+                        Sort
+                    </button>
+                    <div className="w-px h-6 bg-gray-200 mx-1 shrink-0"></div>
                     {[
-                        { id: ProductFilter.ALL, label: 'All Stocks' },
-                        { id: ProductFilter.LOW_STOCK, label: 'Low Stock' },
-                        { id: ProductFilter.OUT_OF_STOCK, label: 'Out of Stock' },
+                        { id: ProductFilter.ALL, label: 'All' },
+                        { id: ProductFilter.LOW_STOCK, label: 'Low' },
+                        { id: ProductFilter.OUT_OF_STOCK, label: 'Out' },
                         { id: ProductFilter.EXPIRING_SOON, label: 'Expiring' }
                     ].map(f => (
                         <button 
                             key={f.id} 
                             onClick={() => setActiveFilter(f.id)}
-                            className={`whitespace-nowrap px-5 py-2.5 rounded-full text-sm font-bold border-2 transition-all duration-200
+                            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-all duration-200
                                 ${activeFilter === f.id 
                                     ? 'bg-[#1f2937] text-white border-[#1f2937] shadow-sm' 
                                     : 'bg-white text-gray-500 border-gray-100 hover:border-gray-200 hover:bg-gray-50'
@@ -840,6 +1014,15 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
         <div className="flex items-center gap-3 mb-6 px-1">
             <div className="p-3 bg-gray-900 text-white rounded-xl shadow-lg shadow-gray-900/20"><Settings size={24} /></div>
             <div><h2 className="text-2xl font-bold text-gray-800">Store Settings</h2><p className="text-gray-500">Manage your preferences and alert configurations</p></div>
+            <div className="ml-auto flex gap-2">
+                <Button variant="neutral" size="sm" onClick={exportToCSV} className="bg-white border-gray-200"><FileText size={16} className="mr-1"/> Export CSV</Button>
+                <label className="cursor-pointer">
+                    <div className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors">
+                        <Plus size={16} /> Import CSV
+                    </div>
+                    <input type="file" accept=".csv" className="hidden" onChange={importFromCSV} />
+                </label>
+            </div>
         </div>
         <Card className="overflow-hidden border-0 shadow-lg shadow-gray-200/50">
             <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex justify-between items-center"><h3 className="font-bold text-gray-800 flex items-center gap-2"><Hash size={18} className="text-blue-500"/> General Preferences</h3></div>
@@ -895,6 +1078,30 @@ export const Warehouse: React.FC<WarehouseProps> = ({ initialAction, onClearActi
                         </div>
                     </div>
                 </div>
+            </div>
+        </Card>
+        <Card className="overflow-hidden border-0 shadow-lg shadow-gray-200/50">
+            <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex justify-between items-center"><h3 className="font-bold text-gray-800 flex items-center gap-2"><Smartphone size={18} className="text-purple-500"/> Advanced & Hardware</h3></div>
+            <div className="p-6 space-y-6">
+                <div className="flex items-center justify-between">
+                    <div><label className="font-semibold text-gray-700 block mb-1">AI Privacy Mode</label><p className="text-sm text-gray-400">Hide sensitive product data from AI analysis.</p></div>
+                    <button onClick={() => handleUpdateSettings({ ...settings, aiPrivacyEnabled: !settings.aiPrivacyEnabled })} className={`w-14 h-8 min-w-[3.5rem] rounded-full transition-all duration-300 relative shadow-inner shrink-0 ${settings.aiPrivacyEnabled ? 'bg-indigo-500' : 'bg-gray-200'}`}>
+                        <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 shadow-md ${settings.aiPrivacyEnabled ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                    </button>
+                </div>
+                <hr className="border-gray-100"/>
+                <div className="flex items-center justify-between">
+                    <div><label className="font-semibold text-gray-700 block mb-1">Loyalty Program</label><p className="text-sm text-gray-400">Award points to customers on every purchase.</p></div>
+                    <button onClick={() => handleUpdateSettings({ ...settings, loyaltyProgramEnabled: !settings.loyaltyProgramEnabled })} className={`w-14 h-8 min-w-[3.5rem] rounded-full transition-all duration-300 relative shadow-inner shrink-0 ${settings.loyaltyProgramEnabled ? 'bg-emerald-500' : 'bg-gray-200'}`}>
+                        <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 shadow-md ${settings.loyaltyProgramEnabled ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                    </button>
+                </div>
+                {settings.loyaltyProgramEnabled && (
+                    <div className="flex items-center justify-between bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 animate-in fade-in zoom-in-95">
+                        <label className="text-xs font-bold text-emerald-800">Points per {settings.currencySymbol}100 spent:</label>
+                        <Input type="number" value={settings.pointsPerCurrency || 1} onChange={(e) => handleUpdateSettings({ ...settings, pointsPerCurrency: parseInt(e.target.value) || 0 })} className="w-16 text-center !h-8 !bg-white" />
+                    </div>
+                )}
             </div>
         </Card>
     </div>

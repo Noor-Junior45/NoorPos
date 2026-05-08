@@ -20,7 +20,7 @@ export interface DriveFile {
 
 // Table Headers Definition
 const HEADERS = {
-    Products: ['ID', 'Name', 'SKU', 'Sell Price', 'Buy Price', 'Stock', 'Unit', 'Category', 'Location', 'Low Stock', 'Tax', 'Expiry', 'Mfg Date', 'Created At', 'Tag ID'],
+    Products: ['ID', 'Name', 'SKU', 'Sell Price', 'Buy Price', 'Stock', 'Unit', 'Category', 'Location', 'Low Stock', 'Tax', 'Expiry', 'Mfg Date', 'Created At', 'Tag ID', 'Brand', 'Model', 'Warranty Months', 'Supplier', 'Custom Fields'],
     Customers: ['ID', 'Name', 'Phone', 'Email', 'Address', 'Spent', 'Dues', 'Visits', 'Type', 'History JSON', 'Payments JSON'],
     Sales: ['ID', 'Date', 'Customer Name', 'Customer ID', 'Total', 'Subtotal', 'Tax', 'Paid', 'Due', 'Method', 'Items JSON'],
     Tags: ['ID', 'Name', 'Color'],
@@ -195,12 +195,40 @@ export const GoogleDriveUtils = {
 
   // --- SAVE LOGIC (TABLE BASED) ---
   saveToSheet: async (accessToken: string, spreadsheetId: string, data: any) => {
+    // Conflict Resolution Check
+    try {
+        const checkRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Settings!A2:H2`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        if (checkRes.ok) {
+            const checkJson = await checkRes.json();
+            if (checkJson.values && checkJson.values[0]) {
+                const remoteSettingsJson = checkJson.values[0][7];
+                if (remoteSettingsJson) {
+                    const remoteSettings = JSON.parse(remoteSettingsJson);
+                    if (remoteSettings.lastModified && data.settings.lastModified) {
+                        if (remoteSettings.lastModified > data.settings.lastModified) {
+                            window.dispatchEvent(new Event('sync-conflict'));
+                            throw new Error("CONFLICT: Remote data is newer.");
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e: any) {
+        if (e.message?.includes("CONFLICT")) throw e;
+    }
+
+    // Update local lastModified before saving
+    data.settings.lastModified = Date.now();
+
     const bodyData = [];
 
     // 1. Products
     const productRows = data.products.map((p: any) => [
         p.id, p.name, p.sku, p.sellPrice, p.buyPrice || 0, p.stock, p.unit, p.category || '', 
-        p.location || '', p.lowStockThreshold || 10, p.taxRate || 0, p.expiryDate || '', p.manufacturingDate || '', p.createdAt || '', p.tagId || ''
+        p.location || '', p.lowStockThreshold || 10, p.taxRate || 0, p.expiryDate || '', p.manufacturingDate || '', p.createdAt || '', p.tagId || '',
+        p.brand || '', p.model || '', p.warrantyMonths || '', p.supplier || '', p.customFields || ''
     ]);
     bodyData.push({ range: "Products!A2", values: productRows.length ? productRows : [['']] });
 
@@ -253,6 +281,11 @@ export const GoogleDriveUtils = {
         body: JSON.stringify({ valueInputOption: "RAW", data: bodyData })
     });
 
+    if (res.status === 401) {
+        GoogleDriveUtils.clearSession();
+        window.dispatchEvent(new Event('session-expired'));
+        throw new Error("Session expired");
+    }
     if (!res.ok) throw new Error(`${res.status}: Save failed`);
   },
 
@@ -263,6 +296,11 @@ export const GoogleDriveUtils = {
           headers: { Authorization: `Bearer ${accessToken}` }
       });
 
+      if (res.status === 401) {
+          GoogleDriveUtils.clearSession();
+          window.dispatchEvent(new Event('session-expired'));
+          throw new Error("Session expired");
+      }
       if (!res.ok) throw new Error("Failed to load data");
       const json = await res.json();
       const valueRanges = json.valueRanges;
@@ -294,7 +332,8 @@ export const GoogleDriveUtils = {
           id: r[0], name: r[1], sku: r[2], sellPrice: parseFloat(r[3]) || 0, buyPrice: parseFloat(r[4]) || 0,
           stock: parseFloat(r[5]) || 0, unit: r[6], category: r[7], location: r[8],
           lowStockThreshold: parseInt(r[9]) || 10, taxRate: parseFloat(r[10]) || 0,
-          expiryDate: r[11], manufacturingDate: r[12], createdAt: r[13], tagId: r[14]
+          expiryDate: r[11], manufacturingDate: r[12], createdAt: r[13], tagId: r[14],
+          brand: r[15] || '', model: r[16] || '', warrantyMonths: parseInt(r[17]) || 0, supplier: r[18] || '', customFields: r[19] || ''
       })).filter((p: any) => p.id);
 
       const customers = getSheetRows('Customers').map((r: any[]) => {

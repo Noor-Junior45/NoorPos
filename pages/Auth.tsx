@@ -3,13 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { Input } from '../components/UI';
 import { GoogleDriveUtils } from '../utils/googleDrive';
-import { Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2, ExternalLink, ShieldCheck, HelpCircle } from 'lucide-react';
+import { Loader2, Database, AlertTriangle, User as UserIcon, CheckCircle2, ExternalLink, ShieldCheck, HelpCircle, Info } from 'lucide-react';
 
 interface AuthProps {
   onLogin: (user: User) => void;
+  onShowLanding?: () => void;
 }
 
-export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
+export const Auth: React.FC<AuthProps> = ({ onLogin, onShowLanding }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [apiErrorLink, setApiErrorLink] = useState<string | null>(null);
@@ -82,11 +83,11 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       let link = null;
       
       // GIS library errors often come back as objects
-      if (err?.error === 'popup_closed_by_user') {
-          msg = "Login cancelled. Popup closed.";
+      if (err?.error === 'popup_closed_by_user' || err?.message === 'Popup window closed' || err?.type === 'popup_closed') {
+          msg = "Login cancelled. The popup window was closed. If it closed automatically, please ensure popups are allowed and try opening the app in a new tab.";
       } else if (err?.error === 'access_denied') {
           msg = "Access denied. Permissions required.";
-      } else if (err?.error === 'idpiframe_initialization_failed') {
+      } else if (err?.error === 'idpiframe_initialization_failed' || err?.message?.includes('idpiframe_initialization_failed') || err?.type === 'tokenFailed') {
           msg = "Origin Mismatch (Error 400). Authorized domains need to be set in Google Console.";
           setShowOriginHelp(true);
       } else if (err?.message) {
@@ -96,7 +97,13 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
              const urlRegex = /(https?:\/\/[^\s]+)/g;
              const matches = err.message.match(urlRegex);
              link = matches ? matches[0] : "https://console.developers.google.com/apis/library/sheets.googleapis.com";
+          } else if (msg.includes("origin_mismatch") || msg.includes("Not a valid origin")) {
+             msg = "Origin Mismatch. Authorized domains need to be set in Google Console.";
+             setShowOriginHelp(true);
           }
+      } else {
+          msg = "Login failed. If this is a new environment, you may need to authorize this URL.";
+          setShowOriginHelp(true);
       }
       setError(msg);
       setApiErrorLink(link);
@@ -128,7 +135,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                   className={`w-full flex items-center justify-center gap-3 border border-gray-300 font-bold py-3 px-4 rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-70 ${isGoogleReady ? 'bg-white hover:bg-gray-50 text-gray-700' : 'bg-gray-50 text-gray-400 cursor-not-allowed'}`}
               >
                   {loading ? <Loader2 size={24} className="animate-spin text-indigo-600" /> : <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-6 h-6" alt="Google" />}
-                  <span>{loading ? 'Connecting...' : 'Continue with Google'}</span>
+                  <span>{loading ? 'Connecting...' : 'Continue with Google (Drive)'}</span>
               </button>
               {!isGoogleReady && !loading && <p className="text-[10px] text-center text-gray-400">Loading Google Services...</p>}
               <div className="relative py-2">
@@ -143,6 +150,16 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                   <UserIcon size={20} />
                   <span>Guest / Local Server Mode</span>
               </button>
+              {onShowLanding && (
+                <button
+                    onClick={onShowLanding}
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-3 bg-gray-50 border border-gray-200 hover:bg-gray-100 text-gray-600 font-bold py-3 px-4 rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-70 mt-2"
+                >
+                    <Info size={20} />
+                    <span>About Noor POS</span>
+                </button>
+              )}
               
               {loading && <div className="flex items-center justify-center gap-2 text-xs text-indigo-600 font-medium animate-pulse pt-2"><Database size={14} />{status}</div>}
               
@@ -154,8 +171,19 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                       </div>
                       
                       {showOriginHelp && (
-                          <div className="bg-white/80 p-3 rounded-xl border border-red-100 text-[10px] leading-relaxed text-gray-600">
-                              <strong>Fix:</strong> You must add <code>{window.location.origin}</code> to <strong>"Authorized JavaScript origins"</strong> in your Google Cloud Console.
+                          <div className="bg-white/80 p-3 rounded-xl border border-red-100 text-[10px] leading-relaxed text-gray-600 w-full text-left">
+                              <strong className="text-red-700 block mb-1">How to fix this:</strong>
+                              <p className="mb-2">Add the following URL to your Authorized Domains in Google Cloud Console:</p>
+                              <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg border border-gray-200">
+                                  <code className="flex-1 text-xs text-indigo-700 select-all">{window.location.origin}</code>
+                                  <button 
+                                      onClick={() => navigator.clipboard.writeText(window.location.origin)}
+                                      className="bg-white px-2 py-1 rounded shadow-sm text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 transition-colors border border-gray-200"
+                                      title="Copy URL"
+                                  >
+                                      Copy
+                                  </button>
+                              </div>
                           </div>
                       )}
 

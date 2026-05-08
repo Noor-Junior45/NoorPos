@@ -510,6 +510,16 @@ export const POS: React.FC = () => {
 
     const sale = await StoreService.createSale({ items: cart.map(i => ({ ...i, sellPrice: i.customPrice ?? i.sellPrice, discount: i.discount })), customerName: activeCustomer ? activeCustomer.name : 'Walk-in Customer', customerId: activeCustomer?.id, subtotal: totals.gross, tax: totals.tax, total: totals.net, amountPaid: paidAmountValue, paymentMethod });
     
+    // Loyalty Points Logic
+    if (settings.loyaltyProgramEnabled && activeCustomer && totals.net > 0) {
+        const pointsAwarded = Math.floor(totals.net / 100) * (settings.pointsPerCurrency || 1);
+        if (pointsAwarded > 0) {
+            await StoreService.updateCustomer(activeCustomer.id, { 
+                loyaltyPoints: (activeCustomer.loyaltyPoints || 0) + pointsAwarded 
+            });
+        }
+    }
+
     if (action === 'print') {
         generateInvoicePDF(sale);
     } else if (action === 'share') {

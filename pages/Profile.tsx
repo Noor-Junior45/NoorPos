@@ -370,9 +370,17 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
       rightContent?: React.ReactNode,
       className?: string
   }) => (
-      <button 
+      <div 
           onClick={onClick} 
-          className={`w-full flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:border-gray-200 transition-all active:scale-[0.98] group ${className}`}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onClick();
+              }
+          }}
+          className={`w-full flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md hover:border-gray-200 transition-all active:scale-[0.98] cursor-pointer group ${className}`}
       >
           <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${colorClass}`}>
               <Icon size={22} />
@@ -384,7 +392,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogin, onLogout }) => 
           <div className="text-gray-300 group-hover:text-indigo-400 transition-colors">
               {rightContent || <ChevronRight size={20} />}
           </div>
-      </button>
+      </div>
   );
 
   return (
